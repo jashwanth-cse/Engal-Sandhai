@@ -61,4 +61,12 @@ The system generates bills, accepts static-QR-based payments (faculty upload pay
 
 ---
 
+## 📷 Workflow  
+
+1. **Admin updates daily stock** (vegetable name, qty, rate, photo).  
+2. **Faculty places order** → system generates bill with static QR.  
+3. **Faculty uploads payment screenshot**.  
+4. **Stock decrements atomically** after upload.  
+5. **Admin verifies payment** → order marked as completed.  
+6. **Realtime notifications** keep all clients updated.  
 
