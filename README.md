@@ -20,3 +20,26 @@ The system generates bills, accepts static-QR-based payments (faculty upload pay
   - Updates are processed **atomically** to prevent overselling.  
 - **Realtime** updates via WebSockets.  
 
+---
+
+## 🚀 Key Features  
+- 🔑 **Role-based authentication** (employee_id + password) with **forced password reset** option.  
+- 🛠️ **Admin panel**:  
+  - Add/update vegetables (photo, quantity, rate).  
+  - View & filter orders.  
+  - Verify/reject payments.  
+  - Revert stock when needed.  
+- 🛒 **Buying panel**:  
+  - Browse vegetables with stock, price, and photo.  
+  - Add to cart & place multi-item orders.  
+  - Bill page with static admin QR.  
+  - Upload payment screenshot.  
+- 🔐 **Per-order session rule** → automatic logout after successful payment upload.  
+- ⚡ **Realtime updates**:  
+  - Stock updates across all connected faculty.  
+  - New order notifications for admins.  
+- 🧮 **Atomic multi-item order processing** → no overselling.  
+- 🖼️ **Local file storage** for:  
+  - Vegetable photos.  
+  - Payment screenshots.  
+- 🪶 **Lightweight, self-hosted stack** → no paid cloud required.  
