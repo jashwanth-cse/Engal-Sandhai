@@ -4,7 +4,7 @@ Quick summary
 
 Single-server, intranet-only web app for campus vegetable billing.
 
-Two roles: admin (10 faculty) and faculty (all other faculty).
+Two roles: admin (5 faculty) and faculty (all other faculty).
 
 Admins update daily stock (name, quantity, rate, photo). Faculty can place orders, upload payment screenshot, and receive bills.
 
@@ -43,5 +43,7 @@ React Router, Axios, WebSocket client
 Backend
 
 Node JS
+
 Firebase Authentication
+
 Firestore DB
