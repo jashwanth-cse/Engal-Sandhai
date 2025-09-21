@@ -6,3 +6,17 @@ The system generates bills, accepts static-QR-based payments (faculty upload pay
 
 ---
 
+## 📌 Quick Summary  
+- **Single-server**, intranet-only web app for campus vegetable billing.  
+- **Two roles**:  
+  - **Admin (5 faculty)** → manage stock, prices, and orders.  
+  - **Faculty (all others)** → place orders, upload payment screenshot, receive bills.  
+- **Payment flow**:  
+  - Static QR is displayed on the bill.  
+  - Faculty uploads payment screenshot.  
+  - Admin verifies payment manually.  
+- **Stock updates**:  
+  - Stock decrements only when payment screenshot is uploaded.  
+  - Updates are processed **atomically** to prevent overselling.  
+- **Realtime** updates via WebSockets.  
+
