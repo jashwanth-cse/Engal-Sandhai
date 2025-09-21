@@ -42,4 +42,23 @@ The system generates bills, accepts static-QR-based payments (faculty upload pay
 - 🖼️ **Local file storage** for:  
   - Vegetable photos.  
   - Payment screenshots.  
-- 🪶 **Lightweight, self-hosted stack** → no paid cloud required.  
+- 🪶 **Lightweight, self-hosted stack** → no paid cloud required.
+- 
+---
+
+## 🏗️ Tech Stack & Architecture  
+
+### Frontend  
+- ⚛️ React (Vite) + TypeScript  
+- 🎨 Tailwind CSS  
+- 🔄 React Router, Axios  
+- 🔔 WebSocket client  
+
+### Backend  
+- 🔐 Firebase Authentication  
+- 📂 Firestore Database  
+- 📡 WebSockets for realtime updates  
+
+---
+
+
