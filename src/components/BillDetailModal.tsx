@@ -113,11 +113,26 @@ const BillDetailModal: React.FC<BillDetailModalProps> = ({ isOpen, onClose, bill
     doc.setFont('helvetica', 'bold');
     doc.text('INVOICE', 14, y);
     y += 8;
+    
+    // Date and Time on separate lines
+    const billDate = new Date(bill.date);
+    const dateStr = billDate.toLocaleDateString('en-IN', { 
+      year: 'numeric', 
+      month: 'long', 
+      day: 'numeric' 
+    });
+    const timeStr = billDate.toLocaleTimeString('en-IN', { 
+      hour: '2-digit', 
+      minute: '2-digit',
+      hour12: true 
+    });
+    
     doc.setFont('helvetica', 'normal');
     doc.text(`Bill ID: ${bill.id}`, 14, y);
-    doc.text(`Date: ${new Date(bill.date).toLocaleString()}`, doc.internal.pageSize.getWidth() - 14, y, { align: 'right' });
+    doc.text(`Date: ${dateStr}`, doc.internal.pageSize.getWidth() - 14, y, { align: 'right' });
     y += 6;
     doc.text(`Customer: ${bill.customerName}`, 14, y);
+    doc.text(`Time: ${timeStr}`, doc.internal.pageSize.getWidth() - 14, y, { align: 'right' });
     y += 10;
     
     // Table Header

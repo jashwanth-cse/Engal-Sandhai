@@ -91,12 +91,12 @@ const CartContent: React.FC<Omit<CartViewProps, 'isOpen'>> = ({ cartItems, total
                 </div>
                 <Button 
                     size="lg" 
-                    className={`w-full relative overflow-hidden transition-all duration-300 transform ${
+                    className={`w-full ${
                         isPlacingOrder 
-                            ? 'bg-green-500 hover:bg-green-600 scale-105 shadow-lg' 
+                            ? 'bg-green-500 hover:bg-green-600' 
                             : cartItems.length === 0 
                                 ? '' 
-                                : 'hover:scale-105 hover:shadow-lg animate-pulse'
+                                : ''
                     }`}
                     disabled={cartItems.length === 0 || isPlacingOrder} 
                     onClick={onPlaceOrder}
@@ -105,7 +105,7 @@ const CartContent: React.FC<Omit<CartViewProps, 'isOpen'>> = ({ cartItems, total
                         {isPlacingOrder ? (
                             <>
                                 <div className="w-5 h-5 mr-2 animate-spin rounded-full border-2 border-white border-t-transparent"></div>
-                                <span className="animate-pulse">Placing Order...</span>
+                                <span>Placing Order...</span>
                             </>
                         ) : (
                             <>
@@ -114,9 +114,6 @@ const CartContent: React.FC<Omit<CartViewProps, 'isOpen'>> = ({ cartItems, total
                             </>
                         )}
                     </div>
-                    {!isPlacingOrder && cartItems.length > 0 && (
-                        <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white to-transparent opacity-0 hover:opacity-20 transform -skew-x-12 transition-all duration-1000 hover:translate-x-full"></div>
-                    )}
                 </Button>
             </div>
         </div>
