@@ -1,6 +1,6 @@
 import { useState, useCallback } from 'react';
 import { VEGETABLES_DATA, BILLS_DATA } from '../constants.ts';
-import type { Vegetable, Bill } from '../types.ts';
+import type { Vegetable, Bill } from '../types/types.ts';
 
 export const useBillingData = () => {
   const [vegetables, setVegetables] = useState<Vegetable[]>(VEGETABLES_DATA);
@@ -33,6 +33,7 @@ export const useBillingData = () => {
       ...newBillData,
       id: `bill${Date.now()}`,
       date: new Date().toISOString(),
+      status: 'pending', // Default status
     };
 
     // 3. For each item in the bill, you would update the stock in your 'vegetables' collection.
@@ -64,6 +65,12 @@ export const useBillingData = () => {
     // --- END FIREBASE INTEGRATION POINT ---
   }, []);
 
+  const updateBill = useCallback((billId: string, updates: Partial<Bill>) => {
+    setBills(prev =>
+      prev.map(bill => bill.id === billId ? { ...bill, ...updates } : bill)
+    );
+  }, []);
+
   return {
     vegetables,
     addVegetable,
@@ -71,5 +78,6 @@ export const useBillingData = () => {
     deleteVegetable,
     bills,
     addBill,
+    updateBill,
   };
 };

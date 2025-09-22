@@ -168,6 +168,7 @@ const App: React.FC = () => {
               updateVegetable={billingData.updateVegetable}
               deleteVegetable={billingData.deleteVegetable}
               bills={billingData.bills}
+              updateBill={billingData.updateBill}
               onLogout={handleLogout}
             />
           </ProtectedRoute>

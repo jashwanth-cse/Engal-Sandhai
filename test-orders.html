@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Orders Component Test</title>
+    <style>
+        table { border-collapse: collapse; width: 100%; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+        th { background-color: #f2f2f2; }
+        select { padding: 4px; }
+    </style>
+</head>
+<body>
+    <h1>Orders Component Structure Test</h1>
+    <table>
+        <thead>
+            <tr>
+                <th>Bill ID</th>
+                <th>Customer</th>
+                <th>Date</th>
+                <th>Items</th>
+                <th>Status</th>
+                <th>Total</th>
+                <th>View Bill</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td>bill123</td>
+                <td>John Doe</td>
+                <td>2025-09-22 10:30:00</td>
+                <td>Tomato (2kg), Potato (1kg)</td>
+                <td>
+                    <select>
+                        <option value="pending">Pending</option>
+                        <option value="completed">Completed</option>
+                    </select>
+                </td>
+                <td>₹120.00</td>
+                <td>👁️</td>
+            </tr>
+        </tbody>
+    </table>
+    <p>This demonstrates the new table structure with Items and Status columns.</p>
+</body>
+</html>

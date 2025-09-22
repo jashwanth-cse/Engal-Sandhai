@@ -15,6 +15,7 @@ interface AdminDashboardProps {
   updateVegetable: (updatedVegetable: Vegetable) => void;
   deleteVegetable: (vegId: string) => void;
   bills: Bill[];
+  updateBill: (billId: string, updates: Partial<Bill>) => void;
 }
 
 type AdminPage = 'dashboard' | 'inventory' | 'orders' | 'settings';
@@ -41,10 +42,14 @@ const AdminDashboard: React.FC<AdminDashboardProps> = (props) => {
     // You can add API calls or validation here
   };
 
+  const handleUpdateBillStatus = (billId: string, status: 'pending' | 'completed') => {
+    props.updateBill(billId, { status });
+  };
+
   const renderContent = () => {
     switch (currentPage) {
       case 'dashboard':
-        return <Dashboard bills={props.bills} vegetables={props.vegetables} onViewOrder={handleViewOrder} />;
+        return <Dashboard bills={props.bills} vegetables={props.vegetables} onViewOrder={handleViewOrder} onUpdateBillStatus={handleUpdateBillStatus} />;
       case 'inventory':
         return <Inventory 
                   vegetables={props.vegetables} 
@@ -58,6 +63,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = (props) => {
                   vegetables={props.vegetables} 
                   initialBillId={initialBillId} 
                   onClearInitialBill={() => setInitialBillId(null)}
+                  onUpdateBillStatus={handleUpdateBillStatus}
                />;
       case 'settings':
         return <Settings 

@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import type { Bill, Vegetable } from '../../types/types';
+import type { Bill, Vegetable, BillItem } from '../../types/types';
 import { MagnifyingGlassIcon, DocumentMagnifyingGlassIcon } from './ui/Icon.tsx';
 import BillDetailModal from './BillDetailModal.tsx';
 
@@ -8,13 +8,27 @@ interface OrdersProps {
   vegetables: Vegetable[];
   initialBillId?: string | null;
   onClearInitialBill: () => void;
+  onUpdateBillStatus?: (billId: string, status: 'pending' | 'completed') => void;
 }
 
-const Orders: React.FC<OrdersProps> = ({ bills, vegetables, initialBillId, onClearInitialBill }) => {
+const Orders: React.FC<OrdersProps> = ({ bills, vegetables, initialBillId, onClearInitialBill, onUpdateBillStatus }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [viewingBill, setViewingBill] = useState<Bill | null>(null);
   
   const vegetableMap = useMemo(() => new Map(vegetables.map(v => [v.id, v])), [vegetables]);
+
+  const formatItems = (items: BillItem[]) => {
+    return items.map(item => {
+      const vegetable = vegetableMap.get(item.vegetableId);
+      return vegetable ? `${vegetable.name} (${item.quantityKg}kg)` : `Unknown (${item.quantityKg}kg)`;
+    }).join(', ');
+  };
+
+  const handleStatusChange = (billId: string, newStatus: 'pending' | 'completed') => {
+    if (onUpdateBillStatus) {
+      onUpdateBillStatus(billId, newStatus);
+    }
+  };
 
   const filteredBills = useMemo(() => {
     if (!searchTerm) return bills;
@@ -60,6 +74,8 @@ const Orders: React.FC<OrdersProps> = ({ bills, vegetables, initialBillId, onCle
                 <th scope="col" className="px-6 py-3">Bill ID</th>
                 <th scope="col" className="px-6 py-3">Customer</th>
                 <th scope="col" className="px-6 py-3">Date</th>
+                <th scope="col" className="px-6 py-3">Items</th>
+                <th scope="col" className="px-6 py-3">Status</th>
                 <th scope="col" className="px-6 py-3 text-right">Total</th>
                 <th scope="col" className="px-6 py-3 text-center">View Bill</th>
               </tr>
@@ -67,7 +83,7 @@ const Orders: React.FC<OrdersProps> = ({ bills, vegetables, initialBillId, onCle
             <tbody>
               {filteredBills.length === 0 ? (
                   <tr>
-                      <td colSpan={5} className="text-center py-10 text-slate-500">No transactions found.</td>
+                      <td colSpan={7} className="text-center py-10 text-slate-500">No transactions found.</td>
                   </tr>
               ) : (
                   filteredBills.map((bill) => (
@@ -75,6 +91,19 @@ const Orders: React.FC<OrdersProps> = ({ bills, vegetables, initialBillId, onCle
                       <td className="px-6 py-4 font-mono text-xs text-slate-700">{bill.id}</td>
                       <td className="px-6 py-4 font-medium text-slate-900">{bill.customerName}</td>
                       <td className="px-6 py-4">{new Date(bill.date).toLocaleString()}</td>
+                      <td className="px-6 py-4 text-sm max-w-xs truncate" title={formatItems(bill.items)}>
+                        {formatItems(bill.items)}
+                      </td>
+                      <td className="px-6 py-4">
+                        <select
+                          value={bill.status || 'pending'}
+                          onChange={(e) => handleStatusChange(bill.id, e.target.value as 'pending' | 'completed')}
+                          className="text-sm rounded-md border-slate-300 bg-white focus:ring-primary-500 focus:border-primary-500"
+                        >
+                          <option value="pending">Pending</option>
+                          <option value="completed">Completed</option>
+                        </select>
+                      </td>
                       <td className="px-6 py-4 text-right font-semibold text-slate-800">
                           ₹{bill.total.toFixed(2)}
                       </td>
