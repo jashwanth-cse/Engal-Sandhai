@@ -146,6 +146,7 @@ const RecentTransactions: React.FC<RecentTransactionsProps> = ({ bills, vegetabl
               <tr>
                 <th scope="col" className="px-6 py-3">Bill ID</th>
                 <th scope="col" className="px-6 py-3">Customer</th>
+                <th scope="col" className="px-6 py-3">Department</th>
                 <th scope="col" className="px-6 py-3">
                   <button
                     onClick={() => handleSort('date')}
@@ -172,13 +173,14 @@ const RecentTransactions: React.FC<RecentTransactionsProps> = ({ bills, vegetabl
             <tbody>
               {filteredBills.length === 0 ? (
                   <tr>
-                      <td colSpan={7} className="text-center py-10 text-slate-500">No transactions found.</td>
+                      <td colSpan={8} className="text-center py-10 text-slate-500">No transactions found.</td>
                   </tr>
               ) : (
                   filteredBills.map((bill) => (
                 <tr key={bill.id} className="bg-white border-b hover:bg-slate-50">
                     <td className="px-6 py-4 font-mono text-xs text-slate-700">{bill.id}</td>
                     <td className="px-6 py-4 font-medium text-slate-900">{bill.customerName}</td>
+                    <td className="px-6 py-4 text-slate-600">{bill.department || 'N/A'}</td>
                     <td className="px-6 py-4">{new Date(bill.date).toLocaleDateString()}</td>
                     <td className="px-6 py-4 text-sm" title={formatItems(bill.items || [])}>
                       {(bill.items || []).length} {(bill.items || []).length === 1 ? 'item' : 'items'}

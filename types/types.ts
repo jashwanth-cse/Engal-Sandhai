@@ -19,6 +19,7 @@ export interface Bill {
   items: BillItem[];
   total: number;
   customerName: string;
+  department?: string; // Optional department field
   paymentScreenshot?: string; // base64 string
   status: 'pending' | 'packed' | 'delivered';
 }

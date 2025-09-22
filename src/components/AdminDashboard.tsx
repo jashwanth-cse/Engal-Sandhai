@@ -6,6 +6,7 @@ import Dashboard from './Dashboard.tsx';
 import Inventory from './Inventory.tsx';
 import Orders from './Orders.tsx';
 import Settings from './Settings.tsx';
+import CreateBill from './CreateBill.tsx';
 
 interface AdminDashboardProps {
   user: User;
@@ -16,9 +17,10 @@ interface AdminDashboardProps {
   deleteVegetable: (vegId: string) => void;
   bills: Bill[];
   updateBill: (billId: string, updates: Partial<Bill>) => void;
+  addBill: (newBill: Omit<Bill, 'id' | 'date'>) => Promise<Bill>;
 }
 
-type AdminPage = 'dashboard' | 'inventory' | 'orders' | 'settings';
+type AdminPage = 'dashboard' | 'inventory' | 'orders' | 'settings' | 'create-bill';
 
 const AdminDashboard: React.FC<AdminDashboardProps> = (props) => {
   const [currentPage, setCurrentPage] = useState<AdminPage>('dashboard');
@@ -72,6 +74,12 @@ const AdminDashboard: React.FC<AdminDashboardProps> = (props) => {
                   onUpdateProfile={handleUpdateProfile}
                   onChangePassword={handleChangePassword}
                />;
+      case 'create-bill':
+        return <CreateBill 
+                  user={props.user}
+                  vegetables={props.vegetables}
+                  addBill={props.addBill}
+               />;
       default:
         return <Dashboard bills={props.bills} vegetables={props.vegetables} onViewOrder={handleViewOrder} onUpdateBillStatus={handleUpdateBillStatus} onUpdateBill={props.updateBill} />;
     }
@@ -82,6 +90,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = (props) => {
       inventory: 'Inventory',
       orders: 'Order History',
       settings: 'Settings',
+      'create-bill': 'Create Bill',
   };
 
   return (
