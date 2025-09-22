@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Single Date Filter Demo</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .tab-active {
+            background-color: #dbeafe;
+            color: #1d4ed8;
+            border-color: #bfdbfe;
+        }
+        .tab-pending {
+            background-color: #fed7aa;
+            color: #ea580c;
+            border-color: #fdba74;
+        }
+        .tab-completed {
+            background-color: #bbf7d0;
+            color: #059669;
+            border-color: #86efac;
+        }
+    </style>
+</head>
+<body class="bg-slate-100 p-6">
+    <div class="max-w-7xl mx-auto space-y-6">
+        <h1 class="text-3xl font-bold text-slate-800">Order History - Single Date Filter</h1>
+        
+        <!-- Updated Filter Bar with Single Date -->
+        <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
+            <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+                <!-- Status Filter Tabs -->
+                <div class="flex flex-wrap gap-2">
+                    <button class="tab-active px-4 py-2 rounded-lg text-sm font-medium border">
+                        Current Orders
+                        <span class="ml-2 px-2 py-0.5 bg-blue-200 text-blue-800 rounded-full text-xs">45</span>
+                    </button>
+                    
+                    <button class="px-4 py-2 rounded-lg text-sm font-medium bg-slate-50 text-slate-600 hover:bg-slate-100">
+                        Pending
+                        <span class="ml-2 px-2 py-0.5 bg-orange-200 text-orange-800 rounded-full text-xs">25</span>
+                    </button>
+                    
+                    <button class="px-4 py-2 rounded-lg text-sm font-medium bg-slate-50 text-slate-600 hover:bg-slate-100">
+                        Completed
+                        <span class="ml-2 px-2 py-0.5 bg-green-200 text-green-800 rounded-full text-xs">20</span>
+                    </button>
+                </div>
+
+                <!-- Single Date Filter -->
+                <div class="flex items-center gap-4">
+                    <div class="flex items-center gap-2">
+                        <div class="relative">
+                            <svg class="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 0 1 2.25-2.25h13.5A2.25 2.25 0 0 1 21 7.5v11.25m-18 0A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75m-18 0v-7.5A2.25 2.25 0 0 1 5.25 9h13.5A2.25 2.25 0 0 1 21 11.25v7.5"></path>
+                            </svg>
+                            <input 
+                                type="date" 
+                                value="2025-09-22"
+                                class="pl-10 pr-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-blue-500 focus:border-blue-500"
+                                placeholder="Select date"
+                            />
+                        </div>
+                    </div>
+                    
+                    <button class="flex items-center gap-2 px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-600 hover:bg-slate-50">
+                        <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.707A1 1 0 013 7V4z"></path>
+                        </svg>
+                        Filters
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Search Bar -->
+        <div class="flex justify-between items-center">
+            <div class="relative">
+                <svg class="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z"></path>
+                </svg>
+                <input 
+                    type="text" 
+                    placeholder="Search by customer or Bill ID..."
+                    class="pl-10 pr-3 py-2 w-64 border border-slate-300 rounded-lg bg-white text-slate-900 focus:ring-blue-500 focus:border-blue-500"
+                />
+            </div>
+        </div>
+
+        <!-- Orders Table showing filtered results for September 22, 2025 -->
+        <div class="bg-white rounded-xl shadow-lg">
+            <div class="overflow-x-auto">
+                <table class="w-full text-sm text-left text-slate-500">
+                    <thead class="text-xs text-slate-700 uppercase bg-slate-50">
+                        <tr>
+                            <th class="px-6 py-3">Bill ID</th>
+                            <th class="px-6 py-3">Customer</th>
+                            <th class="px-6 py-3">Date</th>
+                            <th class="px-6 py-3">Items</th>
+                            <th class="px-6 py-3">Status</th>
+                            <th class="px-6 py-3 text-right">Total</th>
+                            <th class="px-6 py-3 text-center">View Bill</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr class="bg-white border-b hover:bg-slate-50">
+                            <td class="px-6 py-4 font-mono text-xs text-slate-700">bill1695384000</td>
+                            <td class="px-6 py-4 font-medium text-slate-900">Dr. Rajesh Kumar</td>
+                            <td class="px-6 py-4">9/22/2025, 10:30:00 AM</td>
+                            <td class="px-6 py-4 text-sm max-w-xs truncate" title="Tomato (2kg), Potato (1.5kg), Onion (1kg)">
+                                Tomato (2kg), Potato (1.5kg), Onion (1kg)
+                            </td>
+                            <td class="px-6 py-4">
+                                <select class="text-sm rounded-md border-slate-300 bg-white focus:ring-blue-500 focus:border-blue-500">
+                                    <option value="pending" selected>Pending</option>
+                                    <option value="completed">Completed</option>
+                                </select>
+                            </td>
+                            <td class="px-6 py-4 text-right font-semibold text-slate-800">₹185.50</td>
+                            <td class="px-6 py-4 text-center">
+                                <button class="p-2 text-slate-500 hover:text-blue-600 rounded-full hover:bg-slate-100">
+                                    👁️
+                                </button>
+                            </td>
+                        </tr>
+                        <tr class="bg-white border-b hover:bg-slate-50">
+                            <td class="px-6 py-4 font-mono text-xs text-slate-700">bill1695383500</td>
+                            <td class="px-6 py-4 font-medium text-slate-900">Prof. Anita Sharma</td>
+                            <td class="px-6 py-4">9/22/2025, 9:15:00 AM</td>
+                            <td class="px-6 py-4 text-sm max-w-xs truncate" title="Carrot (0.5kg), Spinach (1kg)">
+                                Carrot (0.5kg), Spinach (1kg)
+                            </td>
+                            <td class="px-6 py-4">
+                                <select class="text-sm rounded-md border-slate-300 bg-white focus:ring-blue-500 focus:border-blue-500">
+                                    <option value="pending">Pending</option>
+                                    <option value="completed" selected>Completed</option>
+                                </select>
+                            </td>
+                            <td class="px-6 py-4 text-right font-semibold text-slate-800">₹95.00</td>
+                            <td class="px-6 py-4 text-center">
+                                <button class="p-2 text-slate-500 hover:text-blue-600 rounded-full hover:bg-slate-100">
+                                    👁️
+                                </button>
+                            </td>
+                        </tr>
+                        <tr class="bg-white border-b hover:bg-slate-50">
+                            <td class="px-6 py-4 font-mono text-xs text-slate-700">bill1695383200</td>
+                            <td class="px-6 py-4 font-medium text-slate-900">Dr. Priya Patel</td>
+                            <td class="px-6 py-4">9/22/2025, 8:45:00 AM</td>
+                            <td class="px-6 py-4 text-sm max-w-xs truncate" title="Brinjal (1kg), Okra (0.5kg)">
+                                Brinjal (1kg), Okra (0.5kg)
+                            </td>
+                            <td class="px-6 py-4">
+                                <select class="text-sm rounded-md border-slate-300 bg-white focus:ring-blue-500 focus:border-blue-500">
+                                    <option value="pending" selected>Pending</option>
+                                    <option value="completed">Completed</option>
+                                </select>
+                            </td>
+                            <td class="px-6 py-4 text-right font-semibold text-slate-800">₹75.00</td>
+                            <td class="px-6 py-4 text-center">
+                                <button class="p-2 text-slate-500 hover:text-blue-600 rounded-full hover:bg-slate-100">
+                                    👁️
+                                </button>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Feature Summary -->
+    <div class="max-w-7xl mx-auto mt-8 p-4 bg-green-50 rounded-lg">
+        <h3 class="text-lg font-semibold text-green-900 mb-2">✅ Updated Single Date Filter:</h3>
+        <ul class="text-green-800 space-y-1">
+            <li>• <strong>Single Date Picker:</strong> Select specific date for weekly stock updates</li>
+            <li>• <strong>Exact Day Filtering:</strong> Shows orders from the selected date only</li>
+            <li>• <strong>Weekly Workflow:</strong> Perfect for admins who update stock once per week</li>
+            <li>• <strong>Simplified UI:</strong> Cleaner interface with single date input</li>
+            <li>• <strong>Same Status Filters:</strong> Current Orders, Pending, Completed tabs remain</li>
+            <li>• <strong>Combined Filtering:</strong> Date filter works with status and search filters</li>
+        </ul>
+        
+        <div class="mt-4 p-3 bg-green-100 rounded-md">
+            <p class="text-green-900 font-medium">💡 Use Case:</p>
+            <p class="text-green-800 text-sm">
+                Admin selects the weekly update day (e.g., Sunday) to see all orders from that specific day, 
+                then updates stock based on those orders and changes their status to "Completed".
+            </p>
+        </div>
+    </div>
+
+    <script>
+        // Demo: Add interactivity to tabs
+        document.querySelectorAll('button').forEach(button => {
+            if (button.innerText.includes('Current Orders') || 
+                button.innerText.includes('Pending') || 
+                button.innerText.includes('Completed')) {
+                
+                button.addEventListener('click', function() {
+                    // Remove active classes from all tab buttons
+                    document.querySelectorAll('button').forEach(btn => {
+                        if (btn.innerText.includes('Current Orders') || 
+                            btn.innerText.includes('Pending') || 
+                            btn.innerText.includes('Completed')) {
+                            btn.classList.remove('tab-active', 'tab-pending', 'tab-completed');
+                            btn.classList.add('bg-slate-50', 'text-slate-600');
+                        }
+                    });
+                    
+                    // Add appropriate class to clicked button
+                    this.classList.remove('bg-slate-50', 'text-slate-600');
+                    if (this.innerText.includes('Current Orders')) {
+                        this.classList.add('tab-active');
+                    } else if (this.innerText.includes('Pending')) {
+                        this.classList.add('tab-pending');
+                    } else if (this.innerText.includes('Completed')) {
+                        this.classList.add('tab-completed');
+                    }
+                });
+            }
+        });
+
+        // Demo: Show date filter in action
+        document.querySelector('input[type="date"]').addEventListener('change', function() {
+            const selectedDate = new Date(this.value);
+            const formattedDate = selectedDate.toLocaleDateString();
+            
+            // Simple alert to demonstrate functionality
+            alert(`Filtering orders for: ${formattedDate}\n\nIn the actual app, this will show only orders from the selected date.`);
+        });
+    </script>
+</body>
+</html>

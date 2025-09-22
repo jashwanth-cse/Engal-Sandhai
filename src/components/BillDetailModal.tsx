@@ -1,5 +1,5 @@
-import React from 'react';
-import type { Bill, Vegetable } from '../../types/types';
+import React, { useState, useEffect } from 'react';
+import type { Bill, Vegetable, BillItem } from '../../types/types';
 import { XMarkIcon, EyeIcon, ArrowDownTrayIcon } from './ui/Icon.tsx';
 import ImagePreviewModal from './ui/ImagePreviewModal.tsx';
 import Button from './ui/Button.tsx';
@@ -16,12 +16,79 @@ interface BillDetailModalProps {
   onClose: () => void;
   bill: Bill | null;
   vegetableMap: Map<string, Vegetable>;
+  onUpdateBill?: (billId: string, updates: Partial<Bill>) => void;
 }
 
-const BillDetailModal: React.FC<BillDetailModalProps> = ({ isOpen, onClose, bill, vegetableMap }) => {
-  const [isImagePreviewOpen, setIsImagePreviewOpen] = React.useState(false);
+const BillDetailModal: React.FC<BillDetailModalProps> = ({ isOpen, onClose, bill, vegetableMap, onUpdateBill }) => {
+  const [isImagePreviewOpen, setIsImagePreviewOpen] = useState(false);
+  const [editedItems, setEditedItems] = useState<BillItem[]>([]);
+  const [calculatedTotal, setCalculatedTotal] = useState(0);
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  
+  // Initialize edited items when bill changes
+  useEffect(() => {
+    if (bill) {
+      setEditedItems([...bill.items]);
+      setCalculatedTotal(bill.total);
+      setHasUnsavedChanges(false);
+    }
+  }, [bill]);
+  
+  // Recalculate total when items change
+  useEffect(() => {
+    const newTotal = editedItems.reduce((sum, item) => sum + item.subtotal, 0);
+    setCalculatedTotal(newTotal);
+    
+    // Check if there are unsaved changes
+    if (bill) {
+      const hasChanges = newTotal !== bill.total || 
+        editedItems.some((item, index) => 
+          item.quantityKg !== bill.items[index]?.quantityKg ||
+          item.subtotal !== bill.items[index]?.subtotal
+        );
+      setHasUnsavedChanges(hasChanges);
+    }
+  }, [editedItems, bill]);
   
   if (!isOpen || !bill) return null;
+
+  const handleQuantityChange = (index: number, newQuantity: number) => {
+    const vegetable = vegetableMap.get(editedItems[index].vegetableId);
+    if (!vegetable) return;
+    
+    // Ensure quantity is not negative and not more than 2 decimal places
+    const clampedQuantity = Math.max(0, Math.round(newQuantity * 100) / 100);
+    const newSubtotal = clampedQuantity * vegetable.pricePerKg;
+    
+    const updatedItems = [...editedItems];
+    updatedItems[index] = {
+      ...updatedItems[index],
+      quantityKg: clampedQuantity,
+      subtotal: newSubtotal
+    };
+    
+    setEditedItems(updatedItems);
+    // Note: We don't auto-save here, admin needs to click save button
+  };
+
+  const handleSaveChanges = async () => {
+    if (!onUpdateBill || !bill || !hasUnsavedChanges) return;
+    
+    setIsSaving(true);
+    try {
+      await onUpdateBill(bill.id, {
+        items: editedItems,
+        total: calculatedTotal
+      });
+      setHasUnsavedChanges(false);
+    } catch (error) {
+      console.error('Error saving changes:', error);
+      // Could add toast notification here
+    } finally {
+      setIsSaving(false);
+    }
+  };
 
   const handleDownload = () => {
     const { jsPDF } = window.jspdf;
@@ -46,11 +113,26 @@ const BillDetailModal: React.FC<BillDetailModalProps> = ({ isOpen, onClose, bill
     doc.setFont('helvetica', 'bold');
     doc.text('INVOICE', 14, y);
     y += 8;
+    
+    // Date and Time on separate lines
+    const billDate = new Date(bill.date);
+    const dateStr = billDate.toLocaleDateString('en-IN', { 
+      year: 'numeric', 
+      month: 'long', 
+      day: 'numeric' 
+    });
+    const timeStr = billDate.toLocaleTimeString('en-IN', { 
+      hour: '2-digit', 
+      minute: '2-digit',
+      hour12: true 
+    });
+    
     doc.setFont('helvetica', 'normal');
     doc.text(`Bill ID: ${bill.id}`, 14, y);
-    doc.text(`Date: ${new Date(bill.date).toLocaleString()}`, doc.internal.pageSize.getWidth() - 14, y, { align: 'right' });
+    doc.text(`Date: ${dateStr}`, doc.internal.pageSize.getWidth() - 14, y, { align: 'right' });
     y += 6;
     doc.text(`Customer: ${bill.customerName}`, 14, y);
+    doc.text(`Time: ${timeStr}`, doc.internal.pageSize.getWidth() - 14, y, { align: 'right' });
     y += 10;
     
     // Table Header
@@ -66,9 +148,9 @@ const BillDetailModal: React.FC<BillDetailModalProps> = ({ isOpen, onClose, bill
     doc.line(14, y, doc.internal.pageSize.getWidth() - 14, y); // bottom line
     y += 8;
 
-    // Table Items
+    // Table Items - Use editedItems instead of bill.items
     doc.setFont('courier', 'normal');
-    bill.items.forEach(item => {
+    editedItems.forEach(item => {
         const vegetable = vegetableMap.get(item.vegetableId);
         const name = vegetable?.name || 'Unknown Item';
         const qty = item.quantityKg.toFixed(2);
@@ -82,14 +164,14 @@ const BillDetailModal: React.FC<BillDetailModalProps> = ({ isOpen, onClose, bill
         y += 7;
     });
 
-    // Total
+    // Total - Use calculatedTotal instead of bill.total
     const totalY = y + 5;
     doc.line(120, totalY, doc.internal.pageSize.getWidth() - 14, totalY);
     y += 10;
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(14);
     doc.text('TOTAL:', 122, y);
-    doc.text(`Rs. ${bill.total.toFixed(2)}`, 195, y, { align: 'right' });
+    doc.text(`Rs. ${calculatedTotal.toFixed(2)}`, 195, y, { align: 'right' });
     
     // Footer
     const footerY = doc.internal.pageSize.getHeight() - 20;
@@ -110,7 +192,12 @@ const BillDetailModal: React.FC<BillDetailModalProps> = ({ isOpen, onClose, bill
     >
       <div className="relative bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] flex flex-col">
         <div className="flex items-center justify-between p-4 border-b bg-slate-50 rounded-t-lg">
-            <h2 className="text-xl font-bold text-slate-800">Bill Details</h2>
+            <div>
+              <h2 className="text-xl font-bold text-slate-800">Bill Details</h2>
+              {hasUnsavedChanges && (
+                <p className="text-sm text-amber-600 font-medium">• Unsaved changes</p>
+              )}
+            </div>
             <button onClick={onClose} className="p-2 rounded-full hover:bg-slate-200">
                 <XMarkIcon className="h-6 w-6 text-slate-600" />
             </button>
@@ -158,16 +245,26 @@ const BillDetailModal: React.FC<BillDetailModalProps> = ({ isOpen, onClose, bill
                         </tr>
                         </thead>
                         <tbody>
-                            {bill.items.map((item, index) => {
+                            {editedItems.map((item, index) => {
                                 const vegetable = vegetableMap.get(item.vegetableId);
                                 return (
                                     <tr key={index} className="bg-white border-b last:border-0">
                                         <td className="px-4 py-3 font-medium text-slate-900">
                                             {vegetable?.icon} {vegetable?.name || 'N/A'}
                                         </td>
-                                        <td className="px-4 py-3 text-right">{item.quantityKg.toFixed(2)}</td>
+                                        <td className="px-4 py-3 text-right">
+                                            <input
+                                                type="number"
+                                                value={item.quantityKg}
+                                                onChange={(e) => handleQuantityChange(index, parseFloat(e.target.value) || 0)}
+                                                className="w-20 text-right bg-white border border-slate-200 rounded px-2 py-1 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 font-medium text-slate-900"
+                                                min="0"
+                                                step="0.25"
+                                                onFocus={(e) => e.target.select()}
+                                            />
+                                        </td>
                                         <td className="px-4 py-3 text-right">₹{vegetable?.pricePerKg.toFixed(2)}</td>
-                                        <td className="px-4 py-3 text-right font-semibold">₹{item.subtotal.toFixed(2)}</td>
+                                        <td className="px-4 py-3 text-right font-semibold text-primary-600">₹{item.subtotal.toFixed(2)}</td>
                                     </tr>
                                 );
                             })}
@@ -177,13 +274,27 @@ const BillDetailModal: React.FC<BillDetailModalProps> = ({ isOpen, onClose, bill
             </div>
 
             <div className="flex justify-between items-center mt-6 pt-4 border-t border-slate-200">
-                <Button onClick={handleDownload} className="bg-slate-600 hover:bg-slate-700">
-                    <ArrowDownTrayIcon className="h-5 w-5 mr-2" />
-                    Download Bill
-                </Button>
+                <div className="flex gap-3">
+                    <Button 
+                        onClick={handleSaveChanges} 
+                        disabled={!hasUnsavedChanges || isSaving}
+                        className={`${hasUnsavedChanges ? 'bg-green-600 hover:bg-green-700' : 'bg-slate-400 cursor-not-allowed'} text-white`}
+                    >
+                        {isSaving ? 'Saving...' : 'Save Changes'}
+                    </Button>
+                    <Button onClick={handleDownload} className="bg-slate-600 hover:bg-slate-700">
+                        <ArrowDownTrayIcon className="h-5 w-5 mr-2" />
+                        Download Bill
+                    </Button>
+                </div>
                 <div className="text-right">
                     <p className="text-sm text-slate-500">Total Amount</p>
-                    <p className="text-2xl font-bold text-slate-800">₹{bill.total.toFixed(2)}</p>
+                    <p className="text-2xl font-bold text-slate-800">₹{calculatedTotal.toFixed(2)}</p>
+                    {calculatedTotal !== bill.total && (
+                        <p className="text-xs text-slate-500 mt-1">
+                            Original: ₹{bill.total.toFixed(2)}
+                        </p>
+                    )}
                 </div>
             </div>
         </div>

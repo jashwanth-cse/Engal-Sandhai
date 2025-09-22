@@ -31,11 +31,11 @@ const App: React.FC = () => {
             const defaultUser: User = {
               id: firebaseUser.uid,
               name: firebaseUser.email || '',
-              role: 'faculty',
+              role: 'user',
             };
             await setDoc(docRef, {
               name: firebaseUser.email || '',
-              role: 'faculty',
+              role: 'user',
               createdAt: new Date(),
             });
             setCurrentUser(defaultUser);
@@ -100,7 +100,7 @@ const App: React.FC = () => {
       const loggedUser: User = {
         id: userCredential.user.uid,
         name: userCredential.user.email || '',
-        role,
+        role: (role as 'admin' | 'user'),
       };
       setCurrentUser(loggedUser);
       setLoginError(null);
@@ -142,7 +142,7 @@ const App: React.FC = () => {
     <Routes>
       <Route
         path="/"
-        element={<LoginPage onLogin={handleLogin} error={loginError} clearError={() => setLoginError(null)} />}
+        element={<LoginPage error={loginError} clearError={() => setLoginError(null)} />}
       />
       <Route
         path="/dashboard"
@@ -168,6 +168,8 @@ const App: React.FC = () => {
               updateVegetable={billingData.updateVegetable}
               deleteVegetable={billingData.deleteVegetable}
               bills={billingData.bills}
+              updateBill={billingData.updateBill}
+              addBill={billingData.addBill}
               onLogout={handleLogout}
             />
           </ProtectedRoute>

@@ -6,6 +6,7 @@ import Dashboard from './Dashboard.tsx';
 import Inventory from './Inventory.tsx';
 import Orders from './Orders.tsx';
 import Settings from './Settings.tsx';
+import CreateBill from './CreateBill.tsx';
 
 interface AdminDashboardProps {
   user: User;
@@ -15,9 +16,11 @@ interface AdminDashboardProps {
   updateVegetable: (updatedVegetable: Vegetable) => void;
   deleteVegetable: (vegId: string) => void;
   bills: Bill[];
+  updateBill: (billId: string, updates: Partial<Bill>) => void;
+  addBill: (newBill: Omit<Bill, 'id' | 'date'>) => Promise<Bill>;
 }
 
-type AdminPage = 'dashboard' | 'inventory' | 'orders' | 'settings';
+type AdminPage = 'dashboard' | 'inventory' | 'orders' | 'settings' | 'create-bill';
 
 const AdminDashboard: React.FC<AdminDashboardProps> = (props) => {
   const [currentPage, setCurrentPage] = useState<AdminPage>('dashboard');
@@ -41,10 +44,14 @@ const AdminDashboard: React.FC<AdminDashboardProps> = (props) => {
     // You can add API calls or validation here
   };
 
+  const handleUpdateBillStatus = (billId: string, status: 'pending' | 'packed' | 'delivered') => {
+    props.updateBill(billId, { status });
+  };
+
   const renderContent = () => {
     switch (currentPage) {
       case 'dashboard':
-        return <Dashboard bills={props.bills} vegetables={props.vegetables} onViewOrder={handleViewOrder} />;
+        return <Dashboard bills={props.bills} vegetables={props.vegetables} onViewOrder={handleViewOrder} onUpdateBillStatus={handleUpdateBillStatus} onUpdateBill={props.updateBill} />;
       case 'inventory':
         return <Inventory 
                   vegetables={props.vegetables} 
@@ -58,6 +65,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = (props) => {
                   vegetables={props.vegetables} 
                   initialBillId={initialBillId} 
                   onClearInitialBill={() => setInitialBillId(null)}
+                  onUpdateBillStatus={handleUpdateBillStatus}
+                  onUpdateBill={props.updateBill}
                />;
       case 'settings':
         return <Settings 
@@ -65,8 +74,14 @@ const AdminDashboard: React.FC<AdminDashboardProps> = (props) => {
                   onUpdateProfile={handleUpdateProfile}
                   onChangePassword={handleChangePassword}
                />;
+      case 'create-bill':
+        return <CreateBill 
+                  user={props.user}
+                  vegetables={props.vegetables}
+                  addBill={props.addBill}
+               />;
       default:
-        return <Dashboard bills={props.bills} vegetables={props.vegetables} onViewOrder={handleViewOrder} />;
+        return <Dashboard bills={props.bills} vegetables={props.vegetables} onViewOrder={handleViewOrder} onUpdateBillStatus={handleUpdateBillStatus} onUpdateBill={props.updateBill} />;
     }
   };
 
@@ -75,6 +90,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = (props) => {
       inventory: 'Inventory',
       orders: 'Order History',
       settings: 'Settings',
+      'create-bill': 'Create Bill',
   };
 
   return (

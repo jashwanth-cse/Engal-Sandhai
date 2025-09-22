@@ -2,7 +2,7 @@
 import React from 'react';
 import type { BillItem } from '../../types/types';
 import Button from './ui/Button.tsx';
-import { ShoppingCartIcon, XMarkIcon, MinusIcon, PlusIcon } from './ui/Icon.tsx';
+import { ShoppingCartIcon, XMarkIcon, MinusIcon, PlusIcon, CheckCircleIcon } from './ui/Icon.tsx';
 
 type CartItemDetails = BillItem & { name: string; icon: string; pricePerKg: number; stockKg: number; };
 
@@ -14,9 +14,10 @@ interface CartViewProps {
   cartItems: CartItemDetails[];
   total: number;
   onUpdateCart: (vegId: string, quantity: number) => void;
+  isPlacingOrder?: boolean;
 }
 
-const CartContent: React.FC<Omit<CartViewProps, 'isOpen'>> = ({ cartItems, total, onUpdateCart, onPlaceOrder, isDesktop, onClose }) => {
+const CartContent: React.FC<Omit<CartViewProps, 'isOpen'>> = ({ cartItems, total, onUpdateCart, onPlaceOrder, isDesktop, onClose, isPlacingOrder = false }) => {
     return (
         <div className="flex flex-col h-full bg-white">
             <div className={`flex items-center justify-between p-4 sm:p-6 border-b border-slate-200 ${isDesktop ? '' : 'bg-slate-50'}`}>
@@ -88,8 +89,31 @@ const CartContent: React.FC<Omit<CartViewProps, 'isOpen'>> = ({ cartItems, total
                 <span>Total</span>
                 <span>₹{total.toFixed(2)}</span>
                 </div>
-                <Button size="lg" className="w-full" disabled={cartItems.length === 0} onClick={onPlaceOrder}>
-                Place Order
+                <Button 
+                    size="lg" 
+                    className={`w-full ${
+                        isPlacingOrder 
+                            ? 'bg-green-500 hover:bg-green-600' 
+                            : cartItems.length === 0 
+                                ? '' 
+                                : ''
+                    }`}
+                    disabled={cartItems.length === 0 || isPlacingOrder} 
+                    onClick={onPlaceOrder}
+                >
+                    <div className="flex items-center justify-center">
+                        {isPlacingOrder ? (
+                            <>
+                                <div className="w-5 h-5 mr-2 animate-spin rounded-full border-2 border-white border-t-transparent"></div>
+                                <span>Placing Order...</span>
+                            </>
+                        ) : (
+                            <>
+                                <CheckCircleIcon className="w-5 h-5 mr-2" />
+                                <span>Place Order</span>
+                            </>
+                        )}
+                    </div>
                 </Button>
             </div>
         </div>

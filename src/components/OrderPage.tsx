@@ -4,7 +4,8 @@ import type { Vegetable, BillItem, Bill, User } from '../../types/types';
 import UserHeader from './UserHeader.tsx';
 import Button from './ui/Button.tsx';
 import { PlusIcon, MinusIcon, MagnifyingGlassIcon } from './ui/Icon.tsx';
-import PaymentPage from './PaymentPage.tsx';
+// COMMENTED OUT FOR NOW - Payment upload functionality preserved for future use
+// import PaymentPage from './PaymentPage.tsx';
 import CartView from './CartView.tsx';
 import BillPreviewPage from './BillPreviewPage.tsx';
 import Settings from './Settings.tsx';
@@ -18,15 +19,16 @@ interface OrderPageProps {
 
 type OrderStage = 'ordering' | 'payment' | 'success' | 'settings';
 
+// COMMENTED OUT - Base64 conversion utility preserved for future payment functionality
 // Utility to convert file to base64
-const fileToBase64 = (file: File): Promise<string> => {
-    return new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.readAsDataURL(file);
-        reader.onload = () => resolve(reader.result as string);
-        reader.onerror = error => reject(error);
-    });
-};
+// const fileToBase64 = (file: File): Promise<string> => {
+//     return new Promise((resolve, reject) => {
+//         const reader = new FileReader();
+//         reader.readAsDataURL(file);
+//         reader.onload = () => resolve(reader.result as string);
+//         reader.onerror = error => reject(error);
+//     });
+// };
 
 type CartItemDetails = BillItem & { name: string; icon: string; pricePerKg: number; stockKg: number; };
 
@@ -37,6 +39,7 @@ const OrderPage: React.FC<OrderPageProps> = ({ user, vegetables, addBill, onLogo
   const [category, setCategory] = useState('All');
   const [isCartVisible, setIsCartVisible] = useState(false);
   const [finalBill, setFinalBill] = useState<Bill | null>(null);
+  const [isPlacingOrder, setIsPlacingOrder] = useState(false);
   
   const vegetableMap = useMemo(() => new Map(vegetables.map(v => [v.id, v])), [vegetables]);
   const categories = useMemo(() => ['All', ...new Set(vegetables.map(v => v.category))], [vegetables]);
@@ -92,23 +95,36 @@ const OrderPage: React.FC<OrderPageProps> = ({ user, vegetables, addBill, onLogo
     return { cartItems: items, total: currentTotal, totalItems: itemCount };
   }, [cart, vegetableMap]);
 
-  const handleConfirmOrder = useCallback(async (screenshot: File) => {
-    const paymentScreenshotBase64 = await fileToBase64(screenshot);
+  const handleConfirmOrder = useCallback(async () => {
+    // COMMENTED OUT - Payment screenshot functionality preserved for future use
+    // const paymentScreenshotBase64 = await fileToBase64(screenshot);
     
     const createdBill = await addBill({
       items: cartItems.map(({name, icon, pricePerKg, stockKg, ...item}) => item),
       total,
       customerName: user.name,
-      paymentScreenshot: paymentScreenshotBase64,
+      status: 'pending', // Default status for new orders
+      // COMMENTED OUT - Payment screenshot field preserved for future use
+      // paymentScreenshot: paymentScreenshotBase64,
     });
     setFinalBill(createdBill);
     setStage('success');
     setCart(new Map());
   }, [cartItems, total, addBill, user.name]);
 
-  const handlePlaceOrder = () => {
+  const handlePlaceOrder = async () => {
       setIsCartVisible(false);
-      setStage('payment');
+      setIsPlacingOrder(true);
+      
+      // Add a small delay for better UX and animation visibility
+      await new Promise(resolve => setTimeout(resolve, 1500));
+      
+      // COMMENTED OUT - Skip payment stage and go directly to success
+      // setStage('payment');
+      
+      // Directly create the bill and go to success page
+      await handleConfirmOrder();
+      setIsPlacingOrder(false);
   };
 
   const handleOpenSettings = () => {
@@ -127,9 +143,10 @@ const OrderPage: React.FC<OrderPageProps> = ({ user, vegetables, addBill, onLogo
     // You can add API calls or validation here
   };
 
-  if (stage === 'payment') {
-    return <PaymentPage total={total} onConfirmOrder={handleConfirmOrder} onBack={() => setStage('ordering')} />;
-  }
+  // COMMENTED OUT - Payment page functionality preserved for future use
+  // if (stage === 'payment') {
+  //   return <PaymentPage total={total} onConfirmOrder={handleConfirmOrder} onBack={() => setStage('ordering')} />;
+  // }
   
   if (stage === 'success' && finalBill) {
     return (
@@ -163,10 +180,20 @@ const OrderPage: React.FC<OrderPageProps> = ({ user, vegetables, addBill, onLogo
   }
 
   return (
-    <div className="flex flex-col h-screen bg-slate-50 font-sans">
+    <div className="flex flex-col h-screen bg-slate-50 font-sans relative">
+      {/* Loading Overlay */}
+      {isPlacingOrder && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-2xl p-8 text-center shadow-2xl transform animate-pulse">
+            <div className="w-16 h-16 mx-auto mb-4 animate-spin rounded-full border-4 border-primary-500 border-t-transparent"></div>
+            <h3 className="text-xl font-bold text-slate-800 mb-2">Processing Your Order</h3>
+            <p className="text-slate-600">Please wait while we prepare your order...</p>
+          </div>
+        </div>
+      )}
+      
       <UserHeader user={user} onLogout={onLogout} onOpenSettings={handleOpenSettings} />
-      <div className="flex-1 flex lg:flex-row overflow-hidden">
-        {/* Product List */}
+      <div className="flex-1 flex lg:flex-row overflow-hidden">{/* Product List */}
         <main className="flex-1 overflow-y-auto p-4 sm:p-6 pb-24">
           <div className="mb-4">
             <div className="relative">
@@ -243,6 +270,7 @@ const OrderPage: React.FC<OrderPageProps> = ({ user, vegetables, addBill, onLogo
                 total={total}
                 onUpdateCart={updateCart}
                 onPlaceOrder={handlePlaceOrder}
+                isPlacingOrder={isPlacingOrder}
             />
         </aside>
       </div>
@@ -254,8 +282,13 @@ const OrderPage: React.FC<OrderPageProps> = ({ user, vegetables, addBill, onLogo
                     <span className="text-xs font-semibold text-slate-500">{totalItems} {totalItems > 1 ? 'ITEMS' : 'ITEM'}</span>
                     <p className="text-xl font-bold text-slate-800">₹{total.toFixed(2)}</p>
                 </div>
-                <Button onClick={() => setIsCartVisible(true)} size="md">
-                    View Order
+                <Button 
+                    onClick={() => setIsCartVisible(true)} 
+                    size="md"
+                    className="relative overflow-hidden transition-all duration-300 transform hover:scale-105 hover:shadow-lg animate-bounce"
+                >
+                    <span>View Order</span>
+                    <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white to-transparent opacity-0 hover:opacity-20 transform -skew-x-12 transition-all duration-1000 hover:translate-x-full"></div>
                 </Button>
             </div>
         </footer>
@@ -268,6 +301,7 @@ const OrderPage: React.FC<OrderPageProps> = ({ user, vegetables, addBill, onLogo
         total={total}
         onUpdateCart={updateCart}
         onPlaceOrder={handlePlaceOrder}
+        isPlacingOrder={isPlacingOrder}
       />
     </div>
   );
