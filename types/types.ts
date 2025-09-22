@@ -20,7 +20,7 @@ export interface Bill {
   total: number;
   customerName: string;
   paymentScreenshot?: string; // base64 string
-  status: 'pending' | 'completed';
+  status: 'pending' | 'packed' | 'delivered';
 }
 
 export interface User {

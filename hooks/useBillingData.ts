@@ -29,9 +29,28 @@ export const useBillingData = () => {
     // 1. You would start a Firebase transaction.
     // 2. Create a new bill document in your 'bills' collection.
     
+    // Generate invoice number in format: ESdatemonthyear-ordernumber
+    const now = new Date();
+    const day = now.getDate().toString().padStart(2, '0');
+    const month = (now.getMonth() + 1).toString().padStart(2, '0');
+    const year = now.getFullYear();
+    const datePrefix = `ES${day}${month}${year}`;
+    
+    // Count existing bills for today to generate order number
+    const todayStart = new Date(year, now.getMonth(), now.getDate(), 0, 0, 0);
+    const todayEnd = new Date(year, now.getMonth(), now.getDate(), 23, 59, 59);
+    
+    const todayBillsCount = bills.filter(bill => {
+      const billDate = new Date(bill.date);
+      return billDate >= todayStart && billDate <= todayEnd;
+    }).length;
+    
+    const orderNumber = (todayBillsCount + 1).toString().padStart(3, '0');
+    const invoiceId = `${datePrefix}-${orderNumber}`;
+    
     const newBill: Bill = {
       ...newBillData,
-      id: `bill${Date.now()}`,
+      id: invoiceId,
       date: new Date().toISOString(),
       status: 'pending', // Default status
     };
@@ -63,7 +82,7 @@ export const useBillingData = () => {
     // The function returns the created bill, which is good practice.
     return newBill;
     // --- END FIREBASE INTEGRATION POINT ---
-  }, []);
+  }, [bills]);
 
   const updateBill = useCallback((billId: string, updates: Partial<Bill>) => {
     setBills(prev =>

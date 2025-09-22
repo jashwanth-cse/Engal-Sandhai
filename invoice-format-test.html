@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Invoice Number Format Test</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-100 p-6">
+    <div class="max-w-4xl mx-auto space-y-6">
+        <h1 class="text-3xl font-bold text-slate-800">Invoice Number Format Test</h1>
+        
+        <div class="bg-white rounded-xl shadow-lg p-6">
+            <h2 class="text-xl font-semibold text-slate-800 mb-4">New Format: ESdatemonthyear-ordernumber</h2>
+            
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div class="space-y-4">
+                    <h3 class="text-lg font-medium text-slate-700">Format Breakdown</h3>
+                    <div class="space-y-2 text-sm">
+                        <div class="flex items-center gap-2">
+                            <span class="px-2 py-1 bg-blue-100 text-blue-800 rounded font-mono">ES</span>
+                            <span class="text-slate-600">= Engal Santhai prefix</span>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <span class="px-2 py-1 bg-green-100 text-green-800 rounded font-mono">22</span>
+                            <span class="text-slate-600">= Date (22nd)</span>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <span class="px-2 py-1 bg-yellow-100 text-yellow-800 rounded font-mono">09</span>
+                            <span class="text-slate-600">= Month (September)</span>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <span class="px-2 py-1 bg-purple-100 text-purple-800 rounded font-mono">2025</span>
+                            <span class="text-slate-600">= Year (2025)</span>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <span class="px-2 py-1 bg-red-100 text-red-800 rounded font-mono">-001</span>
+                            <span class="text-slate-600">= 3-digit zero-padded order number (001, 002, 003...)</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="space-y-4">
+                    <h3 class="text-lg font-medium text-slate-700">Example Invoice Numbers</h3>
+                    <div class="space-y-2">
+                        <div class="p-3 bg-slate-50 rounded border-l-4 border-blue-500">
+                            <div class="font-mono text-lg text-slate-800">ES22092025-001</div>
+                            <div class="text-sm text-slate-600">First order on September 22, 2025</div>
+                        </div>
+                        <div class="p-3 bg-slate-50 rounded border-l-4 border-green-500">
+                            <div class="font-mono text-lg text-slate-800">ES22092025-002</div>
+                            <div class="text-sm text-slate-600">Second order on September 22, 2025</div>
+                        </div>
+                        <div class="p-3 bg-slate-50 rounded border-l-4 border-purple-500">
+                            <div class="font-mono text-lg text-slate-800">ES23092025-001</div>
+                            <div class="text-sm text-slate-600">First order on September 23, 2025 (new day resets)</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Live Generator Demo -->
+        <div class="bg-white rounded-xl shadow-lg p-6">
+            <h2 class="text-xl font-semibold text-slate-800 mb-4">Live Invoice Number Generator</h2>
+            
+            <div class="flex flex-col sm:flex-row gap-4 items-end">
+                <div class="flex-1">
+                    <label class="block text-sm font-medium text-slate-700 mb-1">Select Date</label>
+                    <input type="date" id="dateInput" class="w-full px-3 py-2 border border-slate-300 rounded-md focus:ring-blue-500 focus:border-blue-500">
+                </div>
+                <div class="flex-1">
+                    <label class="block text-sm font-medium text-slate-700 mb-1">Order Number</label>
+                    <input type="number" id="orderInput" min="1" max="999" value="1" class="w-full px-3 py-2 border border-slate-300 rounded-md focus:ring-blue-500 focus:border-blue-500">
+                </div>
+                <button onclick="generateInvoice()" class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors">
+                    Generate
+                </button>
+            </div>
+            
+            <div class="mt-6 p-4 bg-slate-50 rounded-lg">
+                <label class="block text-sm font-medium text-slate-700 mb-2">Generated Invoice Number:</label>
+                <div id="generatedInvoice" class="text-2xl font-mono text-slate-800 bg-white p-3 rounded border">
+                    ES22092025-001
+                </div>
+            </div>
+        </div>
+
+        <!-- Technical Implementation -->
+        <div class="bg-white rounded-xl shadow-lg p-6">
+            <h2 class="text-xl font-semibold text-slate-800 mb-4">Technical Implementation</h2>
+            
+            <div class="bg-slate-900 text-slate-100 p-4 rounded-lg overflow-x-auto">
+                <pre class="text-sm"><code>// Generate invoice number in format: ESdatemonthyear-ordernumber
+const now = new Date();
+const day = now.getDate().toString().padStart(2, '0');
+const month = (now.getMonth() + 1).toString().padStart(2, '0');
+const year = now.getFullYear();
+const datePrefix = `ES${day}${month}${year}`;
+
+// Count existing bills for today to generate order number
+const todayStart = new Date(year, now.getMonth(), now.getDate(), 0, 0, 0);
+const todayEnd = new Date(year, now.getMonth(), now.getDate(), 23, 59, 59);
+
+const todayBillsCount = bills.filter(bill => {
+  const billDate = new Date(bill.date);
+  return billDate >= todayStart && billDate <= todayEnd;
+}).length;
+
+const orderNumber = (todayBillsCount + 1).toString().padStart(3, '0');
+const invoiceId = `${datePrefix}-${orderNumber}`;</code></pre>
+            </div>
+            
+            <div class="mt-4 p-4 bg-green-50 rounded-lg">
+                <h3 class="text-lg font-medium text-green-800 mb-2">Key Features:</h3>
+                <ul class="text-green-700 space-y-1 text-sm">
+                    <li>✅ Automatic date formatting with zero padding</li>
+                    <li>✅ 3-digit zero-padded order numbers (001-999)</li>
+                    <li>✅ Sequential daily numbering (resets each day)</li>
+                    <li>✅ Counts existing bills to prevent duplicates</li>
+                    <li>✅ Professional invoice format for business use</li>
+                    <li>✅ Easy to sort and filter by date</li>
+                    <li>✅ Supports up to 999 orders per day</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Set today's date as default
+        document.getElementById('dateInput').value = new Date().toISOString().split('T')[0];
+        
+        function generateInvoice() {
+            const dateInput = document.getElementById('dateInput').value;
+            const orderNumber = document.getElementById('orderInput').value;
+            
+            if (!dateInput || !orderNumber) {
+                alert('Please fill in all fields');
+                return;
+            }
+            
+            const date = new Date(dateInput);
+            const day = date.getDate().toString().padStart(2, '0');
+            const month = (date.getMonth() + 1).toString().padStart(2, '0');
+            const year = date.getFullYear();
+            
+            const invoiceNumber = `ES${day}${month}${year}-${orderNumber.toString().padStart(3, '0')}`;
+            
+            document.getElementById('generatedInvoice').textContent = invoiceNumber;
+            
+            // Add some visual feedback
+            const resultDiv = document.getElementById('generatedInvoice');
+            resultDiv.classList.add('text-blue-600', 'border-blue-300');
+            setTimeout(() => {
+                resultDiv.classList.remove('text-blue-600', 'border-blue-300');
+            }, 2000);
+        }
+        
+        // Auto-generate on input change
+        document.getElementById('dateInput').addEventListener('change', generateInvoice);
+        document.getElementById('orderInput').addEventListener('input', generateInvoice);
+    </script>
+</body>
+</html>

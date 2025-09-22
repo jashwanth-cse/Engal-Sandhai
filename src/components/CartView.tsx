@@ -2,7 +2,7 @@
 import React from 'react';
 import type { BillItem } from '../../types/types';
 import Button from './ui/Button.tsx';
-import { ShoppingCartIcon, XMarkIcon, MinusIcon, PlusIcon } from './ui/Icon.tsx';
+import { ShoppingCartIcon, XMarkIcon, MinusIcon, PlusIcon, CheckCircleIcon } from './ui/Icon.tsx';
 
 type CartItemDetails = BillItem & { name: string; icon: string; pricePerKg: number; stockKg: number; };
 
@@ -14,9 +14,10 @@ interface CartViewProps {
   cartItems: CartItemDetails[];
   total: number;
   onUpdateCart: (vegId: string, quantity: number) => void;
+  isPlacingOrder?: boolean;
 }
 
-const CartContent: React.FC<Omit<CartViewProps, 'isOpen'>> = ({ cartItems, total, onUpdateCart, onPlaceOrder, isDesktop, onClose }) => {
+const CartContent: React.FC<Omit<CartViewProps, 'isOpen'>> = ({ cartItems, total, onUpdateCart, onPlaceOrder, isDesktop, onClose, isPlacingOrder = false }) => {
     return (
         <div className="flex flex-col h-full bg-white">
             <div className={`flex items-center justify-between p-4 sm:p-6 border-b border-slate-200 ${isDesktop ? '' : 'bg-slate-50'}`}>
@@ -88,8 +89,34 @@ const CartContent: React.FC<Omit<CartViewProps, 'isOpen'>> = ({ cartItems, total
                 <span>Total</span>
                 <span>₹{total.toFixed(2)}</span>
                 </div>
-                <Button size="lg" className="w-full" disabled={cartItems.length === 0} onClick={onPlaceOrder}>
-                Place Order
+                <Button 
+                    size="lg" 
+                    className={`w-full relative overflow-hidden transition-all duration-300 transform ${
+                        isPlacingOrder 
+                            ? 'bg-green-500 hover:bg-green-600 scale-105 shadow-lg' 
+                            : cartItems.length === 0 
+                                ? '' 
+                                : 'hover:scale-105 hover:shadow-lg animate-pulse'
+                    }`}
+                    disabled={cartItems.length === 0 || isPlacingOrder} 
+                    onClick={onPlaceOrder}
+                >
+                    <div className="flex items-center justify-center">
+                        {isPlacingOrder ? (
+                            <>
+                                <div className="w-5 h-5 mr-2 animate-spin rounded-full border-2 border-white border-t-transparent"></div>
+                                <span className="animate-pulse">Placing Order...</span>
+                            </>
+                        ) : (
+                            <>
+                                <CheckCircleIcon className="w-5 h-5 mr-2" />
+                                <span>Place Order</span>
+                            </>
+                        )}
+                    </div>
+                    {!isPlacingOrder && cartItems.length > 0 && (
+                        <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white to-transparent opacity-0 hover:opacity-20 transform -skew-x-12 transition-all duration-1000 hover:translate-x-full"></div>
+                    )}
                 </Button>
             </div>
         </div>

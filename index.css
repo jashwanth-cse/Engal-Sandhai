@@ -1,0 +1,49 @@
+/* Status Dropdown Styling */
+.status-dropdown {
+  position: relative;
+}
+
+.status-dropdown select {
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6,9 12,15 18,9'%3e%3c/polyline%3e%3c/svg%3e");
+  background-repeat: no-repeat;
+  background-position: right 8px center;
+  background-size: 16px;
+  padding-right: 32px;
+}
+
+/* Status-specific option colors */
+.status-dropdown select option[value="pending"] {
+  background-color: #fff7ed !important;
+  color: #c2410c !important;
+}
+
+.status-dropdown select option[value="packed"] {
+  background-color: #eff6ff !important;
+  color: #1d4ed8 !important;
+}
+
+.status-dropdown select option[value="delivered"] {
+  background-color: #f0fdf4 !important;
+  color: #15803d !important;
+}
+
+/* Firefox specific styling */
+@-moz-document url-prefix() {
+  .status-dropdown select option[value="pending"] {
+    background-color: #fff7ed;
+    color: #c2410c;
+  }
+  
+  .status-dropdown select option[value="packed"] {
+    background-color: #eff6ff;
+    color: #1d4ed8;
+  }
+  
+  .status-dropdown select option[value="delivered"] {
+    background-color: #f0fdf4;
+    color: #15803d;
+  }
+}

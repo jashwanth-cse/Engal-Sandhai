@@ -42,7 +42,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = (props) => {
     // You can add API calls or validation here
   };
 
-  const handleUpdateBillStatus = (billId: string, status: 'pending' | 'completed') => {
+  const handleUpdateBillStatus = (billId: string, status: 'pending' | 'packed' | 'delivered') => {
     props.updateBill(billId, { status });
   };
 
