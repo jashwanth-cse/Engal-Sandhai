@@ -49,7 +49,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = (props) => {
   const renderContent = () => {
     switch (currentPage) {
       case 'dashboard':
-        return <Dashboard bills={props.bills} vegetables={props.vegetables} onViewOrder={handleViewOrder} onUpdateBillStatus={handleUpdateBillStatus} />;
+        return <Dashboard bills={props.bills} vegetables={props.vegetables} onViewOrder={handleViewOrder} onUpdateBillStatus={handleUpdateBillStatus} onUpdateBill={props.updateBill} />;
       case 'inventory':
         return <Inventory 
                   vegetables={props.vegetables} 
@@ -64,6 +64,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = (props) => {
                   initialBillId={initialBillId} 
                   onClearInitialBill={() => setInitialBillId(null)}
                   onUpdateBillStatus={handleUpdateBillStatus}
+                  onUpdateBill={props.updateBill}
                />;
       case 'settings':
         return <Settings 
@@ -72,7 +73,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = (props) => {
                   onChangePassword={handleChangePassword}
                />;
       default:
-        return <Dashboard bills={props.bills} vegetables={props.vegetables} onViewOrder={handleViewOrder} />;
+        return <Dashboard bills={props.bills} vegetables={props.vegetables} onViewOrder={handleViewOrder} onUpdateBillStatus={handleUpdateBillStatus} onUpdateBill={props.updateBill} />;
     }
   };
 

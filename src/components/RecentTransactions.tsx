@@ -9,9 +9,10 @@ interface RecentTransactionsProps {
   title?: string;
   onViewOrder: (billId: string) => void;
   onUpdateBillStatus?: (billId: string, status: 'pending' | 'packed' | 'delivered') => void;
+  onUpdateBill?: (billId: string, updates: Partial<Bill>) => void;
 }
 
-const RecentTransactions: React.FC<RecentTransactionsProps> = ({ bills, vegetables, title = "All Transactions", onViewOrder, onUpdateBillStatus }) => {
+const RecentTransactions: React.FC<RecentTransactionsProps> = ({ bills, vegetables, title = "All Transactions", onViewOrder, onUpdateBillStatus, onUpdateBill }) => {
   const [filters, setFilters] = useState<FilterState>({
     status: 'all',
     date: ''

@@ -10,9 +10,10 @@ interface OrdersProps {
   initialBillId?: string | null;
   onClearInitialBill: () => void;
   onUpdateBillStatus?: (billId: string, status: 'pending' | 'packed' | 'delivered') => void;
+  onUpdateBill?: (billId: string, updates: Partial<Bill>) => void;
 }
 
-const Orders: React.FC<OrdersProps> = ({ bills, vegetables, initialBillId, onClearInitialBill, onUpdateBillStatus }) => {
+const Orders: React.FC<OrdersProps> = ({ bills, vegetables, initialBillId, onClearInitialBill, onUpdateBillStatus, onUpdateBill }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [viewingBill, setViewingBill] = useState<Bill | null>(null);
   const [filters, setFilters] = useState<FilterState>({
@@ -252,6 +253,7 @@ const Orders: React.FC<OrdersProps> = ({ bills, vegetables, initialBillId, onCle
         onClose={() => setViewingBill(null)} 
         bill={viewingBill}
         vegetableMap={vegetableMap}
+        onUpdateBill={onUpdateBill}
       />
     </div>
   );

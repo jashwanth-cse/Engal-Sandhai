@@ -9,9 +9,10 @@ interface DashboardProps {
     vegetables: Vegetable[];
     onViewOrder: (billId: string) => void;
     onUpdateBillStatus?: (billId: string, status: 'pending' | 'packed' | 'delivered') => void;
+    onUpdateBill?: (billId: string, updates: Partial<Bill>) => void;
 }
 
-const Dashboard: React.FC<DashboardProps> = ({ bills, vegetables, onViewOrder, onUpdateBillStatus }) => {
+const Dashboard: React.FC<DashboardProps> = ({ bills, vegetables, onViewOrder, onUpdateBillStatus, onUpdateBill }) => {
     const [searchTerm, setSearchTerm] = useState('');
 
     // Filter bills based on search term
@@ -51,6 +52,7 @@ const Dashboard: React.FC<DashboardProps> = ({ bills, vegetables, onViewOrder, o
                 title={searchTerm ? `Search Results (${filteredBills.length} found)` : "Recent Transactions"}
                 onViewOrder={onViewOrder}
                 onUpdateBillStatus={onUpdateBillStatus}
+                onUpdateBill={onUpdateBill}
             />
         </div>
     );
