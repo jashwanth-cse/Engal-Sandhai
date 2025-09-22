@@ -20,29 +20,39 @@ const LoginPage: React.FC<LoginPageProps> = ({ error, clearError }) => {
 
   // Initialize Google reCAPTCHA
   useEffect(() => {
-    if ((window as any).grecaptcha && !document.getElementById('recaptcha-container-rendered')) {
-      (window as any).grecaptcha.render('recaptcha-container', {
-        sitekey: '', // replace with your site key
-        theme: 'light',
-      });
-      document.getElementById('recaptcha-container')?.setAttribute('id', 'recaptcha-container-rendered');
-      return;
-    }
-
-    const script = document.createElement('script');
-    script.src = 'https://www.google.com/recaptcha/api.js';
-    script.async = true;
-    script.defer = true;
-    script.onload = () => {
-      if (!document.getElementById('recaptcha-container-rendered')) {
+    const RECAPTCHA_SITE_KEY = '6LeCQ88rAAAAAJS8alTA0099YgvVMV3jGFVwsvLU';
+    
+    const renderRecaptcha = () => {
+      if ((window as any).grecaptcha && !document.getElementById('recaptcha-container-rendered')) {
         (window as any).grecaptcha.render('recaptcha-container', {
-          sitekey: '6LeCQ88rAAAAAJS8alTA0099YgvVMV3jGFVwsvLU',
+          sitekey: RECAPTCHA_SITE_KEY,
           theme: 'light',
         });
         document.getElementById('recaptcha-container')?.setAttribute('id', 'recaptcha-container-rendered');
       }
     };
+
+    // If reCAPTCHA is already loaded, render immediately
+    if ((window as any).grecaptcha) {
+      renderRecaptcha();
+      return;
+    }
+
+    // Otherwise, load the script first
+    const script = document.createElement('script');
+    script.src = 'https://www.google.com/recaptcha/api.js';
+    script.async = true;
+    script.defer = true;
+    script.onload = renderRecaptcha;
     document.body.appendChild(script);
+
+    // Cleanup function
+    return () => {
+      const existingScript = document.querySelector('script[src="https://www.google.com/recaptcha/api.js"]');
+      if (existingScript && existingScript.parentNode) {
+        existingScript.parentNode.removeChild(existingScript);
+      }
+    };
   }, []);
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -85,7 +95,6 @@ if (role === 'admin') {
   console.error('Invalid role assigned:', role);
   alert('Invalid role assigned.');
   await auth.signOut();
-  setCurrentUser(null);
   navigate('/');
 }
 
