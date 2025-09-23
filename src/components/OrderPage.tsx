@@ -33,7 +33,7 @@ type OrderStage = 'ordering' | 'payment' | 'success' | 'settings';
 //     });
 // };
 
-type CartItemDetails = BillItem & { name: string; icon: string; pricePerKg: number; stockKg: number; };
+type CartItemDetails = BillItem & { name: string; icon: string; pricePerKg: number; stockKg: number; unitType: 'KG' | 'COUNT'; };
 
 const OrderPage: React.FC<OrderPageProps> = ({ user, vegetables, addBill, onLogout, onUpdateUser }) => {
   const [stage, setStage] = useState<OrderStage>('ordering');
@@ -92,6 +92,7 @@ const OrderPage: React.FC<OrderPageProps> = ({ user, vegetables, addBill, onLogo
             icon: veg.icon,
             pricePerKg: veg.pricePerKg,
             stockKg: veg.stockKg,
+            unitType: veg.unitType,
         });
         currentTotal += subtotal;
         itemCount += 1;
@@ -270,28 +271,46 @@ const OrderPage: React.FC<OrderPageProps> = ({ user, vegetables, addBill, onLogo
                   <span className="text-3xl mr-3">{veg.icon}</span>
                   <div>
                     <p className="font-semibold text-slate-800">{veg.name}</p>
-                    <p className="text-sm text-slate-500">₹{veg.pricePerKg.toFixed(2)}/kg</p>
+                    <p className="text-sm text-slate-500">₹{veg.pricePerKg.toFixed(2)}/{veg.unitType === 'KG' ? 'kg' : 'piece'}</p>
                   </div>
                 </div>
                 {quantity > 0 ? (
                   <div className="flex items-center space-x-2">
-                    <button onClick={() => updateCart(veg.id, quantity - 0.25)} className="p-2 rounded-full bg-slate-200 text-slate-700 hover:bg-slate-300 disabled:opacity-50" disabled={quantity <= 0}><MinusIcon className="h-4 w-4"/></button>
+                    <button 
+                      onClick={() => {
+                        const decrement = veg.unitType === 'COUNT' ? 1 : 0.25;
+                        updateCart(veg.id, quantity - decrement);
+                      }} 
+                      className="p-2 rounded-full bg-slate-200 text-slate-700 hover:bg-slate-300 disabled:opacity-50" 
+                      disabled={quantity <= 0}
+                    >
+                      <MinusIcon className="h-4 w-4"/>
+                    </button>
                     <input
                       type="number"
-                      value={quantity}
+                      value={veg.unitType === 'COUNT' ? quantity.toFixed(0) : quantity}
                       onChange={(e) => updateCart(veg.id, parseFloat(e.target.value) || 0)}
                       className="w-16 text-center font-bold text-primary-700 border-b-2 border-slate-300 focus:outline-none focus:border-primary-500 transition bg-transparent"
                       min="0"
                       max={veg.stockKg}
-                      step="0.25"
-                      aria-label={`${veg.name} quantity in kg`}
+                      step={veg.unitType === 'COUNT' ? "1" : "0.25"}
+                      aria-label={`${veg.name} quantity in ${veg.unitType === 'KG' ? 'kg' : 'pieces'}`}
                     />
-                    <button onClick={() => updateCart(veg.id, quantity + 0.25)} className="p-2 rounded-full bg-slate-200 text-slate-700 hover:bg-slate-300 disabled:opacity-50" disabled={quantity >= veg.stockKg}><PlusIcon className="h-4 w-4"/></button>
+                    <button 
+                      onClick={() => {
+                        const increment = veg.unitType === 'COUNT' ? 1 : 0.25;
+                        updateCart(veg.id, quantity + increment);
+                      }} 
+                      className="p-2 rounded-full bg-slate-200 text-slate-700 hover:bg-slate-300 disabled:opacity-50" 
+                      disabled={quantity >= veg.stockKg}
+                    >
+                      <PlusIcon className="h-4 w-4"/>
+                    </button>
                   </div>
                 ) : (
                   <Button 
                     onClick={() => {
-                      const defaultQuantity = veg.category === 'Greens' ? 0.25 : 1;
+                      const defaultQuantity = veg.unitType === 'COUNT' ? 1 : (veg.category === 'Greens' ? 0.25 : 1);
                       updateCart(veg.id, defaultQuantity);
                     }} 
                     size="md" 

@@ -15,7 +15,7 @@ interface CreateBillProps {
 
 type CreateBillStage = 'ordering' | 'success';
 
-type CartItemDetails = BillItem & { name: string; icon: string; pricePerKg: number; stockKg: number; };
+type CartItemDetails = BillItem & { name: string; icon: string; pricePerKg: number; stockKg: number; unitType: 'KG' | 'COUNT'; };
 
 const CreateBill: React.FC<CreateBillProps> = ({ user, vegetables, bills, addBill }) => {
   const [stage, setStage] = useState<CreateBillStage>('ordering');
@@ -100,7 +100,8 @@ const CreateBill: React.FC<CreateBillProps> = ({ user, vegetables, bills, addBil
           name: vegetable.name,
           icon: vegetable.icon,
           pricePerKg: vegetable.pricePerKg,
-          stockKg: vegetable.stockKg
+          stockKg: vegetable.stockKg,
+          unitType: vegetable.unitType
         });
         currentTotal += subtotal;
         itemCount++;
@@ -129,7 +130,7 @@ const CreateBill: React.FC<CreateBillProps> = ({ user, vegetables, bills, addBil
     }
     
     const createdBill = await addBill({
-      items: cartItems.map(({name, icon, pricePerKg, stockKg, ...item}) => item),
+      items: cartItems.map(({name, icon, pricePerKg, stockKg, unitType, ...item}) => item),
       total,
       customerName: customerName.trim(),
       // department: department.trim() || undefined, // Commented out for future use
@@ -281,7 +282,7 @@ const CreateBill: React.FC<CreateBillProps> = ({ user, vegetables, bills, addBil
                     <div className="text-3xl">{veg.icon}</div>
                     <div>
                       <h3 className="font-semibold text-slate-800 text-lg">{veg.name}</h3>
-                      <p className="text-slate-600">₹{veg.pricePerKg.toFixed(2)}/kg</p>
+                      <p className="text-slate-600">₹{veg.pricePerKg.toFixed(2)}/{veg.unitType === 'KG' ? 'kg' : 'piece'}</p>
                       {availableStock <= 0 && (
                         <p className="text-sm text-red-500 font-medium">Out of Stock</p>
                       )}
@@ -297,7 +298,10 @@ const CreateBill: React.FC<CreateBillProps> = ({ user, vegetables, bills, addBil
                     ) : quantity > 0 ? (
                       <div className="flex items-center space-x-2">
                         <button 
-                          onClick={() => updateCart(veg.id, quantity - 0.25)} 
+                          onClick={() => {
+                            const decrement = veg.unitType === 'COUNT' ? 1 : 0.25;
+                            updateCart(veg.id, quantity - decrement);
+                          }} 
                           className="w-8 h-8 rounded-full bg-slate-200 text-slate-700 hover:bg-slate-300 disabled:opacity-50 flex items-center justify-center" 
                           disabled={quantity <= 0}
                         >
@@ -305,16 +309,19 @@ const CreateBill: React.FC<CreateBillProps> = ({ user, vegetables, bills, addBil
                         </button>
                         <input
                           type="number"
-                          value={quantity}
+                          value={veg.unitType === 'COUNT' ? quantity.toFixed(0) : quantity}
                           onChange={(e) => updateCart(veg.id, parseFloat(e.target.value) || 0)}
                           className="w-16 text-center font-bold text-slate-800 border border-slate-300 rounded px-2 py-1 focus:outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500"
                           min="0"
                           max={veg.stockKg}
-                          step="0.25"
-                          aria-label={`${veg.name} quantity in kg`}
+                          step={veg.unitType === 'COUNT' ? "1" : "0.25"}
+                          aria-label={`${veg.name} quantity in ${veg.unitType === 'KG' ? 'kg' : 'pieces'}`}
                         />
                         <button 
-                          onClick={() => updateCart(veg.id, quantity + 0.25)} 
+                          onClick={() => {
+                            const increment = veg.unitType === 'COUNT' ? 1 : 0.25;
+                            updateCart(veg.id, quantity + increment);
+                          }} 
                           className="w-8 h-8 rounded-full bg-slate-200 text-slate-700 hover:bg-slate-300 disabled:opacity-50 flex items-center justify-center" 
                           disabled={quantity >= veg.stockKg}
                         >
@@ -324,7 +331,7 @@ const CreateBill: React.FC<CreateBillProps> = ({ user, vegetables, bills, addBil
                     ) : (
                       <Button 
                         onClick={() => {
-                          const defaultQuantity = veg.category === 'Greens' ? 0.25 : 1;
+                          const defaultQuantity = veg.unitType === 'COUNT' ? 1 : (veg.category === 'Greens' ? 0.25 : 1);
                           updateCart(veg.id, defaultQuantity);
                         }} 
                         className="bg-green-600 hover:bg-green-700 text-white px-6 py-2 rounded-lg font-medium flex items-center"

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Routes, Route, useNavigate } from 'react-router-dom';
+import { Routes, Route, useNavigate, Navigate } from 'react-router-dom';
 import LoginPage from './src/components/LoginPage';
 import AdminDashboard from './src/components/AdminDashboard';
 import OrderPage from './src/components/OrderPage';
@@ -17,6 +17,34 @@ const App: React.FC = () => {
   const [loginError, setLoginError] = useState<string | null>(null);
   const billingData = useBillingData();
   const navigate = useNavigate();
+
+  // Disable browser cache for security
+  useEffect(() => {
+    // Prevent page caching
+    window.history.replaceState(null, '', window.location.href);
+    
+    // Add cache control headers via meta tags
+    const metaTag = document.createElement('meta');
+    metaTag.httpEquiv = 'Cache-Control';
+    metaTag.content = 'no-cache, no-store, must-revalidate';
+    document.head.appendChild(metaTag);
+
+    const pragmaTag = document.createElement('meta');
+    pragmaTag.httpEquiv = 'Pragma';
+    pragmaTag.content = 'no-cache';
+    document.head.appendChild(pragmaTag);
+
+    const expiresTag = document.createElement('meta');
+    expiresTag.httpEquiv = 'Expires';
+    expiresTag.content = '0';
+    document.head.appendChild(expiresTag);
+
+    return () => {
+      document.head.removeChild(metaTag);
+      document.head.removeChild(pragmaTag);
+      document.head.removeChild(expiresTag);
+    };
+  }, []);
 
   // Observe Firebase auth state
   useEffect(() => {
@@ -42,38 +70,88 @@ const App: React.FC = () => {
           }
         } else {
           setCurrentUser(null);
+          // Ensure we're on login page when no user
+          const currentPath = window.location.pathname;
+          if (currentPath !== '/') {
+            console.log('Auth state changed: No user, redirecting to login');
+            navigate('/', { replace: true });
+          }
         }
         setLoading(false);
       } catch (err: any) {
         console.error('Error in observeUser:', err);
         setLoginError(err.message || 'Failed to fetch user data');
+        setCurrentUser(null);
+        navigate('/', { replace: true });
         setLoading(false);
       }
     });
 
     return () => unsubscribe();
-  }, []);
+  }, [navigate]);
 
-  // Handle browser back/forward navigation
+  // Enhanced security: Check auth state when window gains focus
   useEffect(() => {
-    const handlePopstate = async () => {
+    const handleFocus = async () => {
       if (currentUser) {
-        console.log('Back/forward navigation detected, logging out');
         try {
-          await auth.signOut();
+          // Verify user is still authenticated
+          const user = auth.currentUser;
+          if (!user) {
+            console.log('Focus check: User no longer authenticated, logging out');
+            setCurrentUser(null);
+            navigate('/', { replace: true });
+          }
+        } catch (err) {
+          console.error('Focus check error:', err);
           setCurrentUser(null);
           navigate('/', { replace: true });
-        } catch (err: any) {
-          console.error('Error during popstate logout:', err);
-          setLoginError(err.message || 'Failed to log out');
         }
       }
     };
 
+    window.addEventListener('focus', handleFocus);
+    return () => window.removeEventListener('focus', handleFocus);
+  }, [currentUser, navigate]);
+
+  // Enhanced browser navigation protection
+  useEffect(() => {
+    const handlePopstate = async (event: PopStateEvent) => {
+      event.preventDefault();
+      
+      if (!currentUser) {
+        console.log('Navigation blocked: No authenticated user');
+        navigate('/', { replace: true });
+        return;
+      }
+
+      const targetPath = window.location.pathname;
+      
+      // Check if user has access to the target path
+      if (targetPath.startsWith('/admin') && currentUser.role !== 'admin') {
+        console.log('Navigation blocked: Non-admin accessing admin route');
+        navigate('/dashboard', { replace: true });
+        return;
+      }
+
+      console.log('Navigation allowed to:', targetPath);
+    };
+
+    // Add beforeunload protection
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      if (currentUser) {
+        event.preventDefault();
+        event.returnValue = 'Are you sure you want to leave? You will be logged out.';
+        return event.returnValue;
+      }
+    };
+
     window.addEventListener('popstate', handlePopstate);
+    window.addEventListener('beforeunload', handleBeforeUnload);
 
     return () => {
       window.removeEventListener('popstate', handlePopstate);
+      window.removeEventListener('beforeunload', handleBeforeUnload);
     };
   }, [currentUser, navigate]);
 
@@ -133,6 +211,10 @@ const App: React.FC = () => {
     try {
       await auth.signOut();
       setCurrentUser(null);
+      setLoginError(null);
+      
+      // Clear browser history to prevent back button access
+      window.history.replaceState(null, '', '/');
       navigate('/', { replace: true });
     } catch (err: any) {
       console.error('Logout error:', err);
@@ -140,18 +222,38 @@ const App: React.FC = () => {
     }
   };
 
-  if (loading) return <div>Loading...</div>;
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-50">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-primary-600 mx-auto"></div>
+          <p className="mt-4 text-lg text-slate-600">Loading application...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <Routes>
       <Route
         path="/"
-        element={<LoginPage error={loginError} clearError={() => setLoginError(null)} />}
+        element={
+          currentUser ? (
+            // If user is already authenticated, redirect to appropriate dashboard
+            currentUser.role === 'admin' ? (
+              <Navigate to="/admin-choice" replace />
+            ) : (
+              <Navigate to="/dashboard" replace />
+            )
+          ) : (
+            <LoginPage error={loginError} clearError={() => setLoginError(null)} />
+          )
+        }
       />
       <Route
         path="/dashboard"
         element={
-          <ProtectedRoute user={currentUser}>
+          <ProtectedRoute user={currentUser} loading={loading}>
             <OrderPage
               user={currentUser}
               vegetables={billingData.vegetables}
@@ -165,7 +267,7 @@ const App: React.FC = () => {
       <Route
         path="/admindashboard"
         element={
-          <ProtectedRoute user={currentUser} requiredRole="admin">
+          <ProtectedRoute user={currentUser} loading={loading} requiredRole="admin">
             <AdminDashboard
               user={currentUser}
               vegetables={billingData.vegetables}
@@ -184,10 +286,15 @@ const App: React.FC = () => {
       <Route
         path="/admin-choice"
         element={
-          <ProtectedRoute user={currentUser} requiredRole="admin">
+          <ProtectedRoute user={currentUser} loading={loading} requiredRole="admin">
             <AdminChoicePage />
           </ProtectedRoute>
         }
+      />
+      {/* Catch-all route - redirect any unknown paths to login */}
+      <Route
+        path="*"
+        element={<Navigate to="/" replace />}
       />
     </Routes>
   );

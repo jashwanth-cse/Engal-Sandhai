@@ -86,7 +86,7 @@ const Inventory: React.FC<InventoryProps> = ({
         <h1 className="text-3xl font-bold text-slate-800">Inventory Management</h1>
         <Button onClick={() => handleOpenModal()}>
             <PlusIcon className="h-5 w-5 mr-2" />
-            Add Vegetable
+            Add Stock
         </Button>
       </div>
 
@@ -97,6 +97,7 @@ const Inventory: React.FC<InventoryProps> = ({
               <tr>
                 <th scope="col" className="px-6 py-3">Serial No</th>
                 <th scope="col" className="px-6 py-3">Item Name</th>
+                <th scope="col" className="px-6 py-3">Unit Type</th>
                 <th scope="col" className="px-6 py-3">Category</th>
                 <th scope="col" className="px-6 py-3 text-right">Price</th>
                 <th scope="col" className="px-6 py-3 text-right">Total Stock</th>
@@ -120,11 +121,22 @@ const Inventory: React.FC<InventoryProps> = ({
                         {veg.name}
                     </div>
                   </th>
+                  <td className="px-6 py-4">
+                    <span className={`px-2 py-1 text-xs font-semibold rounded-full ${
+                      veg.unitType === 'KG' ? 'bg-blue-100 text-blue-800' : 'bg-green-100 text-green-800'
+                    }`}>
+                      {veg.unitType}
+                    </span>
+                  </td>
                   <td className="px-6 py-4">{veg.category}</td>
-                  <td className="px-6 py-4 text-right">₹{veg.pricePerKg.toFixed(2)}/kg</td>
-                  <td className="px-6 py-4 text-right font-semibold">{veg.totalStockKg.toFixed(1)} kg</td>
+                  <td className="px-6 py-4 text-right">
+                    ₹{veg.pricePerKg.toFixed(2)}/{veg.unitType === 'KG' ? 'kg' : 'piece'}
+                  </td>
+                  <td className="px-6 py-4 text-right font-semibold">
+                    {veg.totalStockKg.toFixed(veg.unitType === 'KG' ? 1 : 0)} {veg.unitType === 'KG' ? 'kg' : 'pieces'}
+                  </td>
                   <td className={`px-6 py-4 text-right font-semibold ${isLowStock ? 'text-red-600' : 'text-green-600'}`}>
-                    {availableStock.toFixed(1)} kg
+                    {availableStock.toFixed(veg.unitType === 'KG' ? 1 : 0)} {veg.unitType === 'KG' ? 'kg' : 'pieces'}
                     {isLowStock && availableStock > 0 && <span className="ml-1 text-xs">⚠️</span>}
                     {availableStock === 0 && <span className="ml-1 text-xs">❌</span>}
                   </td>

@@ -5,7 +5,7 @@ import Button from './ui/Button.tsx';
 import { ShoppingCartIcon, XMarkIcon, MinusIcon, PlusIcon, CheckCircleIcon } from './ui/Icon.tsx';
 import { formatRoundedTotal } from '../utils/roundUtils';
 
-type CartItemDetails = BillItem & { name: string; icon: string; pricePerKg: number; stockKg: number; };
+type CartItemDetails = BillItem & { name: string; icon: string; pricePerKg: number; stockKg: number; unitType: 'KG' | 'COUNT'; };
 
 interface CartViewProps {
   isOpen?: boolean;
@@ -54,9 +54,11 @@ const CartContent: React.FC<Omit<CartViewProps, 'isOpen'>> = ({ cartItems, total
                             <div>
                               <p className="font-semibold text-slate-800">{item.name}</p>
                               {isDesktop ? (
-                                <p className="text-sm text-slate-500">{item.quantityKg} kg &times; ₹{item.pricePerKg.toFixed(2)}/kg</p>
+                                <p className="text-sm text-slate-500">
+                                  {item.unitType === 'COUNT' ? item.quantityKg.toFixed(0) : item.quantityKg} {item.unitType === 'KG' ? 'kg' : 'pieces'} &times; ₹{item.pricePerKg.toFixed(2)}/{item.unitType === 'KG' ? 'kg' : 'piece'}
+                                </p>
                               ) : (
-                                <p className="text-sm text-slate-500">₹{item.pricePerKg.toFixed(2)} / kg</p>
+                                <p className="text-sm text-slate-500">₹{item.pricePerKg.toFixed(2)} / {item.unitType === 'KG' ? 'kg' : 'piece'}</p>
                               )}
                             </div>
                           </div>
@@ -65,20 +67,34 @@ const CartContent: React.FC<Omit<CartViewProps, 'isOpen'>> = ({ cartItems, total
                         {!isDesktop && (
                             <div className="flex justify-end items-center mt-2">
                                 <div className="flex items-center border border-slate-300 rounded-md overflow-hidden h-9">
-                                    <button onClick={() => onUpdateCart(item.vegetableId, item.quantityKg - 0.25)} className="px-3 h-full flex items-center justify-center bg-slate-50 hover:bg-slate-200 text-slate-700 disabled:opacity-50" disabled={item.quantityKg <= 0}>
+                                    <button 
+                                        onClick={() => {
+                                            const decrement = item.unitType === 'COUNT' ? 1 : 0.25;
+                                            onUpdateCart(item.vegetableId, item.quantityKg - decrement);
+                                        }} 
+                                        className="px-3 h-full flex items-center justify-center bg-slate-50 hover:bg-slate-200 text-slate-700 disabled:opacity-50" 
+                                        disabled={item.quantityKg <= 0}
+                                    >
                                         <MinusIcon className="h-4 w-4"/>
                                     </button>
                                     <input
                                         type="number"
-                                        value={item.quantityKg}
+                                        value={item.unitType === 'COUNT' ? item.quantityKg.toFixed(0) : item.quantityKg}
                                         onChange={(e) => onUpdateCart(item.vegetableId, parseFloat(e.target.value) || 0)}
                                         className="w-16 h-full text-center font-bold text-primary-700 focus:outline-none bg-white border-x border-slate-300"
                                         min="0"
                                         max={item.stockKg}
-                                        step="0.25"
-                                        aria-label={`${item.name} quantity in kg`}
+                                        step={item.unitType === 'COUNT' ? "1" : "0.25"}
+                                        aria-label={`${item.name} quantity in ${item.unitType === 'KG' ? 'kg' : 'pieces'}`}
                                     />
-                                    <button onClick={() => onUpdateCart(item.vegetableId, item.quantityKg + 0.25)} className="px-3 h-full flex items-center justify-center bg-slate-50 hover:bg-slate-200 text-slate-700 disabled:opacity-50" disabled={item.quantityKg >= item.stockKg}>
+                                    <button 
+                                        onClick={() => {
+                                            const increment = item.unitType === 'COUNT' ? 1 : 0.25;
+                                            onUpdateCart(item.vegetableId, item.quantityKg + increment);
+                                        }} 
+                                        className="px-3 h-full flex items-center justify-center bg-slate-50 hover:bg-slate-200 text-slate-700 disabled:opacity-50" 
+                                        disabled={item.quantityKg >= item.stockKg}
+                                    >
                                         <PlusIcon className="h-4 w-4"/>
                                     </button>
                                 </div>

@@ -1,6 +1,7 @@
 export interface Vegetable {
   id: string;
   name: string;
+  unitType: 'KG' | 'COUNT'; // Unit type for stock tracking
   pricePerKg: number;
   totalStockKg: number; // Total stock set by admin
   stockKg: number; // Available stock (dynamically calculated)
