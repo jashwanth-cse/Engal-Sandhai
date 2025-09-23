@@ -39,6 +39,8 @@ export const subscribeToVegetables = (
 export const addVegetableToDb = async (
   vegetable: Omit<Vegetable, 'id'>
 ): Promise<string> => {
+  const now = new Date().toISOString();
+  // TODO: Replace placeholders with actual user info from auth context
   const docRef = await addDoc(vegetablesCol, {
     name: vegetable.name,
     unitType: vegetable.unitType,
@@ -47,12 +49,19 @@ export const addVegetableToDb = async (
     stockKg: vegetable.stockKg,
     category: vegetable.category,
     icon: vegetable.icon,
+    createdAt: now,
+    updatedAt: now,
+    createdBy: 'SECETCS033', // placeholder
+    updatedBy: 'SECETCS033', // placeholder
+    role: 'admin', // placeholder
   });
   return docRef.id;
 };
 
 export const updateVegetableInDb = async (vegetable: Vegetable): Promise<void> => {
   const ref = doc(db, 'vegetables', vegetable.id);
+  const now = new Date().toISOString();
+  // TODO: Replace placeholders with actual user info from auth context
   await updateDoc(ref, {
     name: vegetable.name,
     unitType: vegetable.unitType,
@@ -61,6 +70,9 @@ export const updateVegetableInDb = async (vegetable: Vegetable): Promise<void> =
     stockKg: vegetable.stockKg,
     category: vegetable.category,
     icon: vegetable.icon,
+    updatedAt: now,
+    updatedBy: 'SECETCS033', // placeholder
+    role: 'admin', // placeholder
   });
 };
 
