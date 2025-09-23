@@ -25,12 +25,18 @@ const RecentTransactions: React.FC<RecentTransactionsProps> = ({ bills, vegetabl
 
   const vegetableMap = new Map(vegetables.map(v => [v.id, v]));
 
-  const formatItems = (items: BillItem[]) => {
-    if (!items || items.length === 0) return 'No items';
-    return items.map(item => {
-      const vegetable = vegetableMap.get(item.vegetableId);
-      return vegetable ? `${vegetable.name} (${item.quantityKg}kg)` : `Unknown (${item.quantityKg}kg)`;
-    }).join(', ');
+  const formatItems = (items: BillItem[], bags?: number) => {
+    const itemText = items && items.length > 0 
+      ? items.map(item => {
+          const vegetable = vegetableMap.get(item.vegetableId);
+          return vegetable ? `${vegetable.name} (${item.quantityKg}kg)` : `Unknown (${item.quantityKg}kg)`;
+        }).join(', ')
+      : 'No items';
+    
+    if (bags && bags > 0) {
+      return `${itemText}, Bags (${bags})`;
+    }
+    return itemText;
   };
 
   const getStatusStyles = (status: 'pending' | 'packed' | 'delivered') => {
@@ -183,8 +189,8 @@ const RecentTransactions: React.FC<RecentTransactionsProps> = ({ bills, vegetabl
                     <td className="px-6 py-4 font-medium text-slate-900">{bill.customerName}</td>
                     <td className="px-6 py-4 text-slate-600">{bill.department || 'N/A'}</td>
                     <td className="px-6 py-4">{new Date(bill.date).toLocaleDateString()}</td>
-                    <td className="px-6 py-4 text-sm" title={formatItems(bill.items || [])}>
-                      {(bill.items || []).length} {(bill.items || []).length === 1 ? 'item' : 'items'}
+                    <td className="px-6 py-4 text-sm" title={formatItems(bill.items || [], bill.bags)}>
+                      {(bill.items || []).length} {(bill.items || []).length === 1 ? 'item' : 'items'}{bill.bags && bill.bags > 0 ? ` + ${bill.bags} bag${bill.bags === 1 ? '' : 's'}` : ''}
                     </td>
                     <td className="px-6 py-4">
                       <div className="status-dropdown">

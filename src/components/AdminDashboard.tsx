@@ -78,6 +78,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = (props) => {
       case 'inventory':
         return <Inventory 
                   vegetables={props.vegetables} 
+                  bills={props.bills}
                   addVegetable={props.addVegetable} 
                   updateVegetable={props.updateVegetable}
                   deleteVegetable={props.deleteVegetable}
@@ -102,6 +103,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = (props) => {
         return <CreateBill 
                   user={props.user}
                   vegetables={props.vegetables}
+                  bills={props.bills}
                   addBill={props.addBill}
                />;
       default:

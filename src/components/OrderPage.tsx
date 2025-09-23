@@ -107,6 +107,7 @@ const OrderPage: React.FC<OrderPageProps> = ({ user, vegetables, addBill, onLogo
       total,
       customerName: user.name,
       status: 'pending', // Default status for new orders
+      bags: 0, // Initialize bags count to 0
       // COMMENTED OUT - Payment screenshot field preserved for future use
       // paymentScreenshot: paymentScreenshotBase64,
     });

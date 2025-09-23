@@ -2,7 +2,8 @@ export interface Vegetable {
   id: string;
   name: string;
   pricePerKg: number;
-  stockKg: number;
+  totalStockKg: number; // Total stock set by admin
+  stockKg: number; // Available stock (dynamically calculated)
   category: string;
   icon: string;
 }
@@ -22,6 +23,7 @@ export interface Bill {
   department?: string; // Optional department field
   paymentScreenshot?: string; // base64 string
   status: 'pending' | 'packed' | 'delivered';
+  bags?: number; // Number of bags purchased (₹10 each)
 }
 
 export interface User {

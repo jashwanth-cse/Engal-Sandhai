@@ -9,6 +9,7 @@ import { roundTotal, formatRoundedTotal } from '../utils/roundUtils';
 interface CreateBillProps {
   user: User;
   vegetables: Vegetable[];
+  bills: Bill[]; // Add bills to calculate available stock
   addBill: (newBill: Omit<Bill, 'id' | 'date'>) => Promise<Bill>;
 }
 
@@ -16,7 +17,7 @@ type CreateBillStage = 'ordering' | 'success';
 
 type CartItemDetails = BillItem & { name: string; icon: string; pricePerKg: number; stockKg: number; };
 
-const CreateBill: React.FC<CreateBillProps> = ({ user, vegetables, addBill }) => {
+const CreateBill: React.FC<CreateBillProps> = ({ user, vegetables, bills, addBill }) => {
   const [stage, setStage] = useState<CreateBillStage>('ordering');
   const [cart, setCart] = useState<Map<string, number>>(new Map());
   const [searchTerm, setSearchTerm] = useState('');
@@ -28,6 +29,26 @@ const CreateBill: React.FC<CreateBillProps> = ({ user, vegetables, addBill }) =>
   const [department, setDepartment] = useState('');
 
   const vegetableMap = useMemo(() => new Map(vegetables.map(v => [v.id, v])), [vegetables]);
+
+  // Calculate used stock for each vegetable from bills
+  const usedStock = useMemo(() => {
+    const used = new Map<string, number>();
+    
+    bills.forEach(bill => {
+      bill.items?.forEach(item => {
+        const currentUsed = used.get(item.vegetableId) || 0;
+        used.set(item.vegetableId, currentUsed + item.quantityKg);
+      });
+    });
+    
+    return used;
+  }, [bills]);
+
+  // Calculate available stock for each vegetable
+  const getAvailableStock = useCallback((vegetable: Vegetable) => {
+    const used = usedStock.get(vegetable.id) || 0;
+    return Math.max(0, vegetable.totalStockKg - used);
+  }, [usedStock]);
 
   const categories = useMemo(() => {
     const cats = ['All', ...new Set(vegetables.map(v => v.category))];
@@ -50,11 +71,15 @@ const CreateBill: React.FC<CreateBillProps> = ({ user, vegetables, addBill }) =>
       if (quantity <= 0) {
         newCart.delete(vegId);
       } else {
-        newCart.set(vegId, Math.min(quantity, vegetableMap.get(vegId)?.stockKg || 0));
+        const vegetable = vegetableMap.get(vegId);
+        if (vegetable) {
+          const availableStock = getAvailableStock(vegetable);
+          newCart.set(vegId, Math.min(quantity, availableStock));
+        }
       }
       return newCart;
     });
-  }, [vegetableMap]);
+  }, [vegetableMap, getAvailableStock]);
 
   const { cartItems, total, totalItems } = useMemo(() => {
     const items: CartItemDetails[] = [];
@@ -95,6 +120,7 @@ const CreateBill: React.FC<CreateBillProps> = ({ user, vegetables, addBill }) =>
       customerName: customerName.trim(),
       department: department.trim() || undefined,
       status: 'pending',
+      bags: 0, // Initialize bags count to 0
     });
     setFinalBill(createdBill);
     setStage('success');
@@ -226,7 +252,8 @@ const CreateBill: React.FC<CreateBillProps> = ({ user, vegetables, addBill }) =>
           <div className="space-y-3">
             {filteredVegetables.length > 0 ? filteredVegetables.map(veg => {
               const quantity = cart.get(veg.id) || 0;
-              const isOutOfStock = veg.stockKg <= 0;
+              const availableStock = getAvailableStock(veg);
+              const isOutOfStock = availableStock <= 0;
               
               return (
                 <div key={veg.id} className={`bg-white rounded-lg border p-4 transition-colors flex items-center justify-between ${isOutOfStock ? 'bg-slate-50 opacity-60' : 'hover:shadow-md border-slate-200'}`}>
@@ -235,11 +262,11 @@ const CreateBill: React.FC<CreateBillProps> = ({ user, vegetables, addBill }) =>
                     <div>
                       <h3 className="font-semibold text-slate-800 text-lg">{veg.name}</h3>
                       <p className="text-slate-600">₹{veg.pricePerKg.toFixed(2)}/kg</p>
-                      {veg.stockKg <= 0 && (
+                      {availableStock <= 0 && (
                         <p className="text-sm text-red-500 font-medium">Out of Stock</p>
                       )}
-                      {veg.stockKg > 0 && veg.stockKg <= 5 && (
-                        <p className="text-sm text-amber-600">Low Stock: {veg.stockKg}kg</p>
+                      {availableStock > 0 && availableStock <= 5 && (
+                        <p className="text-sm text-amber-600">Low Stock: {availableStock.toFixed(1)}kg available</p>
                       )}
                     </div>
                   </div>

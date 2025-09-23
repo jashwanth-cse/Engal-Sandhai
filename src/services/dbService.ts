@@ -25,6 +25,7 @@ export const subscribeToVegetables = (
         id: d.id,
         name: data.name,
         pricePerKg: Number(data.pricePerKg) || 0,
+        totalStockKg: Number(data.totalStockKg) || Number(data.stockKg) || 0, // Fallback for existing data
         stockKg: Number(data.stockKg) || 0,
         category: data.category,
         icon: data.icon,
@@ -40,6 +41,7 @@ export const addVegetableToDb = async (
   const docRef = await addDoc(vegetablesCol, {
     name: vegetable.name,
     pricePerKg: vegetable.pricePerKg,
+    totalStockKg: vegetable.totalStockKg,
     stockKg: vegetable.stockKg,
     category: vegetable.category,
     icon: vegetable.icon,
@@ -52,6 +54,7 @@ export const updateVegetableInDb = async (vegetable: Vegetable): Promise<void> =
   await updateDoc(ref, {
     name: vegetable.name,
     pricePerKg: vegetable.pricePerKg,
+    totalStockKg: vegetable.totalStockKg,
     stockKg: vegetable.stockKg,
     category: vegetable.category,
     icon: vegetable.icon,

@@ -19,6 +19,7 @@ const VegetableFormModal: React.FC<VegetableFormModalProps> = ({
   const [formData, setFormData] = useState({
     name: '',
     pricePerKg: '',
+    totalStockKg: '',
     stockKg: '',
     category: '',
     icon: '',
@@ -29,12 +30,13 @@ const VegetableFormModal: React.FC<VegetableFormModalProps> = ({
       setFormData({
         name: vegetableToEdit.name,
         pricePerKg: String(vegetableToEdit.pricePerKg),
+        totalStockKg: String(vegetableToEdit.totalStockKg || vegetableToEdit.stockKg), // Fallback for existing data
         stockKg: String(vegetableToEdit.stockKg),
         category: vegetableToEdit.category,
         icon: vegetableToEdit.icon,
       });
     } else {
-      setFormData({ name: '', pricePerKg: '', stockKg: '', category: '', icon: '' });
+      setFormData({ name: '', pricePerKg: '', totalStockKg: '', stockKg: '', category: '', icon: '' });
     }
   }, [vegetableToEdit, isOpen]);
 
@@ -48,7 +50,8 @@ const VegetableFormModal: React.FC<VegetableFormModalProps> = ({
     const processedData = {
       name: formData.name,
       pricePerKg: parseFloat(formData.pricePerKg),
-      stockKg: parseFloat(formData.stockKg),
+      totalStockKg: parseFloat(formData.totalStockKg),
+      stockKg: parseFloat(formData.totalStockKg), // Set stockKg to totalStockKg initially
       category: formData.category,
       icon: formData.icon,
     };
@@ -87,8 +90,9 @@ const VegetableFormModal: React.FC<VegetableFormModalProps> = ({
               <input type="number" name="pricePerKg" id="pricePerKg" value={formData.pricePerKg} onChange={handleChange} required min="0" step="0.01" className="mt-1 block w-full rounded-md border border-slate-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 bg-white text-slate-900 placeholder-slate-400 px-3 py-2" placeholder="e.g., 150.50" />
             </div>
             <div>
-              <label htmlFor="stockKg" className="block text-sm font-medium text-slate-700">Stock (kg)</label>
-              <input type="number" name="stockKg" id="stockKg" value={formData.stockKg} onChange={handleChange} required min="0" step="0.1" className="mt-1 block w-full rounded-md border border-slate-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 bg-white text-slate-900 placeholder-slate-400 px-3 py-2" placeholder="e.g., 25.5" />
+              <label htmlFor="totalStockKg" className="block text-sm font-medium text-slate-700">Total Stock (kg)</label>
+              <input type="number" name="totalStockKg" id="totalStockKg" value={formData.totalStockKg} onChange={handleChange} required min="0" step="0.1" className="mt-1 block w-full rounded-md border border-slate-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 bg-white text-slate-900 placeholder-slate-400 px-3 py-2" placeholder="e.g., 25.5" />
+              <p className="text-xs text-slate-500 mt-1">Total inventory stock for this item</p>
             </div>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">

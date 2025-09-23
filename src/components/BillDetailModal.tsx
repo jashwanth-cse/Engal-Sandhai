@@ -17,42 +17,55 @@ interface BillDetailModalProps {
   onClose: () => void;
   bill: Bill | null;
   vegetableMap: Map<string, Vegetable>;
+  vegetables: Vegetable[]; // Add vegetables array for adding new items
   onUpdateBill?: (billId: string, updates: Partial<Bill>) => void;
   currentUser?: { id: string; name: string; role: string; email?: string };
 }
 
-const BillDetailModal: React.FC<BillDetailModalProps> = ({ isOpen, onClose, bill, vegetableMap, onUpdateBill, currentUser }) => {
+const BillDetailModal: React.FC<BillDetailModalProps> = ({ isOpen, onClose, bill, vegetableMap, vegetables, onUpdateBill, currentUser }) => {
   const [isImagePreviewOpen, setIsImagePreviewOpen] = useState(false);
   const [editedItems, setEditedItems] = useState<BillItem[]>([]);
   const [calculatedTotal, setCalculatedTotal] = useState(0);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [bagCount, setBagCount] = useState(0);
+  const [showAddVegetables, setShowAddVegetables] = useState(false);
+  
+  const BAG_PRICE = 10; // ₹10 per bag
   
   // Initialize edited items when bill changes
   useEffect(() => {
     if (bill) {
       setEditedItems([...bill.items]);
+      setBagCount(bill.bags || 0);
       setCalculatedTotal(roundTotal(bill.total));
       setHasUnsavedChanges(false);
     }
   }, [bill]);
   
-  // Recalculate total when items change
+  // Recalculate total when items or bags change
   useEffect(() => {
-    const newTotal = editedItems.reduce((sum, item) => sum + item.subtotal, 0);
+    const itemsTotal = editedItems.reduce((sum, item) => sum + item.subtotal, 0);
+    const bagsTotal = bagCount * BAG_PRICE;
+    const newTotal = itemsTotal + bagsTotal;
     const roundedTotal = roundTotal(newTotal);
     setCalculatedTotal(roundedTotal);
     
     // Check if there are unsaved changes
     if (bill) {
-      const hasChanges = roundedTotal !== roundTotal(bill.total) || 
+      const originalItemsTotal = bill.items.reduce((sum, item) => sum + item.subtotal, 0);
+      const originalBagsTotal = (bill.bags || 0) * BAG_PRICE;
+      const originalTotal = roundTotal(originalItemsTotal + originalBagsTotal);
+      
+      const hasChanges = roundedTotal !== originalTotal || 
+        bagCount !== (bill.bags || 0) ||
         editedItems.some((item, index) => 
           item.quantityKg !== bill.items[index]?.quantityKg ||
           item.subtotal !== bill.items[index]?.subtotal
         );
       setHasUnsavedChanges(hasChanges);
     }
-  }, [editedItems, bill]);
+  }, [editedItems, bagCount, bill]);
   
   if (!isOpen || !bill) return null;
 
@@ -75,6 +88,48 @@ const BillDetailModal: React.FC<BillDetailModalProps> = ({ isOpen, onClose, bill
     // Note: We don't auto-save here, admin needs to click save button
   };
 
+  const handleBagCountChange = (increment: boolean) => {
+    setBagCount(prev => {
+      const newCount = increment ? prev + 1 : Math.max(0, prev - 1);
+      return newCount;
+    });
+  };
+
+  const handleAddVegetable = (vegetableId: string, quantity: number) => {
+    const vegetable = vegetableMap.get(vegetableId);
+    if (!vegetable || quantity <= 0) return;
+
+    const existingItemIndex = editedItems.findIndex(item => item.vegetableId === vegetableId);
+    
+    if (existingItemIndex >= 0) {
+      // Update existing item
+      const newItems = [...editedItems];
+      const newQuantity = newItems[existingItemIndex].quantityKg + quantity;
+      newItems[existingItemIndex] = {
+        ...newItems[existingItemIndex],
+        quantityKg: newQuantity,
+        subtotal: roundTotal(newQuantity * vegetable.pricePerKg)
+      };
+      setEditedItems(newItems);
+    } else {
+      // Add new item
+      const newItem: BillItem = {
+        vegetableId,
+        quantityKg: quantity,
+        subtotal: roundTotal(quantity * vegetable.pricePerKg)
+      };
+      setEditedItems(prev => [...prev, newItem]);
+    }
+  };
+
+  const handleRemoveVegetable = (vegetableId: string) => {
+    setEditedItems(prev => prev.filter(item => item.vegetableId !== vegetableId));
+  };
+
+  const getAvailableVegetables = () => {
+    return vegetables.filter(veg => !editedItems.some(item => item.vegetableId === veg.id));
+  };
+
   const handleSaveChanges = async () => {
     if (!onUpdateBill || !bill || !hasUnsavedChanges) return;
     
@@ -82,7 +137,8 @@ const BillDetailModal: React.FC<BillDetailModalProps> = ({ isOpen, onClose, bill
     try {
       await onUpdateBill(bill.id, {
         items: editedItems,
-        total: calculatedTotal
+        total: calculatedTotal,
+        bags: bagCount
       });
       setHasUnsavedChanges(false);
     } catch (error) {
@@ -179,6 +235,19 @@ const BillDetailModal: React.FC<BillDetailModalProps> = ({ isOpen, onClose, bill
         y += 7;
     });
 
+    // Add bags if any
+    if (bagCount > 0) {
+        const serialNo = (editedItems.length + 1).toString();
+        const bagTotal = (bagCount * BAG_PRICE).toFixed(2);
+        
+        doc.text(serialNo, 18, y, { align: 'center' });
+        doc.text('Shopping Bag', 32, y);
+        doc.text(bagCount.toString(), 120, y, { align: 'right' });
+        doc.text(BAG_PRICE.toFixed(2), 155, y, { align: 'right' });
+        doc.text(bagTotal, 195, y, { align: 'right' });
+        y += 7;
+    }
+
     // Total - Use calculatedTotal instead of bill.total
     const totalY = y + 5;
     doc.line(120, totalY, doc.internal.pageSize.getWidth() - 14, totalY);
@@ -258,6 +327,7 @@ const BillDetailModal: React.FC<BillDetailModalProps> = ({ isOpen, onClose, bill
                             <th scope="col" className="px-4 py-2 text-right">Qty (kg)</th>
                             <th scope="col" className="px-4 py-2 text-right">Rate</th>
                             <th scope="col" className="px-4 py-2 text-right">Subtotal</th>
+                            <th scope="col" className="px-4 py-2 text-center">Action</th>
                         </tr>
                         </thead>
                         <tbody>
@@ -284,12 +354,85 @@ const BillDetailModal: React.FC<BillDetailModalProps> = ({ isOpen, onClose, bill
                                         </td>
                                         <td className="px-4 py-3 text-right">₹{vegetable?.pricePerKg.toFixed(2)}</td>
                                         <td className="px-4 py-3 text-right font-semibold text-primary-600">₹{item.subtotal.toFixed(2)}</td>
+                                        <td className="px-4 py-3 text-center">
+                                            <button
+                                                onClick={() => handleRemoveVegetable(item.vegetableId)}
+                                                className="text-red-600 hover:text-red-800 font-semibold px-2 py-1 rounded hover:bg-red-50"
+                                                title="Remove item"
+                                            >
+                                                ✕
+                                            </button>
+                                        </td>
                                     </tr>
                                 );
                             })}
                         </tbody>
                     </table>
                  </div>
+            </div>
+
+            {/* Add Vegetables Section */}
+            <div className="border-t border-slate-200 pt-4 mt-4">
+                <div className="flex items-center justify-between mb-4">
+                    <h4 className="text-lg font-semibold text-slate-800">Add Vegetables</h4>
+                    <Button
+                        onClick={() => setShowAddVegetables(!showAddVegetables)}
+                        className="bg-primary-600 hover:bg-primary-700 text-white px-4 py-2"
+                    >
+                        {showAddVegetables ? 'Hide' : 'Add Items'}
+                    </Button>
+                </div>
+                
+                {showAddVegetables && (
+                    <div className="bg-slate-50 rounded-lg p-4 space-y-3">
+                        {getAvailableVegetables().length > 0 ? (
+                            getAvailableVegetables().map(veg => (
+                                <VegetableAddRow
+                                    key={veg.id}
+                                    vegetable={veg}
+                                    onAdd={(quantity) => {
+                                        handleAddVegetable(veg.id, quantity);
+                                        setShowAddVegetables(false);
+                                    }}
+                                />
+                            ))
+                        ) : (
+                            <p className="text-slate-500 text-center py-4">All available vegetables are already in this order</p>
+                        )}
+                    </div>
+                )}
+            </div>
+
+            {/* Bag Management Section */}
+            <div className="border-t border-slate-200 pt-4 mt-4">
+                <div className="flex items-center justify-between">
+                    <div>
+                        <h4 className="text-lg font-semibold text-slate-800">Shopping Bags</h4>
+                        <p className="text-sm text-slate-500">₹{BAG_PRICE} per bag</p>
+                    </div>
+                    <div className="flex items-center gap-3">
+                        <button
+                            onClick={() => handleBagCountChange(false)}
+                            disabled={bagCount <= 0}
+                            className="w-8 h-8 rounded-full bg-red-500 hover:bg-red-600 disabled:bg-slate-300 disabled:cursor-not-allowed text-white flex items-center justify-center font-semibold"
+                        >
+                            -
+                        </button>
+                        <span className="text-xl font-semibold text-slate-800 min-w-[2rem] text-center">
+                            {bagCount}
+                        </span>
+                        <button
+                            onClick={() => handleBagCountChange(true)}
+                            className="w-8 h-8 rounded-full bg-green-500 hover:bg-green-600 text-white flex items-center justify-center font-semibold"
+                        >
+                            +
+                        </button>
+                        <div className="ml-4 text-right">
+                            <p className="text-sm text-slate-500">Bag Total</p>
+                            <p className="font-semibold text-slate-800">₹{bagCount * BAG_PRICE}</p>
+                        </div>
+                    </div>
+                </div>
             </div>
 
             <div className="flex justify-between items-center mt-6 pt-4 border-t border-slate-200">
@@ -325,6 +468,69 @@ const BillDetailModal: React.FC<BillDetailModalProps> = ({ isOpen, onClose, bill
         imageUrl={bill.paymentScreenshot || ''} 
     />
     </>
+  );
+};
+
+// Component for adding vegetables to the order
+interface VegetableAddRowProps {
+  vegetable: Vegetable;
+  onAdd: (quantity: number) => void;
+}
+
+const VegetableAddRow: React.FC<VegetableAddRowProps> = ({ vegetable, onAdd }) => {
+  const [quantity, setQuantity] = useState(0.25);
+
+  const handleAdd = () => {
+    if (quantity > 0) {
+      onAdd(quantity);
+      setQuantity(0.25); // Reset to default
+    }
+  };
+
+  return (
+    <div className="flex items-center justify-between bg-white rounded-lg p-3 border border-slate-200">
+      <div className="flex items-center gap-3">
+        <span className="text-2xl">{vegetable.icon}</span>
+        <div>
+          <h5 className="font-medium text-slate-800">{vegetable.name}</h5>
+          <p className="text-sm text-slate-600">₹{vegetable.pricePerKg.toFixed(2)}/kg</p>
+        </div>
+      </div>
+      
+      <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setQuantity(Math.max(0.25, quantity - 0.25))}
+            className="w-6 h-6 rounded-full bg-slate-200 hover:bg-slate-300 text-slate-700 flex items-center justify-center text-sm font-semibold"
+            disabled={quantity <= 0.25}
+          >
+            -
+          </button>
+          <input
+            type="number"
+            value={quantity}
+            onChange={(e) => setQuantity(Math.max(0.25, parseFloat(e.target.value) || 0.25))}
+            className="w-16 text-center border border-slate-300 rounded px-2 py-1 text-sm"
+            min="0.25"
+            step="0.25"
+          />
+          <button
+            onClick={() => setQuantity(quantity + 0.25)}
+            className="w-6 h-6 rounded-full bg-slate-200 hover:bg-slate-300 text-slate-700 flex items-center justify-center text-sm font-semibold"
+          >
+            +
+          </button>
+          <span className="text-sm text-slate-500">kg</span>
+        </div>
+        
+        <Button
+          onClick={handleAdd}
+          className="bg-green-600 hover:bg-green-700 text-white px-3 py-1 text-sm"
+        >
+          Add ₹{(quantity * vegetable.pricePerKg).toFixed(2)}
+        </Button>
+      </div>
+    </div>
   );
 };
 
