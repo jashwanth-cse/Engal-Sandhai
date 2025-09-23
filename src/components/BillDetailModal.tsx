@@ -208,21 +208,52 @@ const BillDetailModal: React.FC<BillDetailModalProps> = ({ isOpen, onClose, bill
     doc.text(`EMP ID : ${employeeId}`, 14, y);
     y += 10;
     
-    // Table Header
-    doc.setDrawColor(150); // a light grey
-    doc.line(14, y, doc.internal.pageSize.getWidth() - 14, y); // top line
-    y += 6;
+    // Table Header with borders
+    doc.setDrawColor(0); // black lines
+    doc.setLineWidth(0.5);
+    
+    // Table dimensions
+    const tableStartX = 14;
+    const tableEndX = doc.internal.pageSize.getWidth() - 14;
+    const tableWidth = tableEndX - tableStartX;
+    
+    // Column positions (cumulative)
+    const col1End = tableStartX + 20;   // S.No.
+    const col2End = col1End + 70;       // Item  
+    const col3End = col2End + 30;       // Qty
+    const col4End = col3End + 35;       // Rate
+    const col5End = tableEndX;          // Amount
+    
+    const headerHeight = 12;
+    const rowHeight = 10;
+    
+    // Draw table header background and borders
+    const headerY = y;
+    
+    // Header top border
+    doc.line(tableStartX, headerY, tableEndX, headerY);
+    
+    // Header text
     doc.setFont('helvetica', 'bold');
-    doc.text('S.No.', 16, y);
-    doc.text('Item', 32, y);
-    doc.text('Qty (kg)', 120, y, { align: 'right' });
-    doc.text('Rate (Rs.)', 155, y, { align: 'right' });
-    doc.text('Amount (Rs.)', 195, y, { align: 'right' });
-    y += 2;
-    doc.line(14, y, doc.internal.pageSize.getWidth() - 14, y); // bottom line
-    y += 8;
+    doc.text('S.No.', tableStartX + 10, headerY + 7, { align: 'center' });
+    doc.text('Item', tableStartX + 25, headerY + 7);
+    doc.text('Qty (kg)', (col2End + col3End) / 2, headerY + 7, { align: 'center' });
+    doc.text('Rate (Rs.)', (col3End + col4End) / 2, headerY + 7, { align: 'center' });
+    doc.text('Amount (Rs.)', (col4End + col5End) / 2, headerY + 7, { align: 'center' });
+    
+    // Header vertical lines
+    doc.line(tableStartX, headerY, tableStartX, headerY + headerHeight);      // left
+    doc.line(col1End, headerY, col1End, headerY + headerHeight);              // after S.No.
+    doc.line(col2End, headerY, col2End, headerY + headerHeight);              // after Item
+    doc.line(col3End, headerY, col3End, headerY + headerHeight);              // after Qty
+    doc.line(col4End, headerY, col4End, headerY + headerHeight);              // after Rate
+    doc.line(col5End, headerY, col5End, headerY + headerHeight);              // right
+    
+    // Header bottom border
+    y = headerY + headerHeight;
+    doc.line(tableStartX, y, tableEndX, y);
 
-    // Table Items - Use editedItems instead of bill.items
+    // Table Items with proper borders
     doc.setFont('courier', 'normal');
     editedItems.forEach((item, index) => {
         const vegetable = vegetableMap.get(item.vegetableId);
@@ -232,28 +263,30 @@ const BillDetailModal: React.FC<BillDetailModalProps> = ({ isOpen, onClose, bill
         const rate = (vegetable?.pricePerKg || 0).toFixed(2);
         const amount = item.subtotal.toFixed(2);
 
-        doc.text(serialNo, 18, y, { align: 'center' });
-        doc.text(name, 32, y);
-        doc.text(qty, 120, y, { align: 'right' });
-        doc.text(rate, 155, y, { align: 'right' });
-        doc.text(amount, 195, y, { align: 'right' });
-        y += 7;
+        const rowY = y;
+        
+        // Row data
+        doc.text(serialNo, tableStartX + 10, rowY + 7, { align: 'center' });
+        doc.text(name, tableStartX + 22, rowY + 7);
+        doc.text(qty, (col2End + col3End) / 2, rowY + 7, { align: 'center' });
+        doc.text(rate, (col3End + col4End) / 2, rowY + 7, { align: 'center' });
+        doc.text(amount, (col4End + col5End) / 2, rowY + 7, { align: 'center' });
+        
+        // Row vertical lines
+        doc.line(tableStartX, rowY, tableStartX, rowY + rowHeight);      // left
+        doc.line(col1End, rowY, col1End, rowY + rowHeight);              // after S.No.
+        doc.line(col2End, rowY, col2End, rowY + rowHeight);              // after Item
+        doc.line(col3End, rowY, col3End, rowY + rowHeight);              // after Qty
+        doc.line(col4End, rowY, col4End, rowY + rowHeight);              // after Rate
+        doc.line(col5End, rowY, col5End, rowY + rowHeight);              // right
+        
+        y += rowHeight;
+        
+        // Row bottom border
+        doc.line(tableStartX, y, tableEndX, y);
     });
 
-    // Add bags if any (moved to user page)
-    /*
-    if (bagCount > 0) {
-        const serialNo = (editedItems.length + 1).toString();
-        const bagTotal = (bagCount * BAG_PRICE).toFixed(2);
-        
-        doc.text(serialNo, 18, y, { align: 'center' });
-        doc.text('Shopping Bag', 32, y);
-        doc.text(bagCount.toString(), 120, y, { align: 'right' });
-        doc.text(BAG_PRICE.toFixed(2), 155, y, { align: 'right' });
-        doc.text(bagTotal, 195, y, { align: 'right' });
-        y += 7;
-    }
-    */
+    y += 10; // Add space after table
 
     // Total - Use calculatedTotal instead of bill.total
     const totalY = y + 5;
@@ -263,6 +296,28 @@ const BillDetailModal: React.FC<BillDetailModalProps> = ({ isOpen, onClose, bill
     doc.setFontSize(14);
     doc.text('TOTAL:', 122, y);
     doc.text(`Rs. ${roundTotal(calculatedTotal)}`, 195, y, { align: 'right' });
+    
+    // Payment Details Section
+    y += 20;
+    doc.setFontSize(12);
+    doc.setFont('helvetica', 'bold');
+    doc.text('Pay using UPI:', centerX, y, { align: 'center' });
+    y += 10;
+    
+    // UPI ID in a box
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(14);
+    const upiId = 'qualitykannan1962-1@okhdfcbank';
+    const textWidth = doc.getTextWidth(upiId);
+    const boxWidth = textWidth + 10;
+    const boxHeight = 12;
+    const boxX = centerX - boxWidth / 2;
+    const boxY = y - 8;
+    
+    // Draw box around UPI ID
+    doc.setDrawColor(0);
+    doc.rect(boxX, boxY, boxWidth, boxHeight);
+    doc.text(upiId, centerX, y, { align: 'center' });
     
     // Footer
     const footerY = doc.internal.pageSize.getHeight() - 20;
