@@ -18,9 +18,31 @@ const LoginPage: React.FC<LoginPageProps> = ({ error, clearError }) => {
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
 
-  // reCAPTCHA disabled
+  // reCAPTCHA 
   useEffect(() => {
-    // no-op
+    if ((window as any).grecaptcha && !document.getElementById('recaptcha-container-rendered')) {
+      (window as any).grecaptcha.render('recaptcha-container', {
+        sitekey: '6LeCQ88rAAAAAJS8alTA0099YgvVMV3jGFVwsvLU', // replace with your site key
+        theme: 'light',
+      });
+      document.getElementById('recaptcha-container')?.setAttribute('id', 'recaptcha-container-rendered');
+      return;
+    }
+
+    const script = document.createElement('script');
+    script.src = 'https://www.google.com/recaptcha/api.js';
+    script.async = true;
+    script.defer = true;
+    script.onload = () => {
+      if (!document.getElementById('recaptcha-container-rendered')) {
+        (window as any).grecaptcha.render('recaptcha-container', {
+          sitekey: '6LeCQ88rAAAAAJS8alTA0099YgvVMV3jGFVwsvLU',
+          theme: 'light',
+        });
+        document.getElementById('recaptcha-container')?.setAttribute('id', 'recaptcha-container-rendered');
+      }
+    };
+    document.body.appendChild(script);
   }, []);
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -29,11 +51,18 @@ const LoginPage: React.FC<LoginPageProps> = ({ error, clearError }) => {
     setLoading(true);
 
     try {
+      // Verify reCAPTCHA
+      const recaptchaToken = (window as any).grecaptcha?.getResponse();
+      if (!recaptchaToken) {
+        alert('Please complete reCAPTCHA');
+        setLoading(false);
+        return;
+      }
       // Firebase login
       const userCredential = await loginWithEmployeeID(employeeID, phone);
 
       // Fetch role from Firestore
-      const docRef = doc(db, 'users', userCredential.user.uid);
+      const docRef = doc(db, 'users', employeeID); // employeeID is userId
       const docSnap = await getDoc(docRef);
 
       if (!docSnap.exists()) {
@@ -45,18 +74,20 @@ const LoginPage: React.FC<LoginPageProps> = ({ error, clearError }) => {
       const data = docSnap.data();
       const role = data.role;
 
+      // Save userId to localStorage for later use
+      window.localStorage.setItem('userId', employeeID);
+
       // Role-based navigation
-// Role-based navigation
-if (role === 'admin') {
-  navigate('/admin-choice');
-} else if (role === 'faculty') {
-  navigate('/dashboard');
-} else {
-  console.error('Invalid role assigned:', role);
-  alert('Invalid role assigned.');
-  await auth.signOut();
-  navigate('/');
-}
+      if (role === 'admin') {
+        navigate('/admin-choice');
+      } else if (role === 'faculty') {
+        navigate('/dashboard');
+      } else {
+        console.error('Invalid role assigned:', role);
+        alert('Invalid role assigned.');
+        await auth.signOut();
+        navigate('/');
+      }
 
       // reCAPTCHA disabled
     } catch (err: any) {

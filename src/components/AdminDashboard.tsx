@@ -8,6 +8,8 @@ import Orders from './Orders.tsx';
 import Settings from './Settings.tsx';
 import CreateBill from './CreateBill.tsx';
 import { updateUserNameInDb } from '../services/dbService';
+import { db } from '../firebase';
+import { doc, updateDoc } from 'firebase/firestore';
 
 interface AdminDashboardProps {
   user: User;
@@ -67,8 +69,21 @@ const AdminDashboard: React.FC<AdminDashboardProps> = (props) => {
     // You can add API calls or validation here with uppercasePasswords
   };
 
-  const handleUpdateBillStatus = (billId: string, status: 'pending' | 'packed' | 'delivered') => {
+  const handleUpdateBillStatus = async (billId: string, status: 'pending' | 'packed' | 'delivered') => {
     props.updateBill(billId, { status });
+    // Map bill to order in Firestore
+    if (status === 'packed' || status === 'delivered') {
+      // Find corresponding order by billId
+      const orderRef = doc(db, 'orders', billId);
+      await updateDoc(orderRef, {
+        bill: {
+          billId,
+          employeeId: props.user.id,
+          status,
+          updatedAt: new Date(),
+        }
+      });
+    }
   };
 
   const renderContent = () => {

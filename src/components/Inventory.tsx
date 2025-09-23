@@ -4,6 +4,8 @@ import Button from './ui/Button.tsx';
 import { PlusIcon, PencilSquareIcon, TrashIcon } from './ui/Icon.tsx';
 import VegetableFormModal from './VegetableFormModal.tsx';
 import Toast from './ui/Toast.tsx';
+import { db } from '../firebase';
+import { collection, addDoc, doc, updateDoc } from 'firebase/firestore';
 
 interface InventoryProps {
   vegetables: Vegetable[];
@@ -63,13 +65,35 @@ const Inventory: React.FC<InventoryProps> = ({
     setEditingVegetable(null);
   };
 
-  const handleSubmit = (data: Omit<Vegetable, 'id'> | Vegetable) => {
+  const handleSubmit = async (data: Omit<Vegetable, 'id'> | Vegetable) => {
+    const userId = window.localStorage.getItem('userId') || '';
     if ('id' in data) {
       updateVegetable(data);
       showToast(`${data.name} updated successfully!`);
+      // Update stock in Firestore
+      const stockRef = doc(db, 'stocks', data.id);
+      await updateDoc(stockRef, {
+        name: data.name,
+        category: data.category,
+        pricePerKg: data.pricePerKg,
+        totalStockKg: data.totalStockKg,
+        updatedAt: new Date(),
+        updatedBy: userId,
+        role: "admin"
+      });
     } else {
       addVegetable(data);
       showToast(`${data.name} added successfully!`);
+      // Add stock to Firestore
+      await addDoc(collection(db, 'stocks'), {
+        name: data.name,
+        category: data.category,
+        pricePerKg: data.pricePerKg,
+        totalStockKg: data.totalStockKg,
+        createdAt: new Date(),
+        createdBy: userId,
+        role: "admin"
+      });
     }
   };
 
