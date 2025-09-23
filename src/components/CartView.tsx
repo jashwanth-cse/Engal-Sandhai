@@ -19,25 +19,9 @@ import {
 } from "firebase/firestore";
 import { getAuth } from "firebase/auth";
 
-<<<<<<< HEAD
-type CartItemDetails = BillItem & {
-  name: string;
-  icon: string;
-  pricePerKg: number;
-  stockKg: number;
-  subtotal: number;
-  quantityKg: number;
-  vegetableId: string;
-};
-=======
-import React from 'react';
-import type { BillItem } from '../../types/types';
-import Button from './ui/Button.tsx';
-import { ShoppingCartIcon, XMarkIcon, MinusIcon, PlusIcon, CheckCircleIcon } from './ui/Icon.tsx';
-import { formatRoundedTotal } from '../utils/roundUtils';
+
 
 type CartItemDetails = BillItem & { name: string; icon: string; pricePerKg: number; stockKg: number; unitType: 'KG' | 'COUNT'; };
->>>>>>> f946abba9148786386b5cad97ea8f05886676664
 
 interface CartViewProps {
   isOpen?: boolean;
@@ -220,8 +204,6 @@ const CartContent: React.FC<Omit<CartViewProps, "isOpen">> = ({
                         <PlusIcon className="h-4 w-4" />
                       </button>
                     </div>
-<<<<<<< HEAD
-=======
                 ) : (
                   <div className="space-y-3">
                     {cartItems.map(item => (
@@ -280,7 +262,6 @@ const CartContent: React.FC<Omit<CartViewProps, "isOpen">> = ({
                         )}
                       </div>
                     ))}
->>>>>>> f946abba9148786386b5cad97ea8f05886676664
                   </div>
                 )}
               </div>
