@@ -43,6 +43,9 @@ const OrderPage: React.FC<OrderPageProps> = ({ user, vegetables, addBill, onLogo
   const [isCartVisible, setIsCartVisible] = useState(false);
   const [finalBill, setFinalBill] = useState<Bill | null>(null);
   const [isPlacingOrder, setIsPlacingOrder] = useState(false);
+  const [bagCount, setBagCount] = useState(0);
+  
+  const BAG_PRICE = 10; // ₹10 per bag
   
   const vegetableMap = useMemo(() => new Map(vegetables.map(v => [v.id, v])), [vegetables]);
   const categories = useMemo(() => ['All', ...new Set(vegetables.map(v => v.category))], [vegetables]);
@@ -94,9 +97,21 @@ const OrderPage: React.FC<OrderPageProps> = ({ user, vegetables, addBill, onLogo
         itemCount += 1;
       }
     });
+    
+    // Add bag cost to total
+    const bagsTotal = bagCount * BAG_PRICE;
+    const finalTotal = currentTotal + bagsTotal;
+    
     items.sort((a, b) => a.name.localeCompare(b.name));
-    return { cartItems: items, total: roundTotal(currentTotal), totalItems: itemCount };
-  }, [cart, vegetableMap]);
+    return { cartItems: items, total: roundTotal(finalTotal), totalItems: itemCount };
+  }, [cart, vegetableMap, bagCount, BAG_PRICE]);
+
+  const handleBagCountChange = (increment: boolean) => {
+    setBagCount(prev => {
+      const newCount = increment ? prev + 1 : Math.max(0, prev - 1);
+      return newCount;
+    });
+  };
 
   const handleConfirmOrder = useCallback(async () => {
     // COMMENTED OUT - Payment screenshot functionality preserved for future use
@@ -107,14 +122,15 @@ const OrderPage: React.FC<OrderPageProps> = ({ user, vegetables, addBill, onLogo
       total,
       customerName: user.name,
       status: 'pending', // Default status for new orders
-      bags: 0, // Initialize bags count to 0
+      bags: bagCount, // Include bags count
       // COMMENTED OUT - Payment screenshot field preserved for future use
       // paymentScreenshot: paymentScreenshotBase64,
     });
     setFinalBill(createdBill);
     setStage('success');
     setCart(new Map());
-  }, [cartItems, total, addBill, user.name]);
+    setBagCount(0); // Reset bag count
+  }, [cartItems, total, addBill, user.name, bagCount]);
 
   const handlePlaceOrder = async () => {
       setIsCartVisible(false);
@@ -295,6 +311,8 @@ const OrderPage: React.FC<OrderPageProps> = ({ user, vegetables, addBill, onLogo
                 isDesktop={true}
                 cartItems={cartItems}
                 total={total}
+                bagCount={bagCount}
+                onBagCountChange={handleBagCountChange}
                 onUpdateCart={updateCart}
                 onPlaceOrder={handlePlaceOrder}
                 isPlacingOrder={isPlacingOrder}
@@ -326,6 +344,8 @@ const OrderPage: React.FC<OrderPageProps> = ({ user, vegetables, addBill, onLogo
         onClose={() => setIsCartVisible(false)}
         cartItems={cartItems}
         total={total}
+        bagCount={bagCount}
+        onBagCountChange={handleBagCountChange}
         onUpdateCart={updateCart}
         onPlaceOrder={handlePlaceOrder}
         isPlacingOrder={isPlacingOrder}

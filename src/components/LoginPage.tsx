@@ -93,7 +93,7 @@ if (role === 'admin') {
           </div>
           <div>
             <label htmlFor="phone" className="block text-sm font-medium text-slate-700 mb-1">
-              Phone Number
+              Password
             </label>
             <input
               id="phone"
@@ -102,7 +102,7 @@ if (role === 'admin') {
               autoComplete="current-password"
               required
               className="block w-full px-3 py-2 bg-white border border-slate-300 placeholder-slate-400 text-slate-900 rounded-md focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
-              placeholder="Enter your Phone Number"
+              placeholder="Enter your Password"
               value={phone}
               onChange={(e) => setPhone(e.target.value.toUpperCase())}
             />

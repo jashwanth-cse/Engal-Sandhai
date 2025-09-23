@@ -28,44 +28,46 @@ const BillDetailModal: React.FC<BillDetailModalProps> = ({ isOpen, onClose, bill
   const [calculatedTotal, setCalculatedTotal] = useState(0);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
-  const [bagCount, setBagCount] = useState(0);
+  // const [bagCount, setBagCount] = useState(0); // Moved to user page
   const [showAddVegetables, setShowAddVegetables] = useState(false);
   
-  const BAG_PRICE = 10; // ₹10 per bag
+  // const BAG_PRICE = 10; // ₹10 per bag - Moved to user page
   
   // Initialize edited items when bill changes
   useEffect(() => {
     if (bill) {
       setEditedItems([...bill.items]);
-      setBagCount(bill.bags || 0);
+      // setBagCount(bill.bags || 0); // Moved to user page
       setCalculatedTotal(roundTotal(bill.total));
       setHasUnsavedChanges(false);
     }
   }, [bill]);
   
-  // Recalculate total when items or bags change
+  // Recalculate total when items change (bags moved to user page)
   useEffect(() => {
     const itemsTotal = editedItems.reduce((sum, item) => sum + item.subtotal, 0);
-    const bagsTotal = bagCount * BAG_PRICE;
-    const newTotal = itemsTotal + bagsTotal;
+    // const bagsTotal = bagCount * BAG_PRICE; // Moved to user page
+    // const newTotal = itemsTotal + bagsTotal; // Moved to user page
+    const newTotal = itemsTotal;
     const roundedTotal = roundTotal(newTotal);
     setCalculatedTotal(roundedTotal);
     
-    // Check if there are unsaved changes
+    // Check if there are unsaved changes (bags moved to user page)
     if (bill) {
       const originalItemsTotal = bill.items.reduce((sum, item) => sum + item.subtotal, 0);
-      const originalBagsTotal = (bill.bags || 0) * BAG_PRICE;
-      const originalTotal = roundTotal(originalItemsTotal + originalBagsTotal);
+      // const originalBagsTotal = (bill.bags || 0) * BAG_PRICE; // Moved to user page
+      // const originalTotal = roundTotal(originalItemsTotal + originalBagsTotal); // Moved to user page
+      const originalTotal = roundTotal(originalItemsTotal);
       
       const hasChanges = roundedTotal !== originalTotal || 
-        bagCount !== (bill.bags || 0) ||
+        // bagCount !== (bill.bags || 0) || // Moved to user page
         editedItems.some((item, index) => 
           item.quantityKg !== bill.items[index]?.quantityKg ||
           item.subtotal !== bill.items[index]?.subtotal
         );
       setHasUnsavedChanges(hasChanges);
     }
-  }, [editedItems, bagCount, bill]);
+  }, [editedItems, bill]); // Removed bagCount dependency
   
   if (!isOpen || !bill) return null;
 
@@ -88,12 +90,15 @@ const BillDetailModal: React.FC<BillDetailModalProps> = ({ isOpen, onClose, bill
     // Note: We don't auto-save here, admin needs to click save button
   };
 
+  // Bag count change handler - moved to user page
+  /*
   const handleBagCountChange = (increment: boolean) => {
     setBagCount(prev => {
       const newCount = increment ? prev + 1 : Math.max(0, prev - 1);
       return newCount;
     });
   };
+  */
 
   const handleAddVegetable = (vegetableId: string, quantity: number) => {
     const vegetable = vegetableMap.get(vegetableId);
@@ -138,7 +143,7 @@ const BillDetailModal: React.FC<BillDetailModalProps> = ({ isOpen, onClose, bill
       await onUpdateBill(bill.id, {
         items: editedItems,
         total: calculatedTotal,
-        bags: bagCount
+        // bags: bagCount // Moved to user page
       });
       setHasUnsavedChanges(false);
     } catch (error) {
@@ -235,7 +240,8 @@ const BillDetailModal: React.FC<BillDetailModalProps> = ({ isOpen, onClose, bill
         y += 7;
     });
 
-    // Add bags if any
+    // Add bags if any (moved to user page)
+    /*
     if (bagCount > 0) {
         const serialNo = (editedItems.length + 1).toString();
         const bagTotal = (bagCount * BAG_PRICE).toFixed(2);
@@ -247,6 +253,7 @@ const BillDetailModal: React.FC<BillDetailModalProps> = ({ isOpen, onClose, bill
         doc.text(bagTotal, 195, y, { align: 'right' });
         y += 7;
     }
+    */
 
     // Total - Use calculatedTotal instead of bill.total
     const totalY = y + 5;
@@ -403,7 +410,8 @@ const BillDetailModal: React.FC<BillDetailModalProps> = ({ isOpen, onClose, bill
                 )}
             </div>
 
-            {/* Bag Management Section */}
+            {/* Bag Management Section - Moved to user page */}
+            {/*
             <div className="border-t border-slate-200 pt-4 mt-4">
                 <div className="flex items-center justify-between">
                     <div>
@@ -434,6 +442,7 @@ const BillDetailModal: React.FC<BillDetailModalProps> = ({ isOpen, onClose, bill
                     </div>
                 </div>
             </div>
+            */}
 
             <div className="flex justify-between items-center mt-6 pt-4 border-t border-slate-200">
                 <div className="flex gap-3">

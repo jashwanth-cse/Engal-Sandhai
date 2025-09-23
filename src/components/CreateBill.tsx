@@ -26,7 +26,10 @@ const CreateBill: React.FC<CreateBillProps> = ({ user, vegetables, bills, addBil
   const [finalBill, setFinalBill] = useState<Bill | null>(null);
   const [isPlacingOrder, setIsPlacingOrder] = useState(false);
   const [customerName, setCustomerName] = useState('');
-  const [department, setDepartment] = useState('');
+  // const [department, setDepartment] = useState(''); // Commented out for future use
+  const [bagCount, setBagCount] = useState(0);
+  
+  const BAG_PRICE = 10; // ₹10 per bag
 
   const vegetableMap = useMemo(() => new Map(vegetables.map(v => [v.id, v])), [vegetables]);
 
@@ -104,9 +107,20 @@ const CreateBill: React.FC<CreateBillProps> = ({ user, vegetables, bills, addBil
       }
     });
 
+    // Add bag cost to total
+    const bagsTotal = bagCount * BAG_PRICE;
+    const finalTotal = currentTotal + bagsTotal;
+
     items.sort((a, b) => a.name.localeCompare(b.name));
-    return { cartItems: items, total: roundTotal(currentTotal), totalItems: itemCount };
-  }, [cart, vegetableMap]);
+    return { cartItems: items, total: roundTotal(finalTotal), totalItems: itemCount };
+  }, [cart, vegetableMap, bagCount, BAG_PRICE]);
+
+  const handleBagCountChange = (increment: boolean) => {
+    setBagCount(prev => {
+      const newCount = increment ? prev + 1 : Math.max(0, prev - 1);
+      return newCount;
+    });
+  };
 
   const handleConfirmOrder = useCallback(async () => {
     if (!customerName.trim()) {
@@ -118,16 +132,17 @@ const CreateBill: React.FC<CreateBillProps> = ({ user, vegetables, bills, addBil
       items: cartItems.map(({name, icon, pricePerKg, stockKg, ...item}) => item),
       total,
       customerName: customerName.trim(),
-      department: department.trim() || undefined,
+      // department: department.trim() || undefined, // Commented out for future use
       status: 'pending',
-      bags: 0, // Initialize bags count to 0
+      bags: bagCount, // Include the bag count from state
     });
     setFinalBill(createdBill);
     setStage('success');
     setCart(new Map());
+    setBagCount(0); // Reset bag count after order creation
     setCustomerName('');
-    setDepartment('');
-  }, [cartItems, total, addBill, customerName, department]);
+    // setDepartment(''); // Commented out for future use
+  }, [cartItems, total, addBill, customerName, bagCount]); // Added bagCount dependency
 
   const handlePlaceOrder = async () => {
       setIsCartVisible(false);
@@ -188,6 +203,8 @@ const CreateBill: React.FC<CreateBillProps> = ({ user, vegetables, bills, addBil
                   required
                 />
               </div>
+              {/* Department field - commented out for future use */}
+              {/* 
               <div className="flex flex-col sm:w-60">
                 <label className="text-sm font-medium text-slate-700 mb-2">Department</label>
                 <input
@@ -198,7 +215,9 @@ const CreateBill: React.FC<CreateBillProps> = ({ user, vegetables, bills, addBil
                   className="px-4 py-3 border border-slate-300 rounded-lg focus:ring-primary-500 focus:border-primary-500 shadow-sm"
                 />
               </div>
-              {/* Employee Name Display */}
+              */}
+              {/* Employee Name Display - commented out for future use */}
+              {/*
               <div className="flex flex-col items-end">
                 <p className="text-sm font-medium text-slate-500 mb-1">Employee</p>
                 <div className="flex items-center gap-2 px-3 py-2 bg-primary-50 border border-primary-200 rounded-lg">
@@ -212,6 +231,7 @@ const CreateBill: React.FC<CreateBillProps> = ({ user, vegetables, bills, addBil
                   </span>
                 </div>
               </div>
+              */}
             </div>
           </div>
         </div>
@@ -330,6 +350,8 @@ const CreateBill: React.FC<CreateBillProps> = ({ user, vegetables, bills, addBil
                 isDesktop={true}
                 cartItems={cartItems}
                 total={total}
+                bagCount={bagCount}
+                onBagCountChange={handleBagCountChange}
                 onUpdateCart={updateCart}
                 onPlaceOrder={handlePlaceOrder}
                 isPlacingOrder={isPlacingOrder}
@@ -361,6 +383,8 @@ const CreateBill: React.FC<CreateBillProps> = ({ user, vegetables, bills, addBil
         onClose={() => setIsCartVisible(false)}
         cartItems={cartItems}
         total={total}
+        bagCount={bagCount}
+        onBagCountChange={handleBagCountChange}
         onUpdateCart={updateCart}
         onPlaceOrder={handlePlaceOrder}
         isPlacingOrder={isPlacingOrder}

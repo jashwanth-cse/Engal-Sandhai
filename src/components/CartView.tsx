@@ -14,11 +14,15 @@ interface CartViewProps {
   onPlaceOrder: () => void;
   cartItems: CartItemDetails[];
   total: number;
+  bagCount?: number;
+  onBagCountChange?: (increment: boolean) => void;
   onUpdateCart: (vegId: string, quantity: number) => void;
   isPlacingOrder?: boolean;
 }
 
-const CartContent: React.FC<Omit<CartViewProps, 'isOpen'>> = ({ cartItems, total, onUpdateCart, onPlaceOrder, isDesktop, onClose, isPlacingOrder = false }) => {
+const CartContent: React.FC<Omit<CartViewProps, 'isOpen'>> = ({ cartItems, total, bagCount = 0, onBagCountChange, onUpdateCart, onPlaceOrder, isDesktop, onClose, isPlacingOrder = false }) => {
+    const BAG_PRICE = 10; // ₹10 per bag
+    
     return (
         <div className="flex flex-col h-full bg-white">
             <div className={`flex items-center justify-between p-4 sm:p-6 border-b border-slate-200 ${isDesktop ? '' : 'bg-slate-50'}`}>
@@ -86,6 +90,40 @@ const CartContent: React.FC<Omit<CartViewProps, 'isOpen'>> = ({ cartItems, total
                 )}
             </div>
             <div className="p-4 sm:p-6 border-t border-slate-200 bg-white">
+                {/* Shopping Bags Section */}
+                {onBagCountChange && (
+                    <div className="mb-4 pb-4 border-b border-slate-200">
+                        <div className="flex items-center justify-between">
+                            <div>
+                                <h4 className="text-sm font-semibold text-slate-800">Shopping Bags</h4>
+                                <p className="text-xs text-slate-500">₹{BAG_PRICE} per bag</p>
+                            </div>
+                            <div className="flex items-center gap-3">
+                                <button
+                                    onClick={() => onBagCountChange(false)}
+                                    disabled={bagCount <= 0}
+                                    className="w-6 h-6 rounded-full bg-red-500 hover:bg-red-600 disabled:bg-slate-300 disabled:cursor-not-allowed text-white flex items-center justify-center text-sm font-semibold"
+                                >
+                                    -
+                                </button>
+                                <span className="text-lg font-semibold text-slate-800 min-w-[1.5rem] text-center">
+                                    {bagCount}
+                                </span>
+                                <button
+                                    onClick={() => onBagCountChange(true)}
+                                    className="w-6 h-6 rounded-full bg-green-500 hover:bg-green-600 text-white flex items-center justify-center text-sm font-semibold"
+                                >
+                                    +
+                                </button>
+                                <div className="ml-2 text-right">
+                                    <p className="text-xs text-slate-500">Bag Total</p>
+                                    <p className="text-sm font-semibold text-slate-800">₹{bagCount * BAG_PRICE}</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                )}
+                
                 <div className="flex justify-between text-xl font-bold mb-4">
                 <span>Total</span>
                 <span>{formatRoundedTotal(total)}</span>
