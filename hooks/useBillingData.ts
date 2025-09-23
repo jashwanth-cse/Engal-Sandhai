@@ -1,27 +1,37 @@
 
-import { useState, useCallback } from 'react';
-import { VEGETABLES_DATA, BILLS_DATA } from '../constants.ts';
+import { useState, useCallback, useEffect } from 'react';
+import { BILLS_DATA } from '../constants.ts';
 import type { Vegetable, Bill } from '../types/types.ts';
+import {
+  subscribeToVegetables,
+  addVegetableToDb,
+  updateVegetableInDb,
+  deleteVegetableFromDb,
+} from '../src/services/dbService.ts';
 
 export const useBillingData = () => {
-  const [vegetables, setVegetables] = useState<Vegetable[]>(VEGETABLES_DATA);
+  const [vegetables, setVegetables] = useState<Vegetable[]>([]);
   const [bills, setBills] = useState<Bill[]>(BILLS_DATA);
+  const [vegetablesLoaded, setVegetablesLoaded] = useState(false);
 
-  const addVegetable = useCallback((newVegetable: Omit<Vegetable, 'id'>) => {
-    setVegetables(prev => [
-      ...prev,
-      { ...newVegetable, id: `veg${Date.now()}` },
-    ]);
+  useEffect(() => {
+    const unsubscribe = subscribeToVegetables((items) => {
+      setVegetables(items);
+      setVegetablesLoaded(true);
+    });
+    return () => unsubscribe();
   }, []);
 
-  const updateVegetable = useCallback((updatedVegetable: Vegetable) => {
-    setVegetables(prev =>
-      prev.map(v => (v.id === updatedVegetable.id ? updatedVegetable : v))
-    );
+  const addVegetable = useCallback(async (newVegetable: Omit<Vegetable, 'id'>) => {
+    await addVegetableToDb(newVegetable);
   }, []);
 
-  const deleteVegetable = useCallback((vegId: string) => {
-    setVegetables(prev => prev.filter(v => v.id !== vegId));
+  const updateVegetable = useCallback(async (updatedVegetable: Vegetable) => {
+    await updateVegetableInDb(updatedVegetable);
+  }, []);
+
+  const deleteVegetable = useCallback(async (vegId: string) => {
+    await deleteVegetableFromDb(vegId);
   }, []);
 
   const addBill = useCallback(async (newBillData: Omit<Bill, 'id' | 'date'>): Promise<Bill> => {
@@ -93,6 +103,7 @@ export const useBillingData = () => {
 
   return {
     vegetables,
+    vegetablesLoaded,
     addVegetable,
     updateVegetable,
     deleteVegetable,

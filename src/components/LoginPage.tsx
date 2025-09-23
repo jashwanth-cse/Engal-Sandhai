@@ -18,41 +18,9 @@ const LoginPage: React.FC<LoginPageProps> = ({ error, clearError }) => {
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
 
-  // Initialize Google reCAPTCHA
+  // reCAPTCHA disabled
   useEffect(() => {
-    const RECAPTCHA_SITE_KEY = '6LeCQ88rAAAAAJS8alTA0099YgvVMV3jGFVwsvLU';
-    
-    const renderRecaptcha = () => {
-      if ((window as any).grecaptcha && !document.getElementById('recaptcha-container-rendered')) {
-        (window as any).grecaptcha.render('recaptcha-container', {
-          sitekey: RECAPTCHA_SITE_KEY,
-          theme: 'light',
-        });
-        document.getElementById('recaptcha-container')?.setAttribute('id', 'recaptcha-container-rendered');
-      }
-    };
-
-    // If reCAPTCHA is already loaded, render immediately
-    if ((window as any).grecaptcha) {
-      renderRecaptcha();
-      return;
-    }
-
-    // Otherwise, load the script first
-    const script = document.createElement('script');
-    script.src = 'https://www.google.com/recaptcha/api.js';
-    script.async = true;
-    script.defer = true;
-    script.onload = renderRecaptcha;
-    document.body.appendChild(script);
-
-    // Cleanup function
-    return () => {
-      const existingScript = document.querySelector('script[src="https://www.google.com/recaptcha/api.js"]');
-      if (existingScript && existingScript.parentNode) {
-        existingScript.parentNode.removeChild(existingScript);
-      }
-    };
+    // no-op
   }, []);
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -61,14 +29,6 @@ const LoginPage: React.FC<LoginPageProps> = ({ error, clearError }) => {
     setLoading(true);
 
     try {
-      // Verify reCAPTCHA
-      const recaptchaToken = (window as any).grecaptcha?.getResponse();
-      if (!recaptchaToken) {
-        alert('Please complete reCAPTCHA');
-        setLoading(false);
-        return;
-      }
-
       // Firebase login
       const userCredential = await loginWithEmployeeID(employeeID, phone);
 
@@ -98,8 +58,7 @@ if (role === 'admin') {
   navigate('/');
 }
 
-      // Reset reCAPTCHA
-      (window as any).grecaptcha?.reset();
+      // reCAPTCHA disabled
     } catch (err: any) {
       console.error(err);
       alert('Login failed: ' + err.message);

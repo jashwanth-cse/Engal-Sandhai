@@ -1,0 +1,65 @@
+import { db } from '../firebase';
+import {
+  collection,
+  addDoc,
+  updateDoc,
+  deleteDoc,
+  doc,
+  onSnapshot,
+  query,
+  orderBy,
+} from 'firebase/firestore';
+import type { Vegetable } from '../../types/types';
+
+const vegetablesCol = collection(db, 'vegetables');
+
+export const subscribeToVegetables = (
+  onChange: (vegetables: Vegetable[]) => void
+) => {
+  const q = query(vegetablesCol, orderBy('name'));
+  return onSnapshot(q, (snapshot) => {
+    const items: Vegetable[] = snapshot.docs.map((d) => {
+      const data = d.data() as Omit<Vegetable, 'id'>;
+      return {
+        id: d.id,
+        name: data.name,
+        pricePerKg: Number(data.pricePerKg) || 0,
+        stockKg: Number(data.stockKg) || 0,
+        category: data.category,
+        icon: data.icon,
+      };
+    });
+    onChange(items);
+  });
+};
+
+export const addVegetableToDb = async (
+  vegetable: Omit<Vegetable, 'id'>
+): Promise<string> => {
+  const docRef = await addDoc(vegetablesCol, {
+    name: vegetable.name,
+    pricePerKg: vegetable.pricePerKg,
+    stockKg: vegetable.stockKg,
+    category: vegetable.category,
+    icon: vegetable.icon,
+  });
+  return docRef.id;
+};
+
+export const updateVegetableInDb = async (vegetable: Vegetable): Promise<void> => {
+  const ref = doc(db, 'vegetables', vegetable.id);
+  await updateDoc(ref, {
+    name: vegetable.name,
+    pricePerKg: vegetable.pricePerKg,
+    stockKg: vegetable.stockKg,
+    category: vegetable.category,
+    icon: vegetable.icon,
+  });
+};
+
+export const deleteVegetableFromDb = async (vegId: string): Promise<void> => {
+  const ref = doc(db, 'vegetables', vegId);
+  await deleteDoc(ref);
+};
+
+
