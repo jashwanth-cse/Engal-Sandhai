@@ -3,8 +3,8 @@ import { auth } from "../firebase";
 import { signInWithEmailAndPassword, signOut, onAuthStateChanged, User as FirebaseUser } from "firebase/auth";
 
 export const loginWithEmployeeID = (employeeID: string, phone: string) => {
-  const email = `${employeeID}@engalsandhai.local`;
-  return signInWithEmailAndPassword(auth, email, phone);
+  const email = `${employeeID.toUpperCase()}@engalsandhai.local`;
+  return signInWithEmailAndPassword(auth, email, phone.toUpperCase());
 };
 
 export const logout = () => signOut(auth);

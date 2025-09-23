@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import type { Bill, Vegetable, BillItem } from '../../types/types';
 import Button from './ui/Button.tsx';
 import FilterBar, { FilterState } from './FilterBar.tsx';
+import { formatRoundedTotal } from '../utils/roundUtils';
 
 interface RecentTransactionsProps {
   bills: Bill[];
@@ -144,7 +145,7 @@ const RecentTransactions: React.FC<RecentTransactionsProps> = ({ bills, vegetabl
           <table className="w-full text-sm text-left text-slate-500">
             <thead className="text-xs text-slate-700 uppercase bg-slate-50">
               <tr>
-                <th scope="col" className="px-6 py-3">Bill ID</th>
+                <th scope="col" className="px-6 py-3">Bill Number</th>
                 <th scope="col" className="px-6 py-3">Customer</th>
                 <th scope="col" className="px-6 py-3">Department</th>
                 <th scope="col" className="px-6 py-3">
@@ -199,7 +200,7 @@ const RecentTransactions: React.FC<RecentTransactionsProps> = ({ bills, vegetabl
                       </div>
                     </td>
                     <td className="px-6 py-4 text-right font-semibold text-slate-800">
-                        ₹{bill.total.toFixed(2)}
+                        {formatRoundedTotal(bill.total)}
                     </td>
                     <td className="px-6 py-4 text-center">
                         <Button onClick={() => onViewOrder(bill.id)} className="px-3 py-1 text-xs">

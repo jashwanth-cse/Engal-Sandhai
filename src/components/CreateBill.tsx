@@ -4,6 +4,7 @@ import Button from './ui/Button.tsx';
 import { PlusIcon, MinusIcon, MagnifyingGlassIcon, CheckCircleIcon } from './ui/Icon.tsx';
 import CartView from './CartView.tsx';
 import BillPreviewPage from './BillPreviewPage.tsx';
+import { roundTotal, formatRoundedTotal } from '../utils/roundUtils';
 
 interface CreateBillProps {
   user: User;
@@ -79,7 +80,7 @@ const CreateBill: React.FC<CreateBillProps> = ({ user, vegetables, addBill }) =>
     });
 
     items.sort((a, b) => a.name.localeCompare(b.name));
-    return { cartItems: items, total: currentTotal, totalItems: itemCount };
+    return { cartItems: items, total: roundTotal(currentTotal), totalItems: itemCount };
   }, [cart, vegetableMap]);
 
   const handleConfirmOrder = useCallback(async () => {
@@ -149,7 +150,7 @@ const CreateBill: React.FC<CreateBillProps> = ({ user, vegetables, addBill }) =>
               <h1 className="text-3xl font-bold text-slate-800">Create Bill</h1>
               <p className="text-slate-600 mt-1">Select items and create a new bill for customer</p>
             </div>
-            <div className="flex flex-col sm:flex-row gap-4">
+            <div className="flex flex-col sm:flex-row gap-4 items-end">
               <div className="flex flex-col sm:w-60">
                 <label className="text-sm font-medium text-slate-700 mb-2">Customer Name *</label>
                 <input
@@ -170,6 +171,20 @@ const CreateBill: React.FC<CreateBillProps> = ({ user, vegetables, addBill }) =>
                   placeholder="Enter department (optional)"
                   className="px-4 py-3 border border-slate-300 rounded-lg focus:ring-primary-500 focus:border-primary-500 shadow-sm"
                 />
+              </div>
+              {/* Employee Name Display */}
+              <div className="flex flex-col items-end">
+                <p className="text-sm font-medium text-slate-500 mb-1">Employee</p>
+                <div className="flex items-center gap-2 px-3 py-2 bg-primary-50 border border-primary-200 rounded-lg">
+                  <div className="w-8 h-8 bg-primary-500 rounded-full flex items-center justify-center">
+                    <span className="text-white font-semibold text-sm">
+                      {user.name ? user.name.charAt(0).toUpperCase() : 'U'}
+                    </span>
+                  </div>
+                  <span className="text-primary-700 font-medium text-sm">
+                    {user.name || 'Loading...'}
+                  </span>
+                </div>
               </div>
             </div>
           </div>
@@ -300,7 +315,7 @@ const CreateBill: React.FC<CreateBillProps> = ({ user, vegetables, addBill }) =>
         <div className="flex items-center justify-between">
           <div>
             <span className="text-xs font-semibold text-slate-500">{totalItems} {totalItems > 1 ? 'ITEMS' : 'ITEM'}</span>
-            <p className="text-xl font-bold text-slate-800">₹{total.toFixed(2)}</p>
+            <p className="text-xl font-bold text-slate-800">{formatRoundedTotal(total)}</p>
           </div>
           <Button 
             onClick={() => setIsCartVisible(true)} 

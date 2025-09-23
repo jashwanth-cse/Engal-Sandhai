@@ -5,6 +5,7 @@ import {
   updateDoc,
   deleteDoc,
   doc,
+  getDoc,
   onSnapshot,
   query,
   orderBy,
@@ -60,6 +61,24 @@ export const updateVegetableInDb = async (vegetable: Vegetable): Promise<void> =
 export const deleteVegetableFromDb = async (vegId: string): Promise<void> => {
   const ref = doc(db, 'vegetables', vegId);
   await deleteDoc(ref);
+};
+
+// User-related functions
+export const updateUserNameInDb = async (userId: string, name: string): Promise<void> => {
+  const ref = doc(db, 'users', userId);
+  await updateDoc(ref, {
+    name: name,
+    updatedAt: new Date(),
+  });
+};
+
+export const getUserFromDb = async (userId: string) => {
+  const ref = doc(db, 'users', userId);
+  const docSnap = await getDoc(ref);
+  if (docSnap.exists()) {
+    return { ...docSnap.data(), id: userId };
+  }
+  return null;
 };
 
 

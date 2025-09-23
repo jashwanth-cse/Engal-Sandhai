@@ -88,7 +88,7 @@ if (role === 'admin') {
               className="block w-full px-3 py-2 bg-white border border-slate-300 placeholder-slate-400 text-slate-900 rounded-md focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
               placeholder="Enter your Employee ID"
               value={employeeID}
-              onChange={(e) => setEmployeeID(e.target.value)}
+              onChange={(e) => setEmployeeID(e.target.value.toUpperCase())}
             />
           </div>
           <div>
@@ -104,7 +104,7 @@ if (role === 'admin') {
               className="block w-full px-3 py-2 bg-white border border-slate-300 placeholder-slate-400 text-slate-900 rounded-md focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
               placeholder="Enter your Phone Number"
               value={phone}
-              onChange={(e) => setPhone(e.target.value)}
+              onChange={(e) => setPhone(e.target.value.toUpperCase())}
             />
           </div>
           {/* Google reCAPTCHA */}

@@ -7,6 +7,7 @@ import Inventory from './Inventory.tsx';
 import Orders from './Orders.tsx';
 import Settings from './Settings.tsx';
 import CreateBill from './CreateBill.tsx';
+import { updateUserNameInDb } from '../services/dbService';
 
 interface AdminDashboardProps {
   user: User;
@@ -18,6 +19,7 @@ interface AdminDashboardProps {
   bills: Bill[];
   updateBill: (billId: string, updates: Partial<Bill>) => void;
   addBill: (newBill: Omit<Bill, 'id' | 'date'>) => Promise<Bill>;
+  onUpdateUser: (updatedUser: User) => void;
 }
 
 type AdminPage = 'dashboard' | 'inventory' | 'orders' | 'settings' | 'create-bill';
@@ -32,16 +34,37 @@ const AdminDashboard: React.FC<AdminDashboardProps> = (props) => {
     setCurrentPage('orders');
   };
 
-  const handleUpdateProfile = (profile: { name: string; email: string }) => {
-    // Handle profile update logic here
-    console.log('Profile updated:', profile);
-    // You can add API calls or state updates here
+  const handleUpdateProfile = async (profile: { name: string; email: string }) => {
+    try {
+      // Update the name in the database
+      await updateUserNameInDb(props.user.id, profile.name);
+      
+      // Update the current user state
+      const updatedUser: User = {
+        ...props.user,
+        name: profile.name,
+        email: profile.email
+      };
+      
+      props.onUpdateUser(updatedUser);
+      console.log('Profile updated successfully:', profile);
+    } catch (error) {
+      console.error('Error updating profile:', error);
+      // You can add toast notification here for error handling
+    }
   };
 
   const handleChangePassword = (passwords: { currentPassword: string; newPassword: string; confirmPassword: string }) => {
+    // Convert all passwords to uppercase before processing
+    const uppercasePasswords = {
+      currentPassword: passwords.currentPassword.toUpperCase(),
+      newPassword: passwords.newPassword.toUpperCase(),
+      confirmPassword: passwords.confirmPassword.toUpperCase()
+    };
+    
     // Handle password change logic here
     console.log('Password change requested');
-    // You can add API calls or validation here
+    // You can add API calls or validation here with uppercasePasswords
   };
 
   const handleUpdateBillStatus = (billId: string, status: 'pending' | 'packed' | 'delivered') => {
@@ -67,6 +90,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = (props) => {
                   onClearInitialBill={() => setInitialBillId(null)}
                   onUpdateBillStatus={handleUpdateBillStatus}
                   onUpdateBill={props.updateBill}
+                  currentUser={props.user}
                />;
       case 'settings':
         return <Settings 

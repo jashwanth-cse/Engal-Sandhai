@@ -3,6 +3,7 @@ import type { Bill, Vegetable, BillItem } from '../../types/types';
 import { XMarkIcon, EyeIcon, ArrowDownTrayIcon } from './ui/Icon.tsx';
 import ImagePreviewModal from './ui/ImagePreviewModal.tsx';
 import Button from './ui/Button.tsx';
+import { roundTotal, formatRoundedTotal } from '../utils/roundUtils';
 
 // Let TypeScript know that jspdf is available on the window object
 declare global {
@@ -17,9 +18,10 @@ interface BillDetailModalProps {
   bill: Bill | null;
   vegetableMap: Map<string, Vegetable>;
   onUpdateBill?: (billId: string, updates: Partial<Bill>) => void;
+  currentUser?: { id: string; name: string; role: string; email?: string };
 }
 
-const BillDetailModal: React.FC<BillDetailModalProps> = ({ isOpen, onClose, bill, vegetableMap, onUpdateBill }) => {
+const BillDetailModal: React.FC<BillDetailModalProps> = ({ isOpen, onClose, bill, vegetableMap, onUpdateBill, currentUser }) => {
   const [isImagePreviewOpen, setIsImagePreviewOpen] = useState(false);
   const [editedItems, setEditedItems] = useState<BillItem[]>([]);
   const [calculatedTotal, setCalculatedTotal] = useState(0);
@@ -30,7 +32,7 @@ const BillDetailModal: React.FC<BillDetailModalProps> = ({ isOpen, onClose, bill
   useEffect(() => {
     if (bill) {
       setEditedItems([...bill.items]);
-      setCalculatedTotal(bill.total);
+      setCalculatedTotal(roundTotal(bill.total));
       setHasUnsavedChanges(false);
     }
   }, [bill]);
@@ -38,11 +40,12 @@ const BillDetailModal: React.FC<BillDetailModalProps> = ({ isOpen, onClose, bill
   // Recalculate total when items change
   useEffect(() => {
     const newTotal = editedItems.reduce((sum, item) => sum + item.subtotal, 0);
-    setCalculatedTotal(newTotal);
+    const roundedTotal = roundTotal(newTotal);
+    setCalculatedTotal(roundedTotal);
     
     // Check if there are unsaved changes
     if (bill) {
-      const hasChanges = newTotal !== bill.total || 
+      const hasChanges = roundedTotal !== roundTotal(bill.total) || 
         editedItems.some((item, index) => 
           item.quantityKg !== bill.items[index]?.quantityKg ||
           item.subtotal !== bill.items[index]?.subtotal
@@ -117,22 +120,31 @@ const BillDetailModal: React.FC<BillDetailModalProps> = ({ isOpen, onClose, bill
     // Date and Time on separate lines
     const billDate = new Date(bill.date);
     const dateStr = billDate.toLocaleDateString('en-IN', { 
-      year: 'numeric', 
-      month: 'long', 
-      day: 'numeric' 
+      day: '2-digit', 
+      month: '2-digit', 
+      year: 'numeric' 
     });
     const timeStr = billDate.toLocaleTimeString('en-IN', { 
       hour: '2-digit', 
       minute: '2-digit',
       hour12: true 
-    });
+    }).toUpperCase(); // Convert AM/PM to uppercase
+    
+    // Get employee ID from current user's email (before @ symbol)
+    const employeeId = currentUser?.email?.split('@')[0] || currentUser?.id?.substring(0, 8) || 'N/A';
     
     doc.setFont('helvetica', 'normal');
-    doc.text(`Bill ID: ${bill.id}`, 14, y);
+    doc.text(`BILL NUMBER : ${bill.id}`, 14, y);
     doc.text(`Date: ${dateStr}`, doc.internal.pageSize.getWidth() - 14, y, { align: 'right' });
-    y += 6;
-    doc.text(`Customer: ${bill.customerName}`, 14, y);
+    y += 8;
+    doc.text(`CUSTOMER NAME : ${bill.customerName}`, 14, y);
     doc.text(`Time: ${timeStr}`, doc.internal.pageSize.getWidth() - 14, y, { align: 'right' });
+    y += 8;
+    if (bill.department) {
+      doc.text(`DEPARTMENT : ${bill.department}`, 14, y);
+      y += 8;
+    }
+    doc.text(`EMP ID : ${employeeId}`, 14, y);
     y += 10;
     
     // Table Header
@@ -140,9 +152,10 @@ const BillDetailModal: React.FC<BillDetailModalProps> = ({ isOpen, onClose, bill
     doc.line(14, y, doc.internal.pageSize.getWidth() - 14, y); // top line
     y += 6;
     doc.setFont('helvetica', 'bold');
-    doc.text('Item', 16, y);
-    doc.text('Qty (kg)', 110, y, { align: 'right' });
-    doc.text('Rate (Rs.)', 150, y, { align: 'right' });
+    doc.text('S.No.', 16, y);
+    doc.text('Item', 32, y);
+    doc.text('Qty (kg)', 120, y, { align: 'right' });
+    doc.text('Rate (Rs.)', 155, y, { align: 'right' });
     doc.text('Amount (Rs.)', 195, y, { align: 'right' });
     y += 2;
     doc.line(14, y, doc.internal.pageSize.getWidth() - 14, y); // bottom line
@@ -150,16 +163,18 @@ const BillDetailModal: React.FC<BillDetailModalProps> = ({ isOpen, onClose, bill
 
     // Table Items - Use editedItems instead of bill.items
     doc.setFont('courier', 'normal');
-    editedItems.forEach(item => {
+    editedItems.forEach((item, index) => {
         const vegetable = vegetableMap.get(item.vegetableId);
+        const serialNo = (index + 1).toString();
         const name = vegetable?.name || 'Unknown Item';
         const qty = item.quantityKg.toFixed(2);
         const rate = (vegetable?.pricePerKg || 0).toFixed(2);
         const amount = item.subtotal.toFixed(2);
 
-        doc.text(name, 16, y);
-        doc.text(qty, 110, y, { align: 'right' });
-        doc.text(rate, 150, y, { align: 'right' });
+        doc.text(serialNo, 18, y, { align: 'center' });
+        doc.text(name, 32, y);
+        doc.text(qty, 120, y, { align: 'right' });
+        doc.text(rate, 155, y, { align: 'right' });
         doc.text(amount, 195, y, { align: 'right' });
         y += 7;
     });
@@ -171,7 +186,7 @@ const BillDetailModal: React.FC<BillDetailModalProps> = ({ isOpen, onClose, bill
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(14);
     doc.text('TOTAL:', 122, y);
-    doc.text(`Rs. ${calculatedTotal.toFixed(2)}`, 195, y, { align: 'right' });
+    doc.text(`Rs. ${roundTotal(calculatedTotal)}`, 195, y, { align: 'right' });
     
     // Footer
     const footerY = doc.internal.pageSize.getHeight() - 20;
@@ -206,11 +221,11 @@ const BillDetailModal: React.FC<BillDetailModalProps> = ({ isOpen, onClose, bill
         <div className="flex-1 overflow-y-auto p-6">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
                 <div>
-                    <p className="text-sm text-slate-500">Bill ID</p>
+                    <p className="text-sm text-slate-500">Bill Number</p>
                     <p className="font-mono text-sm text-slate-800">{bill.id}</p>
                 </div>
                 <div>
-                    <p className="text-sm text-slate-500">Customer</p>
+                    <p className="text-sm text-slate-500">Customer Number</p>
                     <p className="font-semibold text-slate-800">{bill.customerName}</p>
                 </div>
                 <div>
@@ -238,6 +253,7 @@ const BillDetailModal: React.FC<BillDetailModalProps> = ({ isOpen, onClose, bill
                     <table className="w-full text-sm text-left text-slate-500">
                         <thead className="text-xs text-slate-700 uppercase bg-slate-50">
                         <tr>
+                            <th scope="col" className="px-2 py-2 w-12 text-center">S.No.</th>
                             <th scope="col" className="px-4 py-2">Item</th>
                             <th scope="col" className="px-4 py-2 text-right">Qty (kg)</th>
                             <th scope="col" className="px-4 py-2 text-right">Rate</th>
@@ -249,6 +265,9 @@ const BillDetailModal: React.FC<BillDetailModalProps> = ({ isOpen, onClose, bill
                                 const vegetable = vegetableMap.get(item.vegetableId);
                                 return (
                                     <tr key={index} className="bg-white border-b last:border-0">
+                                        <td className="px-2 py-3 text-center font-medium text-slate-700">
+                                            {index + 1}
+                                        </td>
                                         <td className="px-4 py-3 font-medium text-slate-900">
                                             {vegetable?.icon} {vegetable?.name || 'N/A'}
                                         </td>
@@ -289,10 +308,10 @@ const BillDetailModal: React.FC<BillDetailModalProps> = ({ isOpen, onClose, bill
                 </div>
                 <div className="text-right">
                     <p className="text-sm text-slate-500">Total Amount</p>
-                    <p className="text-2xl font-bold text-slate-800">₹{calculatedTotal.toFixed(2)}</p>
-                    {calculatedTotal !== bill.total && (
+                    <p className="text-2xl font-bold text-slate-800">{formatRoundedTotal(calculatedTotal)}</p>
+                    {roundTotal(calculatedTotal) !== roundTotal(bill.total) && (
                         <p className="text-xs text-slate-500 mt-1">
-                            Original: ₹{bill.total.toFixed(2)}
+                            Original: {formatRoundedTotal(bill.total)}
                         </p>
                     )}
                 </div>

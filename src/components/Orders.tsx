@@ -3,6 +3,7 @@ import type { Bill, Vegetable, BillItem } from '../../types/types';
 import { MagnifyingGlassIcon, DocumentMagnifyingGlassIcon } from './ui/Icon.tsx';
 import BillDetailModal from './BillDetailModal.tsx';
 import FilterBar, { FilterState } from './FilterBar.tsx';
+import { formatRoundedTotal } from '../utils/roundUtils';
 
 interface OrdersProps {
   bills: Bill[];
@@ -11,9 +12,10 @@ interface OrdersProps {
   onClearInitialBill: () => void;
   onUpdateBillStatus?: (billId: string, status: 'pending' | 'packed' | 'delivered') => void;
   onUpdateBill?: (billId: string, updates: Partial<Bill>) => void;
+  currentUser?: { id: string; name: string; role: string; email?: string };
 }
 
-const Orders: React.FC<OrdersProps> = ({ bills, vegetables, initialBillId, onClearInitialBill, onUpdateBillStatus, onUpdateBill }) => {
+const Orders: React.FC<OrdersProps> = ({ bills, vegetables, initialBillId, onClearInitialBill, onUpdateBillStatus, onUpdateBill, currentUser }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [viewingBill, setViewingBill] = useState<Bill | null>(null);
   const [filters, setFilters] = useState<FilterState>({
@@ -157,7 +159,7 @@ const Orders: React.FC<OrdersProps> = ({ bills, vegetables, initialBillId, onCle
             </div>
             <input
             type="text"
-            placeholder="Search by customer or Bill ID..."
+            placeholder="Search by customer or Bill Number..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             className="block w-full sm:w-64 rounded-md border-slate-300 bg-white pl-10 py-2 text-slate-900 focus:ring-primary-500 focus:border-primary-500"
@@ -178,7 +180,7 @@ const Orders: React.FC<OrdersProps> = ({ bills, vegetables, initialBillId, onCle
           <table className="w-full text-sm text-left text-slate-500">
             <thead className="text-xs text-slate-700 uppercase bg-slate-50">
               <tr>
-                <th scope="col" className="px-6 py-3">Bill ID</th>
+                <th scope="col" className="px-6 py-3">Bill Number</th>
                 <th scope="col" className="px-6 py-3">Customer</th>
                 <th scope="col" className="px-6 py-3">Department</th>
                 <th scope="col" className="px-6 py-3">
@@ -233,7 +235,7 @@ const Orders: React.FC<OrdersProps> = ({ bills, vegetables, initialBillId, onCle
                         </div>
                       </td>
                       <td className="px-6 py-4 text-right font-semibold text-slate-800">
-                          ₹{bill.total.toFixed(2)}
+                          {formatRoundedTotal(bill.total)}
                       </td>
                       <td className="px-6 py-4 text-center">
                         <button 
@@ -256,6 +258,7 @@ const Orders: React.FC<OrdersProps> = ({ bills, vegetables, initialBillId, onCle
         bill={viewingBill}
         vegetableMap={vegetableMap}
         onUpdateBill={onUpdateBill}
+        currentUser={currentUser}
       />
     </div>
   );

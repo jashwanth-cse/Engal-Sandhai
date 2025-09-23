@@ -3,6 +3,7 @@ import React from 'react';
 import type { BillItem } from '../../types/types';
 import Button from './ui/Button.tsx';
 import { ShoppingCartIcon, XMarkIcon, MinusIcon, PlusIcon, CheckCircleIcon } from './ui/Icon.tsx';
+import { formatRoundedTotal } from '../utils/roundUtils';
 
 type CartItemDetails = BillItem & { name: string; icon: string; pricePerKg: number; stockKg: number; };
 
@@ -87,7 +88,7 @@ const CartContent: React.FC<Omit<CartViewProps, 'isOpen'>> = ({ cartItems, total
             <div className="p-4 sm:p-6 border-t border-slate-200 bg-white">
                 <div className="flex justify-between text-xl font-bold mb-4">
                 <span>Total</span>
-                <span>₹{total.toFixed(2)}</span>
+                <span>{formatRoundedTotal(total)}</span>
                 </div>
                 <Button 
                     size="lg" 

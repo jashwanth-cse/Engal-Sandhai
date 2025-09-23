@@ -125,6 +125,10 @@ const App: React.FC = () => {
     }
   };
 
+  const handleUpdateUser = (updatedUser: User) => {
+    setCurrentUser(updatedUser);
+  };
+
   const handleLogout = async () => {
     try {
       await auth.signOut();
@@ -153,6 +157,7 @@ const App: React.FC = () => {
               vegetables={billingData.vegetables}
               addBill={billingData.addBill}
               onLogout={handleLogout}
+              onUpdateUser={handleUpdateUser}
             />
           </ProtectedRoute>
         }
@@ -171,6 +176,7 @@ const App: React.FC = () => {
               updateBill={billingData.updateBill}
               addBill={billingData.addBill}
               onLogout={handleLogout}
+              onUpdateUser={handleUpdateUser}
             />
           </ProtectedRoute>
         }

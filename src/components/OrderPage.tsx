@@ -9,12 +9,15 @@ import { PlusIcon, MinusIcon, MagnifyingGlassIcon } from './ui/Icon.tsx';
 import CartView from './CartView.tsx';
 import BillPreviewPage from './BillPreviewPage.tsx';
 import Settings from './Settings.tsx';
+import { updateUserNameInDb } from '../services/dbService';
+import { roundTotal, formatRoundedTotal } from '../utils/roundUtils';
 
 interface OrderPageProps {
   user: User;
   vegetables: Vegetable[];
   addBill: (newBill: Omit<Bill, 'id' | 'date'>) => Promise<Bill>;
   onLogout: () => void;
+  onUpdateUser?: (updatedUser: User) => void;
 }
 
 type OrderStage = 'ordering' | 'payment' | 'success' | 'settings';
@@ -32,7 +35,7 @@ type OrderStage = 'ordering' | 'payment' | 'success' | 'settings';
 
 type CartItemDetails = BillItem & { name: string; icon: string; pricePerKg: number; stockKg: number; };
 
-const OrderPage: React.FC<OrderPageProps> = ({ user, vegetables, addBill, onLogout }) => {
+const OrderPage: React.FC<OrderPageProps> = ({ user, vegetables, addBill, onLogout, onUpdateUser }) => {
   const [stage, setStage] = useState<OrderStage>('ordering');
   const [cart, setCart] = useState<Map<string, number>>(new Map());
   const [searchTerm, setSearchTerm] = useState('');
@@ -92,7 +95,7 @@ const OrderPage: React.FC<OrderPageProps> = ({ user, vegetables, addBill, onLogo
       }
     });
     items.sort((a, b) => a.name.localeCompare(b.name));
-    return { cartItems: items, total: currentTotal, totalItems: itemCount };
+    return { cartItems: items, total: roundTotal(currentTotal), totalItems: itemCount };
   }, [cart, vegetableMap]);
 
   const handleConfirmOrder = useCallback(async () => {
@@ -131,16 +134,39 @@ const OrderPage: React.FC<OrderPageProps> = ({ user, vegetables, addBill, onLogo
     setStage('settings');
   };
 
-  const handleUpdateProfile = (profile: { name: string; email: string }) => {
-    // Handle profile update logic here
-    console.log('Profile updated:', profile);
-    // You can add API calls or state updates here
+  const handleUpdateProfile = async (profile: { name: string; email: string }) => {
+    try {
+      // Update the name in the database
+      await updateUserNameInDb(user.id, profile.name);
+      
+      // Update the current user state if callback is provided
+      if (onUpdateUser) {
+        const updatedUser: User = {
+          ...user,
+          name: profile.name,
+          email: profile.email
+        };
+        onUpdateUser(updatedUser);
+      }
+      
+      console.log('Profile updated successfully:', profile);
+    } catch (error) {
+      console.error('Error updating profile:', error);
+      // You can add toast notification here for error handling
+    }
   };
 
   const handleChangePassword = (passwords: { currentPassword: string; newPassword: string; confirmPassword: string }) => {
+    // Convert all passwords to uppercase before processing
+    const uppercasePasswords = {
+      currentPassword: passwords.currentPassword.toUpperCase(),
+      newPassword: passwords.newPassword.toUpperCase(),
+      confirmPassword: passwords.confirmPassword.toUpperCase()
+    };
+    
     // Handle password change logic here
     console.log('Password change requested');
-    // You can add API calls or validation here
+    // You can add API calls or validation here with uppercasePasswords
   };
 
   // COMMENTED OUT - Payment page functionality preserved for future use
@@ -280,7 +306,7 @@ const OrderPage: React.FC<OrderPageProps> = ({ user, vegetables, addBill, onLogo
             <div className="flex items-center justify-between">
                 <div>
                     <span className="text-xs font-semibold text-slate-500">{totalItems} {totalItems > 1 ? 'ITEMS' : 'ITEM'}</span>
-                    <p className="text-xl font-bold text-slate-800">₹{total.toFixed(2)}</p>
+                    <p className="text-xl font-bold text-slate-800">{formatRoundedTotal(total)}</p>
                 </div>
                 <Button 
                     onClick={() => setIsCartVisible(true)} 

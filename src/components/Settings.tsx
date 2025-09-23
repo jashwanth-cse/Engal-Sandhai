@@ -228,7 +228,7 @@ const Settings: React.FC<SettingsProps> = ({ user, onUpdateProfile, onChangePass
                   type={showCurrentPassword ? 'text' : 'password'}
                   id="currentPassword"
                   value={passwordData.currentPassword}
-                  onChange={(e) => setPasswordData({ ...passwordData, currentPassword: e.target.value })}
+                  onChange={(e) => setPasswordData({ ...passwordData, currentPassword: e.target.value.toUpperCase() })}
                   className="w-full px-3 py-2 pr-10 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
                   required
                 />
@@ -251,7 +251,7 @@ const Settings: React.FC<SettingsProps> = ({ user, onUpdateProfile, onChangePass
                   type={showNewPassword ? 'text' : 'password'}
                   id="newPassword"
                   value={passwordData.newPassword}
-                  onChange={(e) => setPasswordData({ ...passwordData, newPassword: e.target.value })}
+                  onChange={(e) => setPasswordData({ ...passwordData, newPassword: e.target.value.toUpperCase() })}
                   className="w-full px-3 py-2 pr-10 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
                   required
                   minLength={6}
@@ -276,7 +276,7 @@ const Settings: React.FC<SettingsProps> = ({ user, onUpdateProfile, onChangePass
                   type={showConfirmPassword ? 'text' : 'password'}
                   id="confirmPassword"
                   value={passwordData.confirmPassword}
-                  onChange={(e) => setPasswordData({ ...passwordData, confirmPassword: e.target.value })}
+                  onChange={(e) => setPasswordData({ ...passwordData, confirmPassword: e.target.value.toUpperCase() })}
                   className="w-full px-3 py-2 pr-10 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
                   required
                 />
