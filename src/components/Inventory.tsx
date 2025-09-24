@@ -30,24 +30,10 @@ const Inventory: React.FC<InventoryProps> = ({
   const [toast, setToast] = useState<ToastState>(null);
 
   // Calculate used stock for each vegetable from bills
-  const usedStock = useMemo(() => {
-    const used = new Map<string, number>();
-    
-    bills.forEach(bill => {
-      bill.items?.forEach(item => {
-        const currentUsed = used.get(item.vegetableId) || 0;
-        used.set(item.vegetableId, currentUsed + item.quantityKg);
-      });
-    });
-    
-    return used;
-  }, [bills]);
-
-  // Calculate available stock for each vegetable
-  const getAvailableStock = (vegetable: Vegetable) => {
-    const used = usedStock.get(vegetable.id) || 0;
-    return Math.max(0, vegetable.totalStockKg - used);
-  };
+    // Get available stock directly from database
+    const getAvailableStock = (vegetable: Vegetable) => {
+      return Math.max(0, vegetable.stockKg);
+    };
 
   const showToast = (message: string, type: 'success' | 'error' = 'success') => {
     setToast({ message, type });

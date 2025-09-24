@@ -14,6 +14,10 @@ export default defineConfig(({ mode }) => {
         alias: {
           '@': path.resolve(__dirname, '.'),
         }
-      }
+      },
+      server: {
+        allowedHosts: [
+          'a344bce16ffb.ngrok-free.app', ],// ✅ your ngrok domain here
+      },
     };
 });
