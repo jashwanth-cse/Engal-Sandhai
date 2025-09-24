@@ -1,9 +1,11 @@
 
-import React from 'react';
+import React, { useState } from 'react';
 import type { BillItem } from '../../types/types';
 import Button from './ui/Button.tsx';
 import { ShoppingCartIcon, XMarkIcon, MinusIcon, PlusIcon, CheckCircleIcon } from './ui/Icon.tsx';
 import { formatRoundedTotal } from '../utils/roundUtils';
+import { placeOrder } from '../services/dbService';
+import { auth } from '../services/authService';
 
 type CartItemDetails = BillItem & { name: string; icon: string; pricePerKg: number; stockKg: number; unitType: 'KG' | 'COUNT'; };
 
@@ -21,6 +23,38 @@ interface CartViewProps {
 }
 
 const CartContent: React.FC<Omit<CartViewProps, 'isOpen'>> = ({ cartItems, total, bagCount = 0, onBagCountChange, onUpdateCart, onPlaceOrder, isDesktop, onClose, isPlacingOrder = false }) => {
+    const handlePlaceOrder = async () => {
+        const user = auth.currentUser;
+        if (!user) {
+            alert('Please log in to place an order');
+            return;
+        }
+
+        try {
+            const orderData = {
+                bagCost: bagCount * BAG_PRICE,
+                bagCount,
+                cartSubtotal: total - (bagCount * BAG_PRICE),
+                employee_id: user.uid,
+                items: cartItems.map(item => ({
+                    id: item.vegetableId,
+                    name: item.name,
+                    pricePerKg: item.pricePerKg,
+                    quantity: item.quantityKg,
+                    subtotal: item.subtotal
+                })),
+                status: 'pending' as const,
+                totalAmount: total,
+                userId: user.uid
+            };
+
+            await placeOrder(orderData);
+            onPlaceOrder(); // Call original onPlaceOrder for UI updates
+        } catch (error) {
+            console.error('Error placing order:', error);
+            alert('Failed to place order. Please try again.');
+        }
+    };
     const BAG_PRICE = 10; // ₹10 per bag
     
     return (
@@ -154,7 +188,7 @@ const CartContent: React.FC<Omit<CartViewProps, 'isOpen'>> = ({ cartItems, total
                                 : ''
                     }`}
                     disabled={cartItems.length === 0 || isPlacingOrder} 
-                    onClick={onPlaceOrder}
+                    onClick={handlePlaceOrder}
                 >
                     <div className="flex items-center justify-center">
                         {isPlacingOrder ? (
