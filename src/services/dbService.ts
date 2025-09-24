@@ -1,3 +1,32 @@
+import { runTransaction } from 'firebase/firestore';
+// Bill counter collection
+const billCounterCol = collection(db, 'bill_counters');
+
+/**
+ * Generate a bill number in the format ESDDMMYYYY-001, with a daily counter stored in Firestore.
+ * This function uses a transaction to ensure atomicity and resets the counter each day.
+ */
+export const generateBillNumber = async (): Promise<string> => {
+  const now = new Date();
+  const day = now.getDate().toString().padStart(2, '0');
+  const month = (now.getMonth() + 1).toString().padStart(2, '0');
+  const year = now.getFullYear();
+  const dateKey = `${year}${month}${day}`;
+  const counterDocRef = doc(billCounterCol, dateKey);
+
+  const billNumber = await runTransaction(db, async (transaction) => {
+    const counterDoc = await transaction.get(counterDocRef);
+    let counter = 1;
+    if (counterDoc.exists()) {
+      const data = counterDoc.data();
+      counter = (typeof data.counter === 'number') ? data.counter + 1 : 1;
+    }
+    transaction.set(counterDocRef, { counter }, { merge: true });
+    const orderNumber = counter.toString().padStart(3, '0');
+    return `ES${day}${month}${year}-${orderNumber}`;
+  });
+  return billNumber;
+};
 import { db } from '../firebase';
 import {
   collection,
@@ -126,23 +155,23 @@ export interface Order {
 
 export const placeOrder = async (orderData: Omit<Order, 'createdAt'>): Promise<string> => {
   const batch = writeBatch(db);
-  
-  // Create the order document
+
+  // Create the order document (bags/bagCount is stored, but not used for stock)
   const orderRef = doc(ordersCol);
   batch.set(orderRef, {
     ...orderData,
     createdAt: serverTimestamp(),
   });
 
-  // Update vegetable stock for each item
+  // Only update vegetable stock for each item (do NOT include bag count)
   for (const item of orderData.items) {
     const vegRef = doc(vegetablesCol, item.id);
     const vegDoc = await getDoc(vegRef);
-    
+
     if (vegDoc.exists()) {
       const currentStock = vegDoc.data().stockKg || 0;
       const newStock = Math.max(0, currentStock - item.quantity);
-      
+
       batch.update(vegRef, {
         stockKg: newStock,
         updatedAt: serverTimestamp(),
