@@ -112,7 +112,7 @@ interface OrderItem {
   subtotal: number;
 }
 
-interface Order {
+export interface Order {
   bagCost: number;
   bagCount: number;
   cartSubtotal: number;
@@ -156,6 +156,59 @@ export const placeOrder = async (orderData: Omit<Order, 'createdAt'>): Promise<s
   return orderRef.id;
 };
 
+export const updateOrder = async (
+  orderId: string,
+  updates: Partial<Order>,
+  oldOrder: Order
+): Promise<void> => {
+  const batch = writeBatch(db);
+  const orderRef = doc(ordersCol, orderId);
+
+  // Update order
+  batch.update(orderRef, {
+    ...updates,
+    updatedAt: serverTimestamp()
+  });
+
+  // If items were updated, sync inventory
+  if (updates.items) {
+    const oldItems = oldOrder.items || [];
+    const newItems = updates.items;
+
+    // Calculate inventory adjustments
+    const adjustments = new Map<string, number>();
+
+    // Return stock from old items
+    oldItems.forEach(item => {
+      adjustments.set(item.id, (adjustments.get(item.id) || 0) + item.quantity);
+    });
+
+    // Subtract stock for new items
+    newItems.forEach(item => {
+      adjustments.set(item.id, (adjustments.get(item.id) || 0) - item.quantity);
+    });
+
+    // Update inventory for each affected item
+    for (const [vegId, adjustment] of adjustments) {
+      if (adjustment !== 0) {
+        const vegRef = doc(vegetablesCol, vegId);
+        const vegSnap = await getDoc(vegRef);
+        
+        if (vegSnap.exists()) {
+          const currentStock = vegSnap.data().stockKg || 0;
+          batch.update(vegRef, {
+            stockKg: currentStock + adjustment,
+            updatedAt: serverTimestamp()
+          });
+        }
+      }
+    }
+  }
+
+  // Commit all changes atomically
+  await batch.commit();
+};
+
 export const updateOrderStatus = async (
   orderId: string,
   status: Order['status'],
@@ -169,12 +222,33 @@ export const updateOrderStatus = async (
   });
 };
 
-export const subscribeToOrders = (
+export const subscribeToOrderHistory = (
   onChange: (orders: Order[]) => void,
-  userId?: string
+  filters?: {
+    status?: 'pending' | 'packed' | 'delivered' | 'all';
+    startDate?: Date;
+    endDate?: Date;
+    userId?: string;
+  }
 ) => {
   // If userId is provided, only get orders for that user
-  const constraints = userId ? [where('userId', '==', userId)] : [];
+  let constraints = [];
+
+  if (filters) {
+    if (filters.userId) {
+      constraints.push(where('userId', '==', filters.userId));
+    }
+    if (filters.status && filters.status !== 'all') {
+      constraints.push(where('status', '==', filters.status));
+    }
+    if (filters.startDate) {
+      constraints.push(where('createdAt', '>=', filters.startDate));
+    }
+    if (filters.endDate) {
+      constraints.push(where('createdAt', '<=', filters.endDate));
+    }
+  }
+
   const q = query(ordersCol, ...constraints, orderBy('createdAt', 'desc'));
   
   return onSnapshot(q, (snapshot) => {

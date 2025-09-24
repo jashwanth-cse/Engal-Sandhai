@@ -1,21 +1,20 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import type { Bill, Vegetable, BillItem } from '../../types/types';
-import { MagnifyingGlassIcon, DocumentMagnifyingGlassIcon } from './ui/Icon.tsx';
-import BillDetailModal from './BillDetailModal.tsx';
-import FilterBar, { FilterState } from './FilterBar.tsx';
+import { MagnifyingGlassIcon, DocumentMagnifyingGlassIcon } from './ui/Icon';
+import BillDetailModal from './BillDetailModal';
+import FilterBar, { FilterState } from './FilterBar';
 import { formatRoundedTotal } from '../utils/roundUtils';
+import { subscribeToOrderHistory, updateOrder, updateOrderStatus, type Order } from '../services/dbService';
 
 interface OrdersProps {
-  bills: Bill[];
   vegetables: Vegetable[];
   initialBillId?: string | null;
   onClearInitialBill: () => void;
-  onUpdateBillStatus?: (billId: string, status: 'pending' | 'packed' | 'delivered') => void;
-  onUpdateBill?: (billId: string, updates: Partial<Bill>) => void;
   currentUser?: { id: string; name: string; role: string; email?: string };
 }
 
-const Orders: React.FC<OrdersProps> = ({ bills, vegetables, initialBillId, onClearInitialBill, onUpdateBillStatus, onUpdateBill, currentUser }) => {
+const Orders = ({ vegetables, initialBillId, onClearInitialBill, currentUser }: OrdersProps) => {
+  const [bills, setBills] = useState<Bill[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [viewingBill, setViewingBill] = useState<Bill | null>(null);
   const [filters, setFilters] = useState<FilterState>({
@@ -29,6 +28,97 @@ const Orders: React.FC<OrdersProps> = ({ bills, vegetables, initialBillId, onCle
   
   const vegetableMap = useMemo(() => new Map(vegetables.map(v => [v.id, v])), [vegetables]);
 
+  const handleUpdateBill = async (billId: string, updates: Partial<Bill>) => {
+    try {
+      const bill = bills.find(b => b.id === billId);
+      if (!bill) return;
+
+      const orderUpdate: Partial<Order> = {
+        items: updates.items?.map(item => ({
+          id: item.vegetableId,
+          name: vegetableMap.get(item.vegetableId)?.name || '',
+          pricePerKg: vegetableMap.get(item.vegetableId)?.pricePerKg || 0,
+          quantity: item.quantityKg,
+          subtotal: item.subtotal
+        })),
+        totalAmount: updates.total,
+        bagCount: updates.bags,
+        status: updates.status as Order['status']
+      };
+
+      const currentOrder: Order = {
+        bagCost: bill.bags ? bill.bags * 10 : 0,
+        bagCount: bill.bags || 0,
+        cartSubtotal: bill.total - (bill.bags ? bill.bags * 10 : 0),
+        createdAt: bill.date,
+        employee_id: bill.customerName,
+        items: bill.items.map(item => ({
+          id: item.vegetableId,
+          name: vegetableMap.get(item.vegetableId)?.name || '',
+          pricePerKg: vegetableMap.get(item.vegetableId)?.pricePerKg || 0,
+          quantity: item.quantityKg,
+          subtotal: item.subtotal
+        })),
+        status: bill.status as Order['status'],
+        totalAmount: bill.total,
+        userId: bill.customerName
+      };
+
+      await updateOrder(billId, orderUpdate, currentOrder);
+    } catch (error) {
+      console.error('Error updating bill:', error);
+      alert('Failed to update bill');
+    }
+  };
+
+  const handleUpdateStatus = async (billId: string, status: Bill['status']) => {
+    try {
+      if (!currentUser) return;
+      await updateOrderStatus(billId, status as Order['status'], currentUser.id);
+    } catch (error) {
+      console.error('Error updating status:', error);
+      alert('Failed to update status');
+    }
+  };
+
+  // Subscribe to order history with filters
+  useEffect(() => {
+    const unsubscribe = subscribeToOrderHistory((orders) => {
+      // Transform Order type to Bill type
+      const transformedBills = orders.map(order => ({
+        id: order.userId + '_' + order.createdAt,
+        date: order.createdAt,
+        items: order.items.map(item => ({
+          vegetableId: item.id,
+          quantityKg: item.quantity,
+          subtotal: item.subtotal
+        })),
+        total: order.totalAmount,
+        customerName: order.employee_id,
+        status: order.status,
+        department: '',
+        bags: order.bagCount
+      }));
+      setBills(transformedBills);
+    }, {
+      status: filters.status === 'all' ? undefined : filters.status as any,
+      startDate: filters.date ? new Date(filters.date) : undefined
+    });
+
+    return () => unsubscribe();
+  }, [filters]);
+
+  useEffect(() => {
+    if (initialBillId) {
+      const billToView = bills.find(b => b.id === initialBillId);
+      if (billToView) {
+        setViewingBill(billToView);
+      }
+      onClearInitialBill();
+    }
+  }, [initialBillId, bills, onClearInitialBill]);
+
+  // Helper functions (single declarations only)
   const formatItems = (items: BillItem[], bags?: number) => {
     const itemText = items && items.length > 0 
       ? items.map(item => {
@@ -36,14 +126,13 @@ const Orders: React.FC<OrdersProps> = ({ bills, vegetables, initialBillId, onCle
           return vegetable ? `${vegetable.name} (${item.quantityKg}kg)` : `Unknown (${item.quantityKg}kg)`;
         }).join(', ')
       : 'No items';
-    
     if (bags && bags > 0) {
       return `${itemText}, Bags (${bags})`;
     }
     return itemText;
   };
 
-  const getStatusStyles = (status: 'pending' | 'packed' | 'delivered') => {
+  const getStatusStyles = (status: Bill['status']) => {
     switch (status) {
       case 'pending':
         return 'bg-orange-50 text-orange-700 border-orange-200';
@@ -67,22 +156,16 @@ const Orders: React.FC<OrdersProps> = ({ bills, vegetables, initialBillId, onCle
   const getSortIcon = (columnKey: 'date' | 'total') => {
     if (sortConfig.key !== columnKey) {
       return (
-        <span className="inline-flex ml-1 text-slate-400">
-          ▲
-        </span>
+        <span className="inline-flex ml-1 text-slate-400">▲</span>
       );
     }
     return (
-      <span className="inline-flex ml-1 text-slate-700">
-        {sortConfig.direction === 'asc' ? '▲' : '▼'}
-      </span>
+      <span className="inline-flex ml-1 text-slate-700">{sortConfig.direction === 'asc' ? '▲' : '▼'}</span>
     );
   };
 
   const handleStatusChange = (billId: string, newStatus: 'pending' | 'packed' | 'delivered') => {
-    if (onUpdateBillStatus) {
-      onUpdateBillStatus(billId, newStatus);
-    }
+    handleUpdateStatus(billId, newStatus);
   };
 
   const filteredBills = useMemo(() => {
@@ -135,7 +218,7 @@ const Orders: React.FC<OrdersProps> = ({ bills, vegetables, initialBillId, onCle
     }
 
     return filtered;
-  }, [bills, searchTerm, filters, sortConfig]);
+  }, [bills, searchTerm, filters.status, filters.date, sortConfig.key, sortConfig.direction]);
 
   // Calculate counts for filter tabs
   const statusCounts = useMemo(() => {
@@ -264,7 +347,7 @@ const Orders: React.FC<OrdersProps> = ({ bills, vegetables, initialBillId, onCle
         bill={viewingBill}
         vegetableMap={vegetableMap}
         vegetables={vegetables}
-        onUpdateBill={onUpdateBill}
+        onUpdateBill={handleUpdateBill}
         currentUser={currentUser}
       />
     </div>
