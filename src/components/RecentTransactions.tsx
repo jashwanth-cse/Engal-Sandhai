@@ -199,9 +199,9 @@ const RecentTransactions: React.FC<RecentTransactionsProps> = ({ bills, vegetabl
                           onChange={(e) => handleStatusChange(bill.id, e.target.value as 'pending' | 'packed' | 'delivered')}
                           className={`text-sm rounded-md border focus:ring-2 focus:ring-opacity-50 font-medium px-3 py-1.5 ${getStatusStyles(bill.status || 'pending')}`}
                         >
-                          <option value="pending">🟠 Pending</option>
-                          <option value="packed">🔵 Packed</option>
-                          <option value="delivered">🟢 Delivered</option>
+                          <option value="pending">Pending</option>
+                          <option value="packed">Packed</option>
+                          <option value="delivered">Delivered</option>
                         </select>
                       </div>
                     </td>
@@ -210,7 +210,7 @@ const RecentTransactions: React.FC<RecentTransactionsProps> = ({ bills, vegetabl
                     </td>
                     <td className="px-6 py-4 text-center">
                         <Button onClick={() => onViewOrder(bill.id)} className="px-3 py-1 text-xs">
-                           View
+                        View
                         </Button>
                     </td>
                 </tr>

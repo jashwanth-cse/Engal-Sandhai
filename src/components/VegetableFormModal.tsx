@@ -54,7 +54,6 @@ const VegetableFormModal: React.FC<VegetableFormModalProps> = ({
       totalStockKg: parseFloat(formData.totalStockKg),
       stockKg: parseFloat(formData.totalStockKg), // Set stockKg to totalStockKg initially
       category: formData.category,
-      icon: '🥬', // Default icon since we're removing emoji field
     };
 
     if (vegetableToEdit) {

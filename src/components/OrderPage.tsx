@@ -33,7 +33,7 @@ type OrderStage = 'ordering' | 'payment' | 'success' | 'settings';
 //     });
 // };
 
-type CartItemDetails = BillItem & { name: string; icon: string; pricePerKg: number; stockKg: number; unitType: 'KG' | 'COUNT'; };
+type CartItemDetails = BillItem & { name: string; pricePerKg: number; stockKg: number; unitType: 'KG' | 'COUNT'; };
 
 const OrderPage: React.FC<OrderPageProps> = ({ user, vegetables, addBill, onLogout, onUpdateUser }) => {
   const [stage, setStage] = useState<OrderStage>('ordering');
@@ -89,7 +89,6 @@ const OrderPage: React.FC<OrderPageProps> = ({ user, vegetables, addBill, onLogo
             quantityKg: quantity, 
             subtotal,
             name: veg.name,
-            icon: veg.icon,
             pricePerKg: veg.pricePerKg,
             stockKg: veg.stockKg,
             unitType: veg.unitType,
@@ -119,7 +118,7 @@ const OrderPage: React.FC<OrderPageProps> = ({ user, vegetables, addBill, onLogo
     // const paymentScreenshotBase64 = await fileToBase64(screenshot);
     
     const createdBill = await addBill({
-      items: cartItems.map(({name, icon, pricePerKg, stockKg, ...item}) => item),
+      items: cartItems.map(({name, pricePerKg, stockKg, unitType, ...item}) => item),
       total,
       customerName: user.name,
       status: 'pending', // Default status for new orders
@@ -263,12 +262,12 @@ const OrderPage: React.FC<OrderPageProps> = ({ user, vegetables, addBill, onLogo
             </div>
           </div>
           <div className="space-y-3">
-            {filteredVegetables.length > 0 ? filteredVegetables.map(veg => {
+            {filteredVegetables.length > 0 ? filteredVegetables.map((veg, index) => {
               const quantity = cart.get(veg.id) || 0;
               return (
               <div key={veg.id} className="flex items-center justify-between p-3 bg-white rounded-lg shadow-sm">
                 <div className="flex items-center">
-                  <span className="text-3xl mr-3">{veg.icon}</span>
+                  <div className="w-8 h-8 rounded-full bg-primary-100 text-primary-700 flex items-center justify-center font-semibold text-sm mr-3">{index + 1}</div>
                   <div>
                     <p className="font-semibold text-slate-800">{veg.name}</p>
                     <p className="text-sm text-slate-500">₹{veg.pricePerKg.toFixed(2)}/{veg.unitType === 'KG' ? 'kg' : 'piece'}</p>

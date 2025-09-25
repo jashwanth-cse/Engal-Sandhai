@@ -19,7 +19,8 @@ const LoginPage: React.FC<LoginPageProps> = ({ error, clearError }) => {
   const [showPassword, setShowPassword] = useState(false);
   const navigate = useNavigate();
 
-  // reCAPTCHA 
+  // reCAPTCHA - TEMPORARILY DISABLED
+  /*
   useEffect(() => {
     if ((window as any).grecaptcha && !document.getElementById('recaptcha-container-rendered')) {
       (window as any).grecaptcha.render('recaptcha-container', {
@@ -45,6 +46,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ error, clearError }) => {
     };
     document.body.appendChild(script);
   }, []);
+  */
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -52,13 +54,15 @@ const LoginPage: React.FC<LoginPageProps> = ({ error, clearError }) => {
     setLoading(true);
 
     try {
-      // Verify reCAPTCHA
+      // Verify reCAPTCHA - TEMPORARILY DISABLED
+      /*
       const recaptchaToken = (window as any).grecaptcha?.getResponse();
       if (!recaptchaToken) {
         alert('Please complete reCAPTCHA');
         setLoading(false);
         return;
       }
+      */
       // Firebase login
       const userCredential = await loginWithEmployeeID(employeeID, phone);
 
@@ -152,8 +156,8 @@ const LoginPage: React.FC<LoginPageProps> = ({ error, clearError }) => {
               </button>
             </div>
           </div>
-          {/* Google reCAPTCHA */}
-          <div id="recaptcha-container" className="my-4"></div>
+          {/* Google reCAPTCHA - TEMPORARILY DISABLED */}
+          {/* <div id="recaptcha-container" className="my-4"></div> */}
 
           <div>
             <Button type="submit" className="w-full" size="lg" disabled={loading}>

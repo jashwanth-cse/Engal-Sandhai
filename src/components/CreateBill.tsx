@@ -15,7 +15,7 @@ interface CreateBillProps {
 
 type CreateBillStage = 'ordering' | 'success';
 
-type CartItemDetails = BillItem & { name: string; icon: string; pricePerKg: number; stockKg: number; unitType: 'KG' | 'COUNT'; };
+type CartItemDetails = BillItem & { name: string; pricePerKg: number; stockKg: number; unitType: 'KG' | 'COUNT'; };
 
 const CreateBill: React.FC<CreateBillProps> = ({ user, vegetables, bills, addBill }) => {
   const [stage, setStage] = useState<CreateBillStage>('ordering');
@@ -98,7 +98,6 @@ const CreateBill: React.FC<CreateBillProps> = ({ user, vegetables, bills, addBil
           quantityKg: quantity,
           subtotal,
           name: vegetable.name,
-          icon: vegetable.icon,
           pricePerKg: vegetable.pricePerKg,
           stockKg: vegetable.stockKg,
           unitType: vegetable.unitType
@@ -130,7 +129,7 @@ const CreateBill: React.FC<CreateBillProps> = ({ user, vegetables, bills, addBil
     }
     
     const createdBill = await addBill({
-      items: cartItems.map(({name, icon, pricePerKg, stockKg, unitType, ...item}) => item),
+      items: cartItems.map(({name, pricePerKg, stockKg, unitType, ...item}) => item),
       total,
       customerName: customerName.trim(),
       // department: department.trim() || undefined, // Commented out for future use
@@ -271,7 +270,7 @@ const CreateBill: React.FC<CreateBillProps> = ({ user, vegetables, bills, addBil
 
           {/* Product List */}
           <div className="space-y-3">
-            {filteredVegetables.length > 0 ? filteredVegetables.map(veg => {
+            {filteredVegetables.length > 0 ? filteredVegetables.map((veg, index) => {
               const quantity = cart.get(veg.id) || 0;
               const availableStock = getAvailableStock(veg);
               const isOutOfStock = availableStock <= 0;
@@ -279,7 +278,7 @@ const CreateBill: React.FC<CreateBillProps> = ({ user, vegetables, bills, addBil
               return (
                 <div key={veg.id} className={`bg-white rounded-lg border p-4 transition-colors flex items-center justify-between ${isOutOfStock ? 'bg-slate-50 opacity-60' : 'hover:shadow-md border-slate-200'}`}>
                   <div className="flex items-center space-x-4">
-                    <div className="text-3xl">{veg.icon}</div>
+                    <div className="w-8 h-8 rounded-full bg-primary-100 text-primary-700 flex items-center justify-center font-semibold text-sm">{index + 1}</div>
                     <div>
                       <h3 className="font-semibold text-slate-800 text-lg">{veg.name}</h3>
                       <p className="text-slate-600">₹{veg.pricePerKg.toFixed(2)}/{veg.unitType === 'KG' ? 'kg' : 'piece'}</p>

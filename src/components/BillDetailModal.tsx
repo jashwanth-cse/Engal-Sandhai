@@ -401,7 +401,7 @@ const BillDetailModal: React.FC<BillDetailModalProps> = ({ isOpen, onClose, bill
                                             {index + 1}
                                         </td>
                                         <td className="px-4 py-3 font-medium text-slate-900">
-                                            {vegetable?.icon} {vegetable?.name || 'N/A'}
+                                            {vegetable?.name || 'N/A'}
                                         </td>
                                         <td className="px-4 py-3 text-right">
                                             <input
@@ -554,7 +554,6 @@ const VegetableAddRow: React.FC<VegetableAddRowProps> = ({ vegetable, onAdd }) =
   return (
     <div className="flex items-center justify-between bg-white rounded-lg p-3 border border-slate-200">
       <div className="flex items-center gap-3">
-        <span className="text-2xl">{vegetable.icon}</span>
         <div>
           <h5 className="font-medium text-slate-800">{vegetable.name}</h5>
           <p className="text-sm text-slate-600">₹{vegetable.pricePerKg.toFixed(2)}/kg</p>

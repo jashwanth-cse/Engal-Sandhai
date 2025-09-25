@@ -141,7 +141,6 @@ const Inventory: React.FC<InventoryProps> = ({
                   </td>
                   <th scope="row" className="px-6 py-4 font-medium text-slate-900 whitespace-nowrap">
                     <div className="flex items-center">
-                        <span className="text-2xl mr-3">{veg.icon}</span>
                         {veg.name}
                     </div>
                   </th>
@@ -161,8 +160,8 @@ const Inventory: React.FC<InventoryProps> = ({
                   </td>
                   <td className={`px-6 py-4 text-right font-semibold ${isLowStock ? 'text-red-600' : 'text-green-600'}`}>
                     {availableStock.toFixed(veg.unitType === 'KG' ? 1 : 0)} {veg.unitType === 'KG' ? 'kg' : 'pieces'}
-                    {isLowStock && availableStock > 0 && <span className="ml-1 text-xs">⚠️</span>}
-                    {availableStock === 0 && <span className="ml-1 text-xs">❌</span>}
+                    {isLowStock && availableStock > 0 && <span className="ml-1 text-xs text-red-600">(Low)</span>}
+                    {availableStock === 0 && <span className="ml-1 text-xs text-red-600">(Out)</span>}
                   </td>
                   <td className="px-6 py-4 text-center">
                     <div className="flex justify-center space-x-2">

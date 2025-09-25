@@ -234,9 +234,9 @@ const Orders: React.FC<OrdersProps> = ({ bills, vegetables, initialBillId, onCle
                             onChange={(e) => handleStatusChange(bill.id, e.target.value as 'pending' | 'packed' | 'delivered')}
                             className={`text-sm rounded-md border focus:ring-2 focus:ring-opacity-50 font-medium px-3 py-1.5 ${getStatusStyles(bill.status || 'pending')}`}
                           >
-                            <option value="pending">🟠 Pending</option>
-                            <option value="packed">🔵 Packed</option>
-                            <option value="delivered">🟢 Delivered</option>
+                            <option value="pending">Pending</option>
+                            <option value="packed">Packed</option>
+                            <option value="delivered">Delivered</option>
                           </select>
                         </div>
                       </td>

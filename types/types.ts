@@ -6,7 +6,6 @@ export interface Vegetable {
   totalStockKg: number; // Total stock set by admin
   stockKg: number; // Available stock (dynamically calculated)
   category: string;
-  icon: string;
 }
 
 export interface BillItem {

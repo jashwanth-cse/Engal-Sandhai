@@ -16,7 +16,6 @@ import { getAuth } from "firebase/auth";
 
 type CartItemDetails = BillItem & {
   name: string;
-  icon: string;
   pricePerKg: number;
   stockKg: number;
   unitType: "KG" | "COUNT";
@@ -71,7 +70,7 @@ const CartContent: React.FC<Omit<CartViewProps, "isOpen">> = ({
           pricePerKg: item.pricePerKg,
           subtotal: item.subtotal,
         })),
-        totalAmount: total + bagCount * BAG_PRICE,
+        totalAmount: total,
         bagCount,
         createdAt: new Date(),
       };
@@ -183,7 +182,6 @@ const CartContent: React.FC<Omit<CartViewProps, "isOpen">> = ({
                 
                 {/* Item Name */}
                 <div className="col-span-5 flex items-center">
-                  <span className="text-lg mr-2">{item.icon}</span>
                   <div>
                     <p className="font-semibold text-slate-800 text-sm">{item.name}</p>
                     <p className="text-xs text-slate-500">
@@ -262,7 +260,7 @@ const CartContent: React.FC<Omit<CartViewProps, "isOpen">> = ({
         {/* Total */}
         <div className="flex justify-between text-xl font-bold mb-2">
           <span>Total</span>
-          <span>{formatRoundedTotal( bagCount * BAG_PRICE)}</span>
+          <span>{formatRoundedTotal(total)}</span>
         </div>
 
         {/* Place Order Button */}
