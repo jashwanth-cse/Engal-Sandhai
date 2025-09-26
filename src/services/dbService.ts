@@ -29,7 +29,6 @@ export const subscribeToVegetables = (
         totalStockKg: Number(data.totalStockKg) || Number(data.stockKg) || 0, // Fallback for existing data
         stockKg: Number(data.stockKg) || 0,
         category: data.category,
-        icon: data.icon,
       };
     });
     onChange(items);
@@ -46,7 +45,6 @@ export const addVegetableToDb = async (
     totalStockKg: vegetable.totalStockKg,
     stockKg: vegetable.stockKg,
     category: vegetable.category,
-    icon: vegetable.icon,
   });
   return docRef.id;
 };
@@ -60,7 +58,6 @@ export const updateVegetableInDb = async (vegetable: Vegetable): Promise<void> =
     totalStockKg: vegetable.totalStockKg,
     stockKg: vegetable.stockKg,
     category: vegetable.category,
-    icon: vegetable.icon,
   });
 };
 
