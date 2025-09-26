@@ -9,8 +9,10 @@ import {
   onSnapshot,
   query,
   orderBy,
+  Timestamp,
 } from 'firebase/firestore';
 import type { Vegetable } from '../../types/types';
+import type { Bill, BillItem } from '../../types/types';
 
 const vegetablesCol = collection(db, 'vegetables');
 
@@ -82,6 +84,42 @@ export const getUserFromDb = async (userId: string) => {
     return { ...docSnap.data(), id: userId };
   }
   return null;
+};
+
+
+// Orders subscription (maps Firestore 'orders' to Bill model used by UI)
+export const subscribeToOrders = (
+  onChange: (bills: Bill[]) => void
+) => {
+  const ordersCol = collection(db, 'orders');
+  const q = query(ordersCol, orderBy('createdAt', 'desc'));
+  return onSnapshot(q, (snapshot) => {
+    const bills: Bill[] = snapshot.docs.map((d) => {
+      const data = d.data() as any;
+      const createdAt = data.createdAt?.toDate ? data.createdAt.toDate() : (data.createdAt || new Date());
+      const items: BillItem[] = Array.isArray(data.items)
+        ? data.items.map((it: any) => ({
+            vegetableId: it.id,
+            quantityKg: Number(it.quantity) || 0,
+            subtotal: Number(it.subtotal) || 0,
+          }))
+        : [];
+      const bill: Bill = {
+        id: String(data.orderId || d.id),
+        date: new Date(createdAt).toISOString(),
+        items,
+        total: Number(data.totalAmount) || 0,
+        // Store the userId in customerName for legacy display; attach explicit customerId for lookups
+        customerName: String(data.userId || data.employee_id || 'Unknown'),
+        status: (data.status as Bill['status']) || 'pending',
+        bags: Number(data.bagCount || data.bags || 0) || undefined,
+      };
+      // Attach additional lookup id (non-breaking extra field)
+      (bill as any).customerId = String(data.userId || data.employee_id || '');
+      return bill;
+    });
+    onChange(bills);
+  });
 };
 
 

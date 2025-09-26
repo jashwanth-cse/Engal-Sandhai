@@ -11,7 +11,7 @@ import {
 } from "./ui/Icon.tsx";
 import { formatRoundedTotal } from "../utils/roundUtils";
 import { db } from "../firebase";
-import { collection, addDoc, doc, updateDoc, getDoc } from "firebase/firestore";
+import { collection, addDoc, doc, updateDoc, getDoc, query, where, Timestamp, getCountFromServer } from "firebase/firestore";
 import { getAuth } from "firebase/auth";
 
 type CartItemDetails = BillItem & {
@@ -60,6 +60,26 @@ const CartContent: React.FC<Omit<CartViewProps, "isOpen">> = ({
       if (!userSnap.exists()) return alert("User not found in Firestore.");
       const userData = userSnap.data();
 
+      // Generate daily sequential orderId: ESDDMMYYYY-001
+      const now = new Date();
+      const day = now.getDate().toString().padStart(2, "0");
+      const month = (now.getMonth() + 1).toString().padStart(2, "0");
+      const year = now.getFullYear();
+      const datePrefix = `ES${day}${month}${year}`;
+
+      const startOfDay = new Date(year, now.getMonth(), now.getDate(), 0, 0, 0, 0);
+      const endOfDay = new Date(year, now.getMonth(), now.getDate(), 23, 59, 59, 999);
+      const ordersCol = collection(db, "orders");
+      const todayOrdersQuery = query(
+        ordersCol,
+        where("createdAt", ">=", Timestamp.fromDate(startOfDay)),
+        where("createdAt", "<=", Timestamp.fromDate(endOfDay))
+      );
+      const countSnap = await getCountFromServer(todayOrdersQuery);
+      const todayCount = Number(countSnap.data().count || 0);
+      const sequence = (todayCount + 1).toString().padStart(3, "0");
+      const orderId = `${datePrefix}-${sequence}`;
+
       const order = {
         userId,
         employee_id: userData.employee_id || "",
@@ -72,6 +92,8 @@ const CartContent: React.FC<Omit<CartViewProps, "isOpen">> = ({
         })),
         totalAmount: total,
         bagCount,
+        orderId,
+        status: 'pending',
         createdAt: new Date(),
       };
 

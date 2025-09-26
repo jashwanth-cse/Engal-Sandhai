@@ -7,6 +7,7 @@ import {
   addVegetableToDb,
   updateVegetableInDb,
   deleteVegetableFromDb,
+  subscribeToOrders,
 } from '../src/services/dbService.ts';
 
 export const useBillingData = () => {
@@ -15,11 +16,17 @@ export const useBillingData = () => {
   const [vegetablesLoaded, setVegetablesLoaded] = useState(false);
 
   useEffect(() => {
-    const unsubscribe = subscribeToVegetables((items) => {
+    const unsubscribeVeg = subscribeToVegetables((items) => {
       setVegetables(items);
       setVegetablesLoaded(true);
     });
-    return () => unsubscribe();
+    const unsubscribeOrders = subscribeToOrders((incomingBills) => {
+      setBills(incomingBills);
+    });
+    return () => {
+      unsubscribeVeg();
+      unsubscribeOrders();
+    };
   }, []);
 
   const addVegetable = useCallback(async (newVegetable: Omit<Vegetable, 'id'>) => {

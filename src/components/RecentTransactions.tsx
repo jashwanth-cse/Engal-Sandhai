@@ -1,8 +1,10 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import type { Bill, Vegetable, BillItem } from '../../types/types';
 import Button from './ui/Button.tsx';
 import FilterBar, { FilterState } from './FilterBar.tsx';
 import { formatRoundedTotal } from '../utils/roundUtils';
+import { db } from '../firebase';
+import { doc, getDoc, collection, query as fsQuery, where, getDocs } from 'firebase/firestore';
 
 interface RecentTransactionsProps {
   bills: Bill[];
@@ -24,6 +26,53 @@ const RecentTransactions: React.FC<RecentTransactionsProps> = ({ bills, vegetabl
   }>({ key: null, direction: 'asc' });
 
   const vegetableMap = new Map(vegetables.map(v => [v.id, v]));
+  const [userInfoMap, setUserInfoMap] = useState<Record<string, { name: string; department?: string }>>({});
+
+  useEffect(() => {
+    const loadUserInfos = async () => {
+      const missing = new Set<string>();
+      (bills || []).forEach(b => {
+        const uid = String((b as any).customerId || b.customerName || '').trim();
+        if (uid && !userInfoMap[uid]) missing.add(uid);
+      });
+      if (missing.size === 0) return;
+      const entries: [string, { name: string; department?: string }][] = [];
+      await Promise.all(Array.from(missing).map(async (uid) => {
+        try {
+          const ref = doc(db, 'users', uid);
+          const snap = await getDoc(ref);
+          if (snap.exists()) {
+            const data = snap.data() as any;
+            const emp = data.employee || {};
+            const name = emp.name || data['employee name'] || data.employee_name || data.name || 'Unknown';
+            const department = emp.department || data['employee department'] || data.department;
+            entries.push([uid, { name: String(name), department: department ? String(department) : undefined }]);
+          } else {
+            // Fallback: search by employee_id
+            const usersCol = collection(db, 'users');
+            const byEmpId = fsQuery(usersCol, where('employee_id', '==', uid));
+            const byNestedEmpId = fsQuery(usersCol, where('employee.employee_id', '==', uid));
+            let foundDoc: any | null = null;
+            const [snap1, snap2] = await Promise.all([getDocs(byEmpId), getDocs(byNestedEmpId)]);
+            if (!snap1.empty) foundDoc = snap1.docs[0].data();
+            else if (!snap2.empty) foundDoc = snap2.docs[0].data();
+            if (foundDoc) {
+              const emp2 = foundDoc.employee || {};
+              const name2 = emp2.name || foundDoc['employee name'] || foundDoc.employee_name || foundDoc.name || 'Unknown';
+              const department2 = emp2.department || foundDoc['employee department'] || foundDoc.department;
+              entries.push([uid, { name: String(name2), department: department2 ? String(department2) : undefined }]);
+            } else {
+              entries.push([uid, { name: 'Unknown' }]);
+            }
+          }
+        } catch {
+          entries.push([uid, { name: 'Unknown' }]);
+        }
+      }));
+      if (entries.length > 0) setUserInfoMap(prev => ({ ...prev, ...Object.fromEntries(entries) }));
+    };
+    loadUserInfos();
+  }, [bills, userInfoMap]);
 
   const formatItems = (items: BillItem[], bags?: number) => {
     const itemText = items && items.length > 0 
@@ -151,7 +200,8 @@ const RecentTransactions: React.FC<RecentTransactionsProps> = ({ bills, vegetabl
           <table className="w-full text-sm text-left text-slate-500">
             <thead className="text-xs text-slate-700 uppercase bg-slate-50">
               <tr>
-                <th scope="col" className="px-6 py-3">Bill Number</th>
+                <th scope="col" className="px-6 py-3">S.No</th>
+                <th scope="col" className="px-6 py-3">Employee Name</th>
                 <th scope="col" className="px-6 py-3">Customer</th>
                 <th scope="col" className="px-6 py-3">Department</th>
                 <th scope="col" className="px-6 py-3">
@@ -180,14 +230,15 @@ const RecentTransactions: React.FC<RecentTransactionsProps> = ({ bills, vegetabl
             <tbody>
               {filteredBills.length === 0 ? (
                   <tr>
-                      <td colSpan={8} className="text-center py-10 text-slate-500">No transactions found.</td>
+                      <td colSpan={9} className="text-center py-10 text-slate-500">No transactions found.</td>
                   </tr>
               ) : (
-                  filteredBills.map((bill) => (
+                  filteredBills.map((bill, idx) => (
                 <tr key={bill.id} className="bg-white border-b hover:bg-slate-50">
-                    <td className="px-6 py-4 font-mono text-xs text-slate-700">{bill.id}</td>
-                    <td className="px-6 py-4 font-medium text-slate-900">{bill.customerName}</td>
-                    <td className="px-6 py-4 text-slate-600">{bill.department || 'N/A'}</td>
+                    <td className="px-6 py-4 text-slate-700">{idx + 1}</td>
+                    <td className="px-6 py-4 font-medium text-slate-900">{userInfoMap[String((bill as any).customerId || bill.customerName || '')]?.name || 'Unknown'}</td>
+                    <td className="px-6 py-4 font-mono text-xs text-slate-700">{String((bill as any).customerId || bill.customerName)}</td>
+                    <td className="px-6 py-4 text-slate-600">{userInfoMap[String((bill as any).customerId || bill.customerName || '')]?.department || bill.department || 'N/A'}</td>
                     <td className="px-6 py-4">{new Date(bill.date).toLocaleDateString()}</td>
                     <td className="px-6 py-4 text-sm" title={formatItems(bill.items || [], bill.bags)}>
                       {(bill.items || []).length} {(bill.items || []).length === 1 ? 'item' : 'items'}{bill.bags && bill.bags > 0 ? ` + ${bill.bags} bag${bill.bags === 1 ? '' : 's'}` : ''}

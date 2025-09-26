@@ -6,10 +6,11 @@ import Dashboard from './Dashboard.tsx';
 import Inventory from './Inventory.tsx';
 import Orders from './Orders.tsx';
 import Settings from './Settings.tsx';
+import Reports from './Reports.tsx';
 import CreateBill from './CreateBill.tsx';
 import { updateUserNameInDb } from '../services/dbService';
 import { db } from '../firebase';
-import { doc, updateDoc } from 'firebase/firestore';
+import { doc, updateDoc, collection, query, where, getDocs } from 'firebase/firestore';
 
 interface AdminDashboardProps {
   user: User;
@@ -24,7 +25,7 @@ interface AdminDashboardProps {
   onUpdateUser: (updatedUser: User) => void;
 }
 
-type AdminPage = 'dashboard' | 'inventory' | 'orders' | 'settings' | 'create-bill';
+type AdminPage = 'dashboard' | 'inventory' | 'orders' | 'settings' | 'create-bill' | 'reports';
 
 const AdminDashboard: React.FC<AdminDashboardProps> = (props) => {
   const [currentPage, setCurrentPage] = useState<AdminPage>('dashboard');
@@ -71,18 +72,43 @@ const AdminDashboard: React.FC<AdminDashboardProps> = (props) => {
 
   const handleUpdateBillStatus = async (billId: string, status: 'pending' | 'packed' | 'delivered') => {
     props.updateBill(billId, { status });
-    // Map bill to order in Firestore
-    if (status === 'packed' || status === 'delivered') {
-      // Find corresponding order by billId
-      const orderRef = doc(db, 'orders', billId);
-      await updateDoc(orderRef, {
-        bill: {
-          billId,
-          employeeId: props.user.id,
-          status,
-          updatedAt: new Date(),
+    try {
+      // Find corresponding order document by orderId field
+      const ordersCol = collection(db, 'orders');
+      const q = query(ordersCol, where('orderId', '==', billId));
+      const snap = await getDocs(q);
+      if (!snap.empty) {
+        await Promise.all(snap.docs.map(async (d) => {
+          const ref = doc(db, 'orders', d.id);
+          await updateDoc(ref, {
+            status,
+            bill: {
+              billId,
+              employeeId: props.user.id,
+              status,
+              updatedAt: new Date(),
+            }
+          });
+        }));
+      } else {
+        // Fallback: try updating doc whose id matches billId (legacy behavior)
+        const legacyRef = doc(db, 'orders', billId);
+        try {
+          await updateDoc(legacyRef, {
+            status,
+            bill: {
+              billId,
+              employeeId: props.user.id,
+              status,
+              updatedAt: new Date(),
+            }
+          });
+        } catch (e) {
+          console.warn('Order not found for status update (both orderId and doc id lookups failed):', billId);
         }
-      });
+      }
+    } catch (e) {
+      console.error('Failed to update order status in Firestore:', e);
     }
   };
 
@@ -108,6 +134,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = (props) => {
                   onUpdateBill={props.updateBill}
                   currentUser={props.user}
                />;
+      case 'reports':
+        return <Reports bills={props.bills} vegetables={props.vegetables} />;
       case 'settings':
         return <Settings 
                   user={props.user}

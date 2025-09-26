@@ -4,6 +4,8 @@ import { MagnifyingGlassIcon, DocumentMagnifyingGlassIcon } from './ui/Icon.tsx'
 import BillDetailModal from './BillDetailModal.tsx';
 import FilterBar, { FilterState } from './FilterBar.tsx';
 import { formatRoundedTotal } from '../utils/roundUtils';
+import { db } from '../firebase';
+import { doc, getDoc, collection, query as fsQuery, where, getDocs } from 'firebase/firestore';
 
 interface OrdersProps {
   bills: Bill[];
@@ -25,9 +27,61 @@ const Orders: React.FC<OrdersProps> = ({ bills, vegetables, initialBillId, onCle
   const [sortConfig, setSortConfig] = useState<{
     key: 'date' | 'total' | null;
     direction: 'asc' | 'desc';
-  }>({ key: null, direction: 'asc' });
+  }>({ key: 'date', direction: 'desc' });
   
   const vegetableMap = useMemo(() => new Map(vegetables.map(v => [v.id, v])), [vegetables]);
+
+  // Cache of user info keyed by userId: { name, department }
+  const [userInfoMap, setUserInfoMap] = useState<Record<string, { name: string; department?: string }>>({});
+
+  // Fetch missing user infos for visible bills
+  useEffect(() => {
+    const loadUserInfos = async () => {
+      const missingIds = new Set<string>();
+      (bills || []).forEach(b => {
+        const userId = String((b as any).customerId || b.customerName || '').trim();
+        if (userId && !userInfoMap[userId]) missingIds.add(userId);
+      });
+      if (missingIds.size === 0) return;
+      const entries: [string, { name: string; department?: string }][] = [];
+      await Promise.all(Array.from(missingIds).map(async (uid) => {
+        try {
+          const ref = doc(db, 'users', uid);
+          const snap = await getDoc(ref);
+          if (snap.exists()) {
+            const data = snap.data() as any;
+            const employeeObj = data.employee || {};
+            const resolvedName = employeeObj.name || data['employee name'] || data.employee_name || data.name || 'Unknown';
+            const resolvedDept = employeeObj.department || data['employee department'] || data.department;
+            entries.push([uid, { name: String(resolvedName), department: resolvedDept ? String(resolvedDept) : undefined }]);
+          } else {
+            // Fallback: look up by employee_id field
+            const usersCol = collection(db, 'users');
+            const byEmpId = fsQuery(usersCol, where('employee_id', '==', uid));
+            const byNestedEmpId = fsQuery(usersCol, where('employee.employee_id', '==', uid));
+            let foundDoc: any | null = null;
+            const [snap1, snap2] = await Promise.all([getDocs(byEmpId), getDocs(byNestedEmpId)]);
+            if (!snap1.empty) foundDoc = snap1.docs[0].data();
+            else if (!snap2.empty) foundDoc = snap2.docs[0].data();
+            if (foundDoc) {
+              const employeeObj2 = foundDoc.employee || {};
+              const resolvedName2 = employeeObj2.name || foundDoc['employee name'] || foundDoc.employee_name || foundDoc.name || 'Unknown';
+              const resolvedDept2 = employeeObj2.department || foundDoc['employee department'] || foundDoc.department;
+              entries.push([uid, { name: String(resolvedName2), department: resolvedDept2 ? String(resolvedDept2) : undefined }]);
+            } else {
+              entries.push([uid, { name: 'Unknown' }]);
+            }
+          }
+        } catch {
+          entries.push([uid, { name: 'Unknown' }]);
+        }
+      }));
+      if (entries.length > 0) {
+        setUserInfoMap(prev => ({ ...prev, ...Object.fromEntries(entries) }));
+      }
+    };
+    loadUserInfos();
+  }, [bills, userInfoMap]);
 
   const formatItems = (items: BillItem[], bags?: number) => {
     const itemText = items && items.length > 0 
@@ -57,11 +111,11 @@ const Orders: React.FC<OrdersProps> = ({ bills, vegetables, initialBillId, onCle
   };
 
   const handleSort = (key: 'date' | 'total') => {
-    let direction: 'asc' | 'desc' = 'asc';
-    if (sortConfig.key === key && sortConfig.direction === 'asc') {
-      direction = 'desc';
+    if (sortConfig.key === key) {
+      setSortConfig({ key, direction: sortConfig.direction === 'asc' ? 'desc' : 'asc' });
+    } else {
+      setSortConfig({ key, direction: 'desc' });
     }
-    setSortConfig({ key, direction });
   };
 
   const getSortIcon = (columnKey: 'date' | 'total') => {
@@ -86,14 +140,34 @@ const Orders: React.FC<OrdersProps> = ({ bills, vegetables, initialBillId, onCle
   };
 
   const filteredBills = useMemo(() => {
-    let filtered = bills || [];
+    // Work on a copy to avoid mutating props during sort
+    let filtered = bills ? [...bills] : [];
 
     // Apply search filter
     if (searchTerm) {
-      filtered = filtered.filter(bill =>
-        (bill.customerName || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (bill.id || '').toLowerCase().includes(searchTerm.toLowerCase())
-      );
+      const needle = searchTerm.trim().toLowerCase();
+      if (needle) {
+        filtered = filtered.filter(bill => {
+          const userKey = String((bill as any).customerId || bill.customerName || '');
+          const customer = (bill.customerName || '').toLowerCase();
+          const user = userInfoMap[userKey];
+          const nameText = (user?.name || '').toLowerCase();
+          const deptText = (user?.department || bill.department || '').toLowerCase();
+          const idText = (bill.id || '').toLowerCase();
+          const dept = (bill.department || '').toLowerCase();
+          const itemNames = (bill.items || [])
+            .map(it => (vegetableMap.get(it.vegetableId)?.name || '').toLowerCase())
+            .join(' ');
+          return (
+            customer.includes(needle) ||
+            nameText.includes(needle) ||
+            deptText.includes(needle) ||
+            idText.includes(needle) ||
+            dept.includes(needle) ||
+            itemNames.includes(needle)
+          );
+        });
+      }
     }
 
     // Apply status filter
@@ -117,11 +191,13 @@ const Orders: React.FC<OrdersProps> = ({ bills, vegetables, initialBillId, onCle
         let bValue: any;
 
         if (sortConfig.key === 'date') {
-          aValue = new Date(a.date).getTime();
-          bValue = new Date(b.date).getTime();
+          const aTime = new Date(a.date).getTime();
+          const bTime = new Date(b.date).getTime();
+          aValue = isNaN(aTime) ? 0 : aTime;
+          bValue = isNaN(bTime) ? 0 : bTime;
         } else if (sortConfig.key === 'total') {
-          aValue = a.total;
-          bValue = b.total;
+          aValue = Number(a.total) || 0;
+          bValue = Number(b.total) || 0;
         }
 
         if (aValue < bValue) {
@@ -130,7 +206,10 @@ const Orders: React.FC<OrdersProps> = ({ bills, vegetables, initialBillId, onCle
         if (aValue > bValue) {
           return sortConfig.direction === 'asc' ? 1 : -1;
         }
-        return 0;
+        // Stable tie-breaker: by id to keep order deterministic
+        const aId = String(a.id || '');
+        const bId = String(b.id || '');
+        return aId.localeCompare(bId);
       });
     }
 
@@ -186,7 +265,8 @@ const Orders: React.FC<OrdersProps> = ({ bills, vegetables, initialBillId, onCle
           <table className="w-full text-sm text-left text-slate-500">
             <thead className="text-xs text-slate-700 uppercase bg-slate-50">
               <tr>
-                <th scope="col" className="px-6 py-3">Bill Number</th>
+                <th scope="col" className="px-6 py-3">S.No</th>
+                <th scope="col" className="px-6 py-3">Employee Name</th>
                 <th scope="col" className="px-6 py-3">Customer</th>
                 <th scope="col" className="px-6 py-3">Department</th>
                 <th scope="col" className="px-6 py-3">
@@ -218,11 +298,12 @@ const Orders: React.FC<OrdersProps> = ({ bills, vegetables, initialBillId, onCle
                       <td colSpan={8} className="text-center py-10 text-slate-500">No transactions found.</td>
                   </tr>
               ) : (
-                  filteredBills.map((bill) => (
+                  filteredBills.map((bill, idx) => (
                   <tr key={bill.id} className="bg-white border-b hover:bg-slate-50">
-                      <td className="px-6 py-4 font-mono text-xs text-slate-700">{bill.id}</td>
-                      <td className="px-6 py-4 font-medium text-slate-900">{bill.customerName}</td>
-                      <td className="px-6 py-4 text-slate-600">{bill.department || 'N/A'}</td>
+                      <td className="px-6 py-4 text-slate-700">{idx + 1}</td>
+                      <td className="px-6 py-4 font-medium text-slate-900">{userInfoMap[String((bill as any).customerId || bill.customerName || '')]?.name || 'Unknown'}</td>
+                      <td className="px-6 py-4 font-mono text-xs text-slate-700">{String((bill as any).customerId || bill.customerName)}</td>
+                      <td className="px-6 py-4 text-slate-600">{userInfoMap[String((bill as any).customerId || bill.customerName || '')]?.department || bill.department || 'N/A'}</td>
                       <td className="px-6 py-4">{new Date(bill.date).toLocaleString()}</td>
                       <td className="px-6 py-4 text-sm" title={formatItems(bill.items || [], bill.bags)}>
                         {(bill.items || []).length} {(bill.items || []).length === 1 ? 'item' : 'items'}{bill.bags && bill.bags > 0 ? ` + ${bill.bags} bag${bill.bags === 1 ? '' : 's'}` : ''}
