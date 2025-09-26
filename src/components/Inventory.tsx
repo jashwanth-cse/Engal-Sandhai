@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import type { Vegetable, Bill } from '../../types/types';
 import Button from './ui/Button.tsx';
-import { PlusIcon, PencilSquareIcon, TrashIcon } from './ui/Icon.tsx';
+import { PlusIcon, PencilSquareIcon, TrashIcon, MagnifyingGlassIcon } from './ui/Icon.tsx';
 import VegetableFormModal from './VegetableFormModal.tsx';
 import Toast from './ui/Toast.tsx';
 import { db } from '../firebase';
@@ -30,6 +30,7 @@ const Inventory: React.FC<InventoryProps> = ({
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingVegetable, setEditingVegetable] = useState<Vegetable | null>(null);
   const [toast, setToast] = useState<ToastState>(null);
+  const [searchTerm, setSearchTerm] = useState('');
 
   // Calculate used stock for each vegetable from bills
   const usedStock = useMemo(() => {
@@ -50,6 +51,17 @@ const Inventory: React.FC<InventoryProps> = ({
     const used = usedStock.get(vegetable.id) || 0;
     return Math.max(0, vegetable.totalStockKg - used);
   };
+
+  // Filter vegetables based on search term
+  const filteredVegetables = useMemo(() => {
+    if (!searchTerm.trim()) {
+      return vegetables;
+    }
+    return vegetables.filter(veg => 
+      veg.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      veg.category.toLowerCase().includes(searchTerm.toLowerCase())
+    );
+  }, [vegetables, searchTerm]);
 
   const showToast = (message: string, type: 'success' | 'error' = 'success') => {
     setToast({ message, type });
@@ -114,6 +126,27 @@ const Inventory: React.FC<InventoryProps> = ({
         </Button>
       </div>
 
+      {/* Search Bar */}
+      <div className="bg-white rounded-xl shadow-lg p-4">
+        <div className="relative max-w-md">
+          <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+            <MagnifyingGlassIcon className="h-5 w-5 text-slate-400" />
+          </div>
+          <input
+            type="text"
+            className="block w-full pl-10 pr-3 py-2 border border-slate-300 rounded-lg leading-5 bg-white placeholder-slate-400 focus:outline-none focus:placeholder-slate-500 focus:ring-1 focus:ring-primary-500 focus:border-primary-500"
+            placeholder="Search vegetables by name or category..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+          />
+        </div>
+        {searchTerm && (
+          <div className="mt-2 text-sm text-slate-600">
+            Found {filteredVegetables.length} of {vegetables.length} vegetables
+          </div>
+        )}
+      </div>
+
       <div className="bg-white rounded-xl shadow-lg">
         <div className="overflow-x-auto">
           <table className="w-full text-sm text-left text-slate-500">
@@ -130,12 +163,19 @@ const Inventory: React.FC<InventoryProps> = ({
               </tr>
             </thead>
             <tbody>
-              {vegetables.map((veg, index) => {
-                const availableStock = getAvailableStock(veg);
-                const isLowStock = availableStock <= (veg.totalStockKg * 0.2); // Low stock warning at 20%
-                
-                return (
-                <tr key={veg.id} className="bg-white border-b hover:bg-slate-50">
+              {filteredVegetables.length === 0 ? (
+                <tr>
+                  <td colSpan={8} className="px-6 py-8 text-center text-slate-500">
+                    {searchTerm ? 'No vegetables found matching your search.' : 'No vegetables in inventory.'}
+                  </td>
+                </tr>
+              ) : (
+                filteredVegetables.map((veg, index) => {
+                  const availableStock = getAvailableStock(veg);
+                  const isLowStock = availableStock <= (veg.totalStockKg * 0.2); // Low stock warning at 20%
+                  
+                  return (
+                  <tr key={veg.id} className="bg-white border-b hover:bg-slate-50">
                   <td className="px-6 py-4 font-medium text-slate-900">
                     {index + 1}
                   </td>
@@ -173,9 +213,10 @@ const Inventory: React.FC<InventoryProps> = ({
                       </button>
                     </div>
                   </td>
-                </tr>
-                );
-              })}
+                  </tr>
+                  );
+                })
+              )}
             </tbody>
           </table>
         </div>
