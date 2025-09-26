@@ -1,15 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import type { Bill, Vegetable } from '../../types/types';
 import Button from './ui/Button.tsx';
 import { db } from '../firebase';
-import { doc, getDoc, collection, query as fsQuery, where, getDocs } from 'firebase/firestore';
+import { collection, getDocs, orderBy, query as fsQuery, Timestamp, where, doc, getDoc } from 'firebase/firestore';
 
-interface ReportsProps {
-  bills: Bill[];
-  vegetables: Vegetable[];
-}
-
-const Reports: React.FC<ReportsProps> = ({ bills }) => {
+const Reports: React.FC = () => {
   const [reportDate, setReportDate] = useState<string>(() => {
     const d = new Date();
     const yyyy = d.getFullYear();
@@ -19,22 +13,60 @@ const Reports: React.FC<ReportsProps> = ({ bills }) => {
   });
 
   const [userInfoMap, setUserInfoMap] = useState<Record<string, { name: string; department?: string }>>({});
+  const [orders, setOrders] = useState<Array<{
+    id: string;
+    userId: string;
+    totalAmount: number;
+    orderItems: any[];
+    createdAt: Date;
+  }>>([]);
+  const [loading, setLoading] = useState(false);
 
-  const dayBills = useMemo(() => {
-    if (!reportDate) return [] as Bill[];
-    const selected = new Date(reportDate);
-    return (bills || []).filter((b) => {
-      const d = new Date(b.date);
-      return d.toDateString() === selected.toDateString();
-    });
-  }, [bills, reportDate]);
+  // Fetch orders for the selected date from Firestore
+  useEffect(() => {
+    const fetchOrders = async () => {
+      try {
+        setLoading(true);
+        const sel = new Date(reportDate);
+        const start = new Date(sel.getFullYear(), sel.getMonth(), sel.getDate(), 0, 0, 0, 0);
+        const end = new Date(sel.getFullYear(), sel.getMonth(), sel.getDate(), 23, 59, 59, 999);
+        const col = collection(db, 'orders');
+        const q = fsQuery(
+          col,
+          where('createdAt', '>=', Timestamp.fromDate(start)),
+          where('createdAt', '<=', Timestamp.fromDate(end)),
+          orderBy('createdAt', 'asc')
+        );
+        const snap = await getDocs(q);
+        const rows = snap.docs.map(d => {
+          const data: any = d.data();
+          const createdAtTs = data.createdAt?.toDate ? data.createdAt.toDate() : new Date();
+          const itemsArr: any[] = Array.isArray(data.orderItems) ? data.orderItems : (Array.isArray(data.items) ? data.items : []);
+          return {
+            id: String(data.orderId || d.id),
+            userId: String(data.userId || data.employee_id || ''),
+            totalAmount: Number(data.totalAmount) || 0,
+            orderItems: itemsArr,
+            createdAt: createdAtTs,
+          };
+        });
+        setOrders(rows);
+      } catch (e) {
+        console.error('Failed to fetch orders for report:', e);
+        setOrders([]);
+      } finally {
+        setLoading(false);
+      }
+    };
+    if (reportDate) fetchOrders();
+  }, [reportDate]);
 
   // Ensure we have user info for all bills shown
   useEffect(() => {
     const loadUserInfos = async () => {
       const missing = new Set<string>();
-      dayBills.forEach((b) => {
-        const uid = String((b as any).customerId || b.customerName || '').trim();
+      (orders || []).forEach((b) => {
+        const uid = String(b.userId || '').trim();
         if (uid && !userInfoMap[uid]) missing.add(uid);
       });
       if (missing.size === 0) return;
@@ -73,77 +105,133 @@ const Reports: React.FC<ReportsProps> = ({ bills }) => {
       if (entries.length > 0) setUserInfoMap((prev) => ({ ...prev, ...Object.fromEntries(entries) }));
     };
     loadUserInfos();
-  }, [dayBills, userInfoMap]);
+  }, [orders, userInfoMap]);
 
-  const totalSales = useMemo(() => dayBills.reduce((sum, b) => sum + (Number(b.total) || 0), 0), [dayBills]);
+  const totalSales = useMemo(() => orders.reduce((sum, b) => sum + (Number(b.totalAmount) || 0), 0), [orders]);
 
   // Lazy-load jsPDF and autoTable from CDN
   const ensureJsPdf = async (): Promise<any> => {
-    if (typeof window !== 'undefined' && (window as any).jspdf?.jsPDF) {
-      return (window as any).jspdf.jsPDF;
-    }
-    await new Promise<void>((resolve) => {
+    const getCtor = () => (window as any)?.jspdf?.jsPDF || (window as any)?.jsPDF || null;
+    const hasAutoTable = () => {
+      const ctor = getCtor();
+      if (!ctor) return false;
+      try {
+        const test = new ctor({ unit: 'pt' });
+        return typeof (test as any).autoTable === 'function';
+      } catch {
+        return false;
+      }
+    };
+
+    if (getCtor() && hasAutoTable()) return getCtor();
+
+    // Load jsPDF UMD
+    await new Promise<void>((resolve, reject) => {
       const s = document.createElement('script');
       s.src = 'https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js';
+      s.async = true;
       s.onload = () => resolve();
+      s.onerror = () => reject(new Error('Failed to load jsPDF'));
       document.body.appendChild(s);
     });
-    await new Promise<void>((resolve) => {
+
+    // Load AutoTable plugin
+    await new Promise<void>((resolve, reject) => {
       const s = document.createElement('script');
       s.src = 'https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.2/dist/jspdf.plugin.autotable.min.js';
+      s.async = true;
       s.onload = () => resolve();
+      s.onerror = () => reject(new Error('Failed to load jsPDF AutoTable'));
       document.body.appendChild(s);
     });
-    return (window as any).jspdf.jsPDF;
+
+    const ctor = getCtor();
+    if (!ctor) throw new Error('jsPDF not available after load');
+    const testDoc = new ctor({ unit: 'pt' });
+    if (typeof (testDoc as any).autoTable !== 'function') throw new Error('jsPDF AutoTable not registered');
+    return ctor;
   };
 
   const generatePdf = async () => {
     try {
       const JsPDF = await ensureJsPdf();
-      const doc = new JsPDF({ orientation: 'portrait', unit: 'pt', format: 'a4' });
+      // Access UMD as window.jspdf.jsPDF if available
+      const DocCtor = (window as any)?.jspdf?.jsPDF || JsPDF;
+      const doc = new DocCtor({ orientation: 'portrait', unit: 'pt', format: 'a4' });
 
       const title = `Daily Report - ${new Date(reportDate).toLocaleDateString()}`;
-      doc.setFontSize(14);
-      doc.text(title, 40, 40);
+      // Header: Brand + Title
+      doc.setFontSize(16);
+      doc.setFont(undefined, 'bold');
+      doc.text('Engal Sandhai', 40, 28);
+      doc.setFontSize(12);
+      doc.setFont(undefined, 'normal');
+      doc.text(title, 40, 44);
 
       const head = [[ 'S.No', 'Employee Name', 'Customer', 'Total Items', 'Total Amount' ]];
-      const rows: any[] = dayBills.map((b, idx) => {
-        const uid = String((b as any).customerId || b.customerName || '');
-        const empName = userInfoMap[uid]?.name || 'Unknown';
-        const itemsCount = (b.items || []).reduce((c, _it) => c + 1, 0);
-        return [ String(idx + 1), empName, String(b.customerName || ''), String(itemsCount), `₹${(Number(b.total) || 0).toFixed(2)}` ];
-      });
 
-      const autoTable = (doc as any).autoTable as (opts: any) => void;
-      autoTable(doc, {
-        head,
-        body: rows,
-        startY: 60,
-        styles: { fontSize: 10, cellPadding: 6 },
-        headStyles: { fillColor: [30, 64, 175] },
-        theme: 'striped',
-        bodyStyles: {},
-        columnStyles: {
-          0: { cellWidth: 50 },
-          1: { cellWidth: 180 },
-          2: { cellWidth: 120 },
-          3: { cellWidth: 100, halign: 'right' },
-          4: { cellWidth: 100, halign: 'right' },
-        },
-        // 18 rows per page handled automatically by autotable with page breaks; enforce with rowPageBreak
-        rowPageBreak: 'auto',
-        didDrawPage(data: any) {
-          const pageSize = doc.internal.pageSize;
-          const pageHeight = pageSize.getHeight();
-          doc.setFontSize(9);
-          doc.text(`Page ${doc.getNumberOfPages()}`, pageSize.getWidth() - 60, pageHeight - 20);
-        },
-      });
+      // Leave room for per-page total line; 17 rows per page avoids overflow
+      const pageSize = 25;
+      const chunks: typeof orders[] = [] as any;
+      for (let i = 0; i < orders.length; i += pageSize) {
+        chunks.push(orders.slice(i, i + pageSize));
+      }
 
-      // Summary footer
-      const finalY = (doc as any).lastAutoTable?.finalY || 60;
-      doc.setFontSize(12);
-      doc.text(`Total Sales: ₹${totalSales.toFixed(2)}`, 40, finalY + 24);
+      let currentY = 64;
+      chunks.forEach((chunk, pageIdx) => {
+        const rows = chunk.map((b, idx) => {
+          const items = Array.isArray(b.orderItems) ? b.orderItems : [];
+          const itemsCount = items.reduce((sum, it: any) => sum + (Number(it.quantity) || 1), 0);
+          const empName = userInfoMap[b.userId]?.name || 'Unknown';
+          return [ String(pageIdx * pageSize + idx + 1), String(empName), String(b.userId || ''), String(itemsCount), `Rs ${(Number(b.totalAmount) || 0).toFixed(2)}` ];
+        });
+        const pageWidth = (doc as any).internal.pageSize.getWidth();
+        const pageHeight = (doc as any).internal.pageSize.getHeight();
+        (doc as any).autoTable({
+          head,
+          body: rows,
+          startY: currentY,
+          styles: { fontSize: 10, cellPadding: 6, overflow: 'linebreak' },
+          headStyles: { fillColor: [30, 64, 175], textColor: 255 },
+          theme: 'striped',
+          margin: { top: 56, bottom: 40, left: 40, right: 40 },
+          columnStyles: {
+            0: { cellWidth: 50 },
+            1: { cellWidth: 170 },
+            2: { cellWidth: 160 },
+            3: { cellWidth: 80, halign: 'right' },
+            4: { cellWidth: 90, halign: 'right' },
+          },
+        });
+        const finalY = (doc as any).lastAutoTable?.finalY || currentY;
+        // Page total for this chunk
+        const pageTotal = chunk.reduce((sum, o) => sum + (Number(o.totalAmount) || 0), 0);
+        doc.setFontSize(11);
+        doc.setFont(undefined, 'bold');
+        const pageLabel = `Page Total: Rs ${pageTotal.toFixed(2)}`;
+        const footerY = Math.min(finalY + 16, pageHeight - 24);
+        doc.text(pageLabel, pageWidth - 40 - doc.getTextWidth(pageLabel), footerY);
+        doc.setFont(undefined, 'normal');
+        if (pageIdx < chunks.length - 1) {
+          doc.addPage();
+          // Repeat header on each page
+          doc.setFontSize(16);
+          doc.setFont(undefined, 'bold');
+          doc.text('Engal Sandhai', 40, 28);
+          doc.setFontSize(12);
+          doc.setFont(undefined, 'normal');
+          doc.text(title, 40, 44);
+          currentY = 64;
+        } else {
+          // Entire total at end of last page
+          doc.setFontSize(12);
+          doc.setFont(undefined, 'bold');
+          const entireLabel = `Total Sales: Rs ${totalSales.toFixed(2)}`;
+          const entireY = Math.min(finalY + 34, pageHeight - 24);
+          doc.text(entireLabel, pageWidth - 40 - doc.getTextWidth(entireLabel), entireY);
+          doc.setFont(undefined, 'normal');
+        }
+      });
 
       doc.save(`Daily_Report_${reportDate}.pdf`);
     } catch (e) {
@@ -179,26 +267,27 @@ const Reports: React.FC<ReportsProps> = ({ bills }) => {
               </tr>
             </thead>
             <tbody>
-              {dayBills.length === 0 ? (
+              {loading ? (
+                <tr><td colSpan={4} className="px-4 py-6 text-center text-slate-500">Loading...</td></tr>
+              ) : orders.length === 0 ? (
                 <tr><td colSpan={5} className="px-4 py-6 text-center text-slate-500">No orders for the selected date.</td></tr>
               ) : (
-                dayBills.map((b, idx) => {
-                  const uid = String((b as any).customerId || b.customerName || '');
-                  const empName = userInfoMap[uid]?.name || 'Unknown';
-                  const itemsCount = (b.items || []).length;
+                orders.map((b, idx) => {
+                  const itemsCount = (Array.isArray(b.orderItems) ? b.orderItems : []).reduce((sum, it: any) => sum + (Number(it.quantity) || 1), 0);
+                  const empName = userInfoMap[b.userId]?.name || 'Unknown';
                   return (
                     <tr key={b.id} className="border-b last:border-b-0">
                       <td className="px-4 py-2">{idx + 1}</td>
                       <td className="px-4 py-2 font-medium text-slate-900">{empName}</td>
-                      <td className="px-4 py-2 font-mono text-xs text-slate-700">{String(b.customerName || '')}</td>
+                      <td className="px-4 py-2 font-mono text-xs text-slate-700">{b.userId}</td>
                       <td className="px-4 py-2">{itemsCount}</td>
-                      <td className="px-4 py-2 text-right font-semibold">₹{(Number(b.total) || 0).toFixed(2)}</td>
+                      <td className="px-4 py-2 text-right font-semibold">₹{(Number(b.totalAmount) || 0).toFixed(2)}</td>
                     </tr>
                   );
                 })
               )}
             </tbody>
-            {dayBills.length > 0 && (
+            {orders.length > 0 && !loading && (
               <tfoot>
                 <tr>
                   <td className="px-4 py-3" colSpan={4}><span className="font-semibold">Total Sales</span></td>
