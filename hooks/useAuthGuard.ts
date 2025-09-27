@@ -20,13 +20,8 @@ export const useAuthGuard = (currentUser: User | null, loading: boolean) => {
       return;
     }
 
-    // If user is authenticated but accessing login page
-    if (currentUser && currentPath === '/') {
-      console.log('AuthGuard: Authenticated user accessing login, redirecting to dashboard');
-      const redirectPath = currentUser.role === 'admin' ? '/admin-choice' : '/dashboard';
-      navigate(redirectPath, { replace: true });
-      return;
-    }
+    // Allow authenticated users to access login page (no auto-redirect)
+    // Users can manually navigate to their dashboard after login
 
     // Role-based route protection
     if (currentUser && currentPath.startsWith('/admin') && currentUser.role !== 'admin') {

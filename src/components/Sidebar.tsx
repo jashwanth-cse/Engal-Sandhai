@@ -1,8 +1,8 @@
 import React from 'react';
 import type { User } from'../../types/types';
-import { HomeIcon, CubeIcon, ShoppingCartIcon, LogoutIcon, XMarkIcon, CogIcon, PlusIcon, DocumentMagnifyingGlassIcon } from './ui/Icon.tsx';
+import { HomeIcon, CubeIcon, ShoppingCartIcon, LogoutIcon, XMarkIcon, CogIcon, PlusIcon, DocumentMagnifyingGlassIcon, CalendarDaysIcon } from './ui/Icon.tsx';
 
-type AdminPage = 'dashboard' | 'inventory' | 'orders' | 'settings' | 'create-bill' | 'reports';
+type AdminPage = 'dashboard' | 'inventory' | 'orders' | 'settings' | 'create-bill' | 'reports' | 'weekly-stock';
 
 interface SidebarProps {
   user: User;
@@ -19,7 +19,6 @@ const Sidebar: React.FC<SidebarProps> = ({ user, onLogout, currentPage, setCurre
     { id: 'inventory', name: 'Inventory', icon: <CubeIcon className="h-6 w-6" /> },
     { id: 'orders', name: 'Orders', icon: <ShoppingCartIcon className="h-6 w-6" /> },
     { id: 'reports', name: 'Reports', icon: <DocumentMagnifyingGlassIcon className="h-6 w-6" /> },
-    { id: 'settings', name: 'Settings', icon: <CogIcon className="h-6 w-6" /> },
     { id: 'create-bill', name: 'Create Bill', icon: <PlusIcon className="h-6 w-6" /> },
   ];
 

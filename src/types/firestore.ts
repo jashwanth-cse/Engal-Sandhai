@@ -24,8 +24,21 @@ export interface Stock {
   productId: string;
   productName: string;
   quantity: number;
+  availableStock: number;
   price: number;
   addedBy: string;
   addedAt: Date;
   lastUpdated: Date;
+}
+
+export interface AvailableStock {
+  productId: string;
+  productName: string;
+  category: string;
+  pricePerKg: number;
+  totalStockKg: number;
+  availableStockKg: number;
+  unitType: 'KG' | 'COUNT';
+  lastUpdated: Date;
+  updatedBy: string;
 }

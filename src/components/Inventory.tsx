@@ -1,11 +1,13 @@
 import React, { useState, useMemo } from 'react';
 import type { Vegetable, Bill } from '../../types/types';
 import Button from './ui/Button.tsx';
+import MetricCard from './ui/MetricCard.tsx';
 import { PlusIcon, PencilSquareIcon, TrashIcon, MagnifyingGlassIcon } from './ui/Icon.tsx';
 import VegetableFormModal from './VegetableFormModal.tsx';
 import Toast from './ui/Toast.tsx';
 import { db } from '../firebase';
 import { collection, addDoc, doc, updateDoc } from 'firebase/firestore';
+import { syncAvailableStockWithVegetables } from '../utils/availableStockUtils';
 
 interface InventoryProps {
   vegetables: Vegetable[];
@@ -47,10 +49,57 @@ const Inventory: React.FC<InventoryProps> = ({
   }, [bills]);
 
   // Calculate available stock for each vegetable
+  // Note: This will be updated to use the availableStock field from Firebase stocks collection
   const getAvailableStock = (vegetable: Vegetable) => {
     const used = usedStock.get(vegetable.id) || 0;
     return Math.max(0, vegetable.totalStockKg - used);
   };
+
+  // Calculate selling statistics for each vegetable
+  const sellingStats = useMemo(() => {
+    const stats = new Map<string, { vegetable: Vegetable; totalSold: number; totalRevenue: number }>();
+    
+    // Initialize all vegetables with 0 sales
+    vegetables.forEach(veg => {
+      stats.set(veg.id, {
+        vegetable: veg,
+        totalSold: 0,
+        totalRevenue: 0
+      });
+    });
+    
+    // Calculate sales from bills
+    bills.forEach(bill => {
+      bill.items?.forEach(item => {
+        const current = stats.get(item.vegetableId);
+        if (current) {
+          current.totalSold += item.quantityKg;
+          current.totalRevenue += item.subtotal; // Use subtotal from bill item
+        }
+      });
+    });
+    
+    return Array.from(stats.values());
+  }, [vegetables, bills]);
+
+  // Get max selling item
+  const maxSellingItem = useMemo(() => {
+    return sellingStats.reduce((max, current) => 
+      current.totalSold > max.totalSold ? current : max, 
+      sellingStats[0] || { vegetable: null, totalSold: 0, totalRevenue: 0 }
+    );
+  }, [sellingStats]);
+
+  // Get lowest selling item (excluding items with 0 sales)
+  const lowestSellingItem = useMemo(() => {
+    const itemsWithSales = sellingStats.filter(item => item.totalSold > 0);
+    if (itemsWithSales.length === 0) return { vegetable: null, totalSold: 0, totalRevenue: 0 };
+    
+    return itemsWithSales.reduce((min, current) => 
+      current.totalSold < min.totalSold ? current : min, 
+      itemsWithSales[0]
+    );
+  }, [sellingStats]);
 
   // Filter vegetables based on search term
   const filteredVegetables = useMemo(() => {
@@ -82,6 +131,7 @@ const Inventory: React.FC<InventoryProps> = ({
     if ('id' in data) {
       updateVegetable(data);
       showToast(`${data.name} updated successfully!`);
+      
       // Update stock in Firestore
       const stockRef = doc(db, 'stocks', data.id);
       await updateDoc(stockRef, {
@@ -89,30 +139,74 @@ const Inventory: React.FC<InventoryProps> = ({
         category: data.category,
         pricePerKg: data.pricePerKg,
         totalStockKg: data.totalStockKg,
+        availableStock: data.totalStockKg, // Set available stock to total stock when updating
         updatedAt: new Date(),
         updatedBy: userId,
         role: "admin"
       });
+      
+      // Sync with available stock collection
+      try {
+        await syncAvailableStockWithVegetables(data, 'update', userId);
+        console.log('Available stock updated for:', data.name);
+      } catch (error) {
+        console.error('Failed to sync available stock for update:', error);
+        showToast('Warning: Available stock may not be updated correctly', 'error');
+      }
     } else {
       addVegetable(data);
       showToast(`${data.name} added successfully!`);
+      
       // Add stock to Firestore
-      await addDoc(collection(db, 'stocks'), {
+      const docRef = await addDoc(collection(db, 'stocks'), {
         name: data.name,
         category: data.category,
         pricePerKg: data.pricePerKg,
         totalStockKg: data.totalStockKg,
+        availableStock: data.totalStockKg, // Initialize available stock to total stock
         createdAt: new Date(),
         createdBy: userId,
         role: "admin"
       });
+      
+      // Sync with available stock collection
+      try {
+        const vegetableWithId = { ...data, id: docRef.id };
+        await syncAvailableStockWithVegetables(vegetableWithId, 'add', userId);
+        console.log('Available stock created for:', data.name);
+      } catch (error) {
+        console.error('Failed to sync available stock for add:', error);
+        showToast('Warning: Available stock may not be created correctly', 'error');
+      }
     }
   };
 
-  const handleDelete = (veg: Vegetable) => {
+  const handleDelete = async (veg: Vegetable) => {
     if (window.confirm(`Are you sure you want to delete ${veg.name}? This action cannot be undone.`)) {
-      deleteVegetable(veg.id);
-      showToast(`${veg.name} deleted.`, 'error');
+      try {
+        const userId = window.localStorage.getItem('userId') || '';
+        
+        // Delete from available stock collection
+        try {
+          await syncAvailableStockWithVegetables(veg, 'delete', userId);
+          console.log('Available stock deleted for:', veg.name);
+        } catch (error) {
+          console.error('Failed to sync available stock for delete:', error);
+          // Don't show error to user if available stock doesn't exist
+          if (error.message && error.message.includes('not found')) {
+            console.log('Available stock entry not found, continuing with deletion');
+          } else {
+            showToast('Warning: Available stock may not be deleted correctly', 'error');
+          }
+        }
+        
+        // Delete from local state
+        deleteVegetable(veg.id);
+        showToast(`${veg.name} deleted.`, 'error');
+      } catch (error) {
+        console.error('Error deleting vegetable:', error);
+        showToast('Error deleting vegetable. Please try again.', 'error');
+      }
     }
   };
 
@@ -124,6 +218,28 @@ const Inventory: React.FC<InventoryProps> = ({
             <PlusIcon className="h-5 w-5 mr-2" />
             Add Stock
         </Button>
+      </div>
+
+      {/* Selling Statistics Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <MetricCard
+          title="Max Selling Item"
+          value={maxSellingItem.vegetable ? `${maxSellingItem.vegetable.name} (${maxSellingItem.totalSold.toFixed(1)} ${maxSellingItem.vegetable.unitType === 'KG' ? 'kg' : 'pieces'})` : 'No sales data'}
+          icon={
+            <svg className="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
+            </svg>
+          }
+        />
+        <MetricCard
+          title="Lowest Selling Item"
+          value={lowestSellingItem.vegetable ? `${lowestSellingItem.vegetable.name} (${lowestSellingItem.totalSold.toFixed(1)} ${lowestSellingItem.vegetable.unitType === 'KG' ? 'kg' : 'pieces'})` : 'No sales data'}
+          icon={
+            <svg className="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 17h8m0 0V9m0 8l-8-8-4 4-6-6" />
+            </svg>
+          }
+        />
       </div>
 
       {/* Search Bar */}

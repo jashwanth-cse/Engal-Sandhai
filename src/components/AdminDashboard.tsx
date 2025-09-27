@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import type { User, Bill, Vegetable } from '../../types/types';
 import Sidebar from './Sidebar.tsx';
 import AdminHeader from './AdminHeader.tsx';
@@ -25,12 +26,13 @@ interface AdminDashboardProps {
   onUpdateUser: (updatedUser: User) => void;
 }
 
-type AdminPage = 'dashboard' | 'inventory' | 'orders' | 'settings' | 'create-bill' | 'reports';
+type AdminPage = 'dashboard' | 'inventory' | 'orders' | 'settings' | 'create-bill' | 'reports' | 'weekly-stock';
 
 const AdminDashboard: React.FC<AdminDashboardProps> = (props) => {
   const [currentPage, setCurrentPage] = useState<AdminPage>('dashboard');
   const [isSidebarOpen, setSidebarOpen] = useState(false);
   const [initialBillId, setInitialBillId] = useState<string | null>(null);
+  const navigate = useNavigate();
 
   const handleViewOrder = (billId: string) => {
     setInitialBillId(billId);
@@ -136,6 +138,9 @@ const AdminDashboard: React.FC<AdminDashboardProps> = (props) => {
                />;
       case 'reports':
         return <Reports bills={props.bills} vegetables={props.vegetables} />;
+      case 'weekly-stock':
+        navigate('/weekly-stock');
+        return null;
       case 'settings':
         return <Settings 
                   user={props.user}
@@ -158,6 +163,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = (props) => {
       dashboard: 'Dashboard',
       inventory: 'Inventory',
       orders: 'Order History',
+      reports: 'Reports',
+      'weekly-stock': 'Weekly Stock Update',
       settings: 'Settings',
       'create-bill': 'Create Bill',
   };

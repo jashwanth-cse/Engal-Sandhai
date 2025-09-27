@@ -17,8 +17,17 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
 }) => {
   const location = useLocation();
 
+  console.log('ProtectedRoute render:', { 
+    hasUser: !!user, 
+    loading, 
+    requiredRole, 
+    userRole: user?.role,
+    currentPath: location.pathname 
+  });
+
   // Show loading spinner while authentication is being checked
   if (loading) {
+    console.log('ProtectedRoute: Still loading, showing spinner');
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-50">
         <div className="text-center">

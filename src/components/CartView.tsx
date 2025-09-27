@@ -1,4 +1,4 @@
-import React from "react";
+  import React from "react";
 import type { BillItem } from "../../types/types";
 import Button from "./ui/Button.tsx";
 import {
@@ -13,6 +13,7 @@ import { formatRoundedTotal } from "../utils/roundUtils";
 import { db } from "../firebase";
 import { collection, addDoc, doc, updateDoc, getDoc, query, where, Timestamp, getCountFromServer } from "firebase/firestore";
 import { getAuth } from "firebase/auth";
+import { batchUpdateAvailableStock } from "../utils/availableStockUtils";
 
 type CartItemDetails = BillItem & {
   name: string;
@@ -99,7 +100,9 @@ const CartContent: React.FC<Omit<CartViewProps, "isOpen">> = ({
 
       await addDoc(collection(db, "orders"), order);
 
-      if (userData.role === "admin") {
+      // Update stock for all users (not just admin)
+      try {
+        // Update vegetables collection
         await Promise.all(
           cartItems.map((item) =>
             updateDoc(doc(db, "vegetables", item.vegetableId), {
@@ -107,6 +110,19 @@ const CartContent: React.FC<Omit<CartViewProps, "isOpen">> = ({
             })
           )
         );
+        console.log('Vegetables stock updated for purchase');
+        
+        // Update available stock in the availableStock collection
+        const stockUpdates = cartItems.map((item) => ({
+          productId: item.vegetableId,
+          quantitySold: item.quantityKg
+        }));
+        await batchUpdateAvailableStock(stockUpdates, userId);
+        console.log('Available stock updated for purchase');
+      } catch (error) {
+        console.error('Failed to update stock for purchase:', error);
+        // Don't fail the entire purchase, just log the error
+        alert('Order placed but stock may not be updated correctly. Please check with admin.');
       }
 
       alert("Order placed successfully!");
@@ -232,7 +248,10 @@ const CartContent: React.FC<Omit<CartViewProps, "isOpen">> = ({
                 {/* Remove Button */}
                 <div className="col-span-2 text-center flex justify-center">
                   <button
-                    onClick={() => onUpdateCart(item.vegetableId, 0)}
+                    onClick={() => {
+                      console.log(`Remove button clicked for ${item.vegetableId}`);
+                      onUpdateCart(item.vegetableId, 0);
+                    }}
                     className="p-2 text-red-500 hover:text-red-700 hover:bg-red-50 rounded-full transition-colors duration-200 flex items-center justify-center"
                     title="Remove item"
                   >

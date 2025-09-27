@@ -59,18 +59,25 @@ const OrderPage: React.FC<OrderPageProps> = ({ user, vegetables, addBill, onLogo
   }, [vegetables, searchTerm, category]);
 
   const updateCart = (vegId: string, quantity: number) => {
+    console.log(`Updating cart for ${vegId} with quantity ${quantity}`);
     setCart(prev => {
       const newCart = new Map(prev);
       const vegetable = vegetableMap.get(vegId);
-      if (!vegetable) return prev;
+      if (!vegetable) {
+        console.log(`Vegetable not found for ${vegId}`);
+        return prev;
+      }
 
       // Clamp quantity between 0 and stockKg
       const clampedQuantity = Math.max(0, Math.min(quantity, vegetable.stockKg));
+      console.log(`Clamped quantity: ${clampedQuantity} (original: ${quantity}, max: ${vegetable.stockKg})`);
 
       if (clampedQuantity > 0) {
         newCart.set(vegId, parseFloat(clampedQuantity.toFixed(2)));
+        console.log(`Added to cart: ${vegId} = ${clampedQuantity}`);
       } else {
         newCart.delete(vegId);
+        console.log(`Removed from cart: ${vegId}`);
       }
       return newCart;
     });

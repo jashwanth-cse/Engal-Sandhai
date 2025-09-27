@@ -10,9 +10,10 @@ import { auth } from '../services/authService';
 interface LoginPageProps {
   error?: string | null;
   clearError: () => void;
+  currentUser?: { id: string; name: string; role: string; email?: string } | null;
 }
 
-const LoginPage: React.FC<LoginPageProps> = ({ error, clearError }) => {
+const LoginPage: React.FC<LoginPageProps> = ({ error, clearError, currentUser }) => {
   const [employeeID, setEmployeeID] = useState('');
   const [phone, setPhone] = useState('');
   const [loading, setLoading] = useState(false);
@@ -108,9 +109,50 @@ const LoginPage: React.FC<LoginPageProps> = ({ error, clearError }) => {
       <div className="w-full max-w-sm p-8 space-y-6 bg-white rounded-2xl shadow-xl">
         <div className="text-center">
           <h1 className="text-3xl font-bold tracking-tight text-primary-900">🥬 Engal Santhai</h1>
-          <p className="mt-2 text-slate-500">Sign in to your account</p>
+          <p className="mt-2 text-slate-500">
+            {currentUser ? `Welcome back, ${currentUser.name}!` : 'Sign in to your account'}
+          </p>
         </div>
-        <form className="mt-8 space-y-6" onSubmit={handleLogin}>
+        
+        {currentUser ? (
+          <div className="space-y-4">
+            <div className="text-center p-4 bg-green-50 rounded-lg">
+              <CheckCircleIcon className="h-8 w-8 text-green-500 mx-auto mb-2" />
+              <p className="text-green-700 font-medium">Login Successful!</p>
+              <p className="text-sm text-green-600">You are logged in as {currentUser.role}</p>
+            </div>
+            <div className="space-y-3">
+              {currentUser.role === 'admin' ? (
+                <Button 
+                  onClick={() => navigate('/admin-choice')} 
+                  className="w-full" 
+                  size="lg"
+                >
+                  Go to Admin Dashboard
+                </Button>
+              ) : (
+                <Button 
+                  onClick={() => navigate('/dashboard')} 
+                  className="w-full" 
+                  size="lg"
+                >
+                  Go to User Dashboard
+                </Button>
+              )}
+              <Button 
+                onClick={() => {
+                  auth.signOut();
+                  window.location.reload();
+                }} 
+                variant="outline" 
+                className="w-full"
+              >
+                Logout
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <form className="mt-8 space-y-6" onSubmit={handleLogin}>
           <div>
             <label htmlFor="employeeID" className="block text-sm font-medium text-slate-700 mb-1">
               Employee ID
@@ -172,7 +214,8 @@ const LoginPage: React.FC<LoginPageProps> = ({ error, clearError }) => {
               </div>
             )}
           </div>
-        </form>
+          </form>
+        )}
       </div>
     </div>
   );
