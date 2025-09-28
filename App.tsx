@@ -15,9 +15,27 @@ const App: React.FC = () => {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [loginError, setLoginError] = useState<string | null>(null);
-  const [selectedDate, setSelectedDate] = useState<Date | null>(null); // Add date state
+  const [selectedDate, setSelectedDate] = useState<Date | null>(null); // Add date state\n  const [sessionTimeout, setSessionTimeout] = useState<NodeJS.Timeout | null>(null); // Add session timeout
   const billingData = useBillingData({ selectedDate }); // Pass selected date to hook
   const navigate = useNavigate();
+
+  // Force logout on app startup to require authentication every time
+  useEffect(() => {
+    const forceLogout = async () => {
+      try {
+        // Only sign out if there's an existing session to prevent interference with fresh logins
+        if (auth.currentUser) {
+          await auth.signOut();
+          console.log('Cleared existing session on app startup');
+        }
+      } catch (error) {
+        console.log('No existing session to clear on startup');
+      }
+      setCurrentUser(null);
+    };
+
+    forceLogout();
+  }, []);
 
   // Disable browser cache for security
   useEffect(() => {
@@ -47,11 +65,12 @@ const App: React.FC = () => {
     };
   }, []);
 
-  // Observe Firebase auth state
+  // Modified Firebase auth state observer - allows login but no persistence across browser restarts
   useEffect(() => {
     const unsubscribe = observeUser(async (firebaseUser) => {
       try {
         if (firebaseUser) {
+          console.log('Auth state: User authenticated');
           const docRef = doc(db, 'users', firebaseUser.uid);
           const docSnap = await getDoc(docRef);
           if (docSnap.exists()) {
@@ -70,6 +89,7 @@ const App: React.FC = () => {
             setCurrentUser(defaultUser);
           }
         } else {
+          console.log('Auth state: No user authenticated');
           setCurrentUser(null);
           // Ensure we're on login page when no user
           const currentPath = window.location.pathname;
@@ -91,7 +111,7 @@ const App: React.FC = () => {
     return () => unsubscribe();
   }, [navigate]);
 
-  // Enhanced security: Check auth state when window gains focus
+  // Session timeout management - logout after inactivity\n  useEffect(() => {\n    let timeoutId: NodeJS.Timeout;\n    \n    const resetTimeout = () => {\n      if (timeoutId) clearTimeout(timeoutId);\n      \n      if (currentUser) {\n        // Auto logout after 30 minutes of inactivity\n        timeoutId = setTimeout(async () => {\n          console.log('Session timeout - logging out user');\n          await handleLogout();\n        }, 30 * 60 * 1000); // 30 minutes\n      }\n    };\n\n    const handleActivity = () => {\n      resetTimeout();\n    };\n\n    // Reset timeout on user activity\n    if (currentUser) {\n      resetTimeout();\n      \n      // Listen for user activity\n      const events = ['mousedown', 'mousemove', 'keypress', 'scroll', 'touchstart', 'click'];\n      events.forEach(event => {\n        document.addEventListener(event, handleActivity, { passive: true });\n      });\n\n      return () => {\n        if (timeoutId) clearTimeout(timeoutId);\n        events.forEach(event => {\n          document.removeEventListener(event, handleActivity);\n        });\n      };\n    }\n  }, [currentUser]);\n\n  // Enhanced security: Force redirect to login for any protected route access\n  useEffect(() => {\n    const currentPath = window.location.pathname;\n    \n    // If user is not authenticated and trying to access protected routes\n    if (!currentUser && !loading && currentPath !== '/') {\n      console.log('Direct route access blocked: Not authenticated, redirecting to login');\n      navigate('/', { replace: true });\n    }\n  }, [currentUser, loading, navigate]);\n\n  // Enhanced security: Check auth state when window gains focus
   useEffect(() => {
     const handleFocus = async () => {
       if (currentUser) {
@@ -251,7 +271,11 @@ const App: React.FC = () => {
               <Navigate to="/dashboard" replace />
             )
           ) : (
-            <LoginPage error={loginError} clearError={() => setLoginError(null)} />
+            <LoginPage 
+              error={loginError} 
+              clearError={() => setLoginError(null)} 
+              onLogin={handleLogin}
+            />
           )
         }
       />

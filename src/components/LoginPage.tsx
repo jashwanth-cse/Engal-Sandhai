@@ -11,9 +11,10 @@ interface LoginPageProps {
   error?: string | null;
   clearError: () => void;
   currentUser?: { id: string; name: string; role: string; email?: string } | null;
+  onLogin?: (employeeID: string, phone: string) => Promise<void>;
 }
 
-const LoginPage: React.FC<LoginPageProps> = ({ error, clearError, currentUser }) => {
+const LoginPage: React.FC<LoginPageProps> = ({ error, clearError, currentUser, onLogin }) => {
   const [employeeID, setEmployeeID] = useState('');
   const [phone, setPhone] = useState('');
   const [loading, setLoading] = useState(false);
@@ -55,50 +56,17 @@ const LoginPage: React.FC<LoginPageProps> = ({ error, clearError, currentUser })
     setLoading(true);
 
     try {
-      // Verify reCAPTCHA - TEMPORARILY DISABLED
-      /*
-      const recaptchaToken = (window as any).grecaptcha?.getResponse();
-      if (!recaptchaToken) {
-        alert('Please complete reCAPTCHA');
-        setLoading(false);
-        return;
-      }
-      */
-      // Firebase login
-      const userCredential = await loginWithEmployeeID(employeeID, phone);
-
-      // Fetch role from Firestore
-      const docRef = doc(db, 'users', employeeID); // employeeID is userId
-      const docSnap = await getDoc(docRef);
-
-      if (!docSnap.exists()) {
-        alert('User record not found in DB');
-        setLoading(false);
-        return;
-      }
-
-      const data = docSnap.data();
-      const role = data.role;
-
-      // Save userId to localStorage for later use
-      window.localStorage.setItem('userId', employeeID);
-
-      // Role-based navigation
-      if (role === 'admin') {
-        navigate('/admin-choice');
-      } else if (role === 'faculty') {
-        navigate('/dashboard');
+      // Use the onLogin callback from App.tsx instead of handling login here
+      if (onLogin) {
+        await onLogin(employeeID, phone);
       } else {
-        console.error('Invalid role assigned:', role);
-        alert('Invalid role assigned.');
-        await auth.signOut();
-        navigate('/');
+        // Fallback to original login logic if no callback provided
+        const userCredential = await loginWithEmployeeID(employeeID, phone);
+        console.log('Login successful:', userCredential.user);
       }
-
-      // reCAPTCHA disabled
     } catch (err: any) {
-      console.error(err);
-      alert('Login failed: ' + err.message);
+      console.error('Login error:', err);
+      // Error handling is done in App.tsx now
     } finally {
       setLoading(false);
     }
