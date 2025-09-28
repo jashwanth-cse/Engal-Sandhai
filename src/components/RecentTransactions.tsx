@@ -13,9 +13,10 @@ interface RecentTransactionsProps {
   onViewOrder: (billId: string) => void;
   onUpdateBillStatus?: (billId: string, status: 'pending' | 'packed' | 'delivered') => void;
   onUpdateBill?: (billId: string, updates: Partial<Bill>) => void;
+  onDateSelectionChange?: (date: Date | null) => void; // Add date selection handler
 }
 
-const RecentTransactions: React.FC<RecentTransactionsProps> = ({ bills, vegetables, title = "All Transactions", onViewOrder, onUpdateBillStatus, onUpdateBill }) => {
+const RecentTransactions: React.FC<RecentTransactionsProps> = ({ bills, vegetables, title = "All Transactions", onViewOrder, onUpdateBillStatus, onUpdateBill, onDateSelectionChange }) => {
   const [filters, setFilters] = useState<FilterState>({
     status: 'all',
     date: ''
@@ -187,6 +188,7 @@ const RecentTransactions: React.FC<RecentTransactionsProps> = ({ bills, vegetabl
       <FilterBar 
         filters={filters}
         onFiltersChange={setFilters}
+        onDateSelectionChange={onDateSelectionChange}
         pendingCount={statusCounts.pending}
         packedCount={statusCounts.packed}
         deliveredCount={statusCounts.delivered}

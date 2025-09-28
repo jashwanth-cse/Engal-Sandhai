@@ -1,34 +1,39 @@
-import { collection, addDoc, updateDoc, doc, getDoc } from 'firebase/firestore';
-import { db } from '../firebase';
-import { Order, OrderItem } from '../types/firestore';
+import { getDoc } from 'firebase/firestore';
+import { placeOrder, findOrderByOrderId, OrderData } from '../services/dbService';
+import { OrderItem } from '../types/firestore';
 
 export const createOrder = async (userId: string, items: OrderItem[]) => {
   const totalAmount = items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
   
-  const orderData: Order = {
-    orderId: '', // Will be set after creation
+  const orderData: OrderData = {
     userId,
-    items,
+    employee_id: userId,
+    items: items.map(item => ({
+      id: item.productId,
+      name: item.productName,
+      quantity: item.quantity,
+      pricePerKg: item.price,
+      subtotal: item.price * item.quantity
+    })),
     totalAmount,
     status: 'pending',
-    createdAt: new Date(),
+    bagCount: 0,
+    bagCost: 0,
+    cartSubtotal: totalAmount
   };
 
-  const docRef = await addDoc(collection(db, 'orders'), orderData);
-  await updateDoc(doc(db, 'orders', docRef.id), {
-    orderId: docRef.id
-  });
-
-  return docRef.id;
+  // Use the new placeOrder function which stores in date-based collections
+  const billNumber = await placeOrder(orderData);
+  return billNumber;
 };
 
 export const generateBill = async (orderId: string, employeeId: string) => {
-  const orderRef = doc(db, 'orders', orderId);
-  const orderSnap = await getDoc(orderRef);
+  // Use the new helper to find order across date-based collections
+  const orderInfo = await findOrderByOrderId(orderId);
   
-  if (!orderSnap.exists()) throw new Error('Order not found');
+  if (!orderInfo) throw new Error('Order not found');
   
-  const orderData = orderSnap.data() as Order;
+  const orderData = orderInfo.data;
   const billData = {
     billId: `BILL-${orderId}`,
     employeeId,
@@ -36,10 +41,7 @@ export const generateBill = async (orderId: string, employeeId: string) => {
     finalAmount: orderData.totalAmount
   };
 
-  await updateDoc(orderRef, {
-    status: 'billed',
-    bill: billData
-  });
-
+  // Note: The order status update is handled by updateOrderStatus function
+  // This function now mainly returns bill data for compatibility
   return billData;
 };

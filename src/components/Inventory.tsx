@@ -2,19 +2,19 @@ import React, { useState, useMemo } from 'react';
 import type { Vegetable, Bill } from '../../types/types';
 import Button from './ui/Button.tsx';
 import MetricCard from './ui/MetricCard.tsx';
-import { PlusIcon, PencilSquareIcon, TrashIcon, MagnifyingGlassIcon } from './ui/Icon.tsx';
+import { PlusIcon, PencilSquareIcon, TrashIcon, MagnifyingGlassIcon, CalendarDaysIcon } from './ui/Icon.tsx';
 import VegetableFormModal from './VegetableFormModal.tsx';
 import Toast from './ui/Toast.tsx';
-import { db } from '../firebase';
-import { collection, addDoc, doc, updateDoc } from 'firebase/firestore';
-import { syncAvailableStockWithVegetables } from '../utils/availableStockUtils';
 
 interface InventoryProps {
   vegetables: Vegetable[];
   bills: Bill[]; // Add bills to calculate available stock
-  addVegetable: (newVegetable: Omit<Vegetable, 'id'>) => void;
-  updateVegetable: (updatedVegetable: Vegetable) => void;
-  deleteVegetable: (vegId: string) => void;
+  availableStock: Map<string, number>; // Real-time available stock from database
+  addVegetable: (newVegetable: Omit<Vegetable, 'id'>, date?: Date) => void;
+  updateVegetable: (updatedVegetable: Vegetable, date?: Date) => void;
+  deleteVegetable: (vegId: string, date?: Date) => void;
+  selectedDate?: Date; // Currently selected date from parent component
+  onDateChange?: (date: Date) => void; // Callback to change date in parent
 }
 
 type ToastState = {
@@ -25,14 +25,45 @@ type ToastState = {
 const Inventory: React.FC<InventoryProps> = ({
   vegetables,
   bills,
+  availableStock,
   addVegetable,
   updateVegetable,
   deleteVegetable,
+  selectedDate,
+  onDateChange,
 }) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingVegetable, setEditingVegetable] = useState<Vegetable | null>(null);
   const [toast, setToast] = useState<ToastState>(null);
   const [searchTerm, setSearchTerm] = useState('');
+  const [localSelectedDate, setLocalSelectedDate] = useState<Date>(selectedDate || new Date());
+
+  // Use selectedDate from props or local state
+  const currentDate = selectedDate || localSelectedDate;
+  
+  // Handle date change
+  const handleDateChange = (newDate: Date) => {
+    if (onDateChange) {
+      onDateChange(newDate);
+    } else {
+      setLocalSelectedDate(newDate);
+    }
+  };
+
+  // Format date for display
+  const formatDateForDisplay = (date: Date) => {
+    return date.toLocaleDateString('en-GB', {
+      weekday: 'long',
+      year: 'numeric',
+      month: 'long', 
+      day: 'numeric'
+    });
+  };
+
+  // Format date for input (YYYY-MM-DD)
+  const formatDateForInput = (date: Date) => {
+    return date.toISOString().split('T')[0];
+  };
 
   // Calculate used stock for each vegetable from bills
   const usedStock = useMemo(() => {
@@ -48,9 +79,15 @@ const Inventory: React.FC<InventoryProps> = ({
     return used;
   }, [bills]);
 
-  // Calculate available stock for each vegetable
-  // Note: This will be updated to use the availableStock field from Firebase stocks collection
+  // Get available stock for each vegetable from real-time database data
   const getAvailableStock = (vegetable: Vegetable) => {
+    // Use real-time available stock from database if available
+    const realTimeStock = availableStock.get(vegetable.id);
+    if (realTimeStock !== undefined) {
+      return realTimeStock;
+    }
+    
+    // Fallback: calculate from bills as before (for backward compatibility)
     const used = usedStock.get(vegetable.id) || 0;
     return Math.max(0, vegetable.totalStockKg - used);
   };
@@ -127,97 +164,60 @@ const Inventory: React.FC<InventoryProps> = ({
   };
 
   const handleSubmit = async (data: Omit<Vegetable, 'id'> | Vegetable) => {
-    const userId = window.localStorage.getItem('userId') || '';
-    if ('id' in data) {
-      updateVegetable(data);
-      showToast(`${data.name} updated successfully!`);
-      
-      // Update stock in Firestore
-      const stockRef = doc(db, 'stocks', data.id);
-      await updateDoc(stockRef, {
-        name: data.name,
-        category: data.category,
-        pricePerKg: data.pricePerKg,
-        totalStockKg: data.totalStockKg,
-        availableStock: data.totalStockKg, // Set available stock to total stock when updating
-        updatedAt: new Date(),
-        updatedBy: userId,
-        role: "admin"
-      });
-      
-      // Sync with available stock collection
-      try {
-        await syncAvailableStockWithVegetables(data, 'update', userId);
-        console.log('Available stock updated for:', data.name);
-      } catch (error) {
-        console.error('Failed to sync available stock for update:', error);
-        showToast('Warning: Available stock may not be updated correctly', 'error');
+    try {
+      if ('id' in data) {
+        // Update existing vegetable
+        await updateVegetable(data, currentDate); // Pass the selected date
+        showToast(`${data.name} updated for ${formatDateForDisplay(currentDate)}!`);
+      } else {
+        // Add new vegetable
+        await addVegetable(data, currentDate); // Pass the selected date
+        showToast(`${data.name} added for ${formatDateForDisplay(currentDate)}!`);
       }
-    } else {
-      addVegetable(data);
-      showToast(`${data.name} added successfully!`);
-      
-      // Add stock to Firestore
-      const docRef = await addDoc(collection(db, 'stocks'), {
-        name: data.name,
-        category: data.category,
-        pricePerKg: data.pricePerKg,
-        totalStockKg: data.totalStockKg,
-        availableStock: data.totalStockKg, // Initialize available stock to total stock
-        createdAt: new Date(),
-        createdBy: userId,
-        role: "admin"
-      });
-      
-      // Sync with available stock collection
-      try {
-        const vegetableWithId = { ...data, id: docRef.id };
-        await syncAvailableStockWithVegetables(vegetableWithId, 'add', userId);
-        console.log('Available stock created for:', data.name);
-      } catch (error) {
-        console.error('Failed to sync available stock for add:', error);
-        showToast('Warning: Available stock may not be created correctly', 'error');
-      }
+    } catch (error) {
+      console.error('Error saving vegetable:', error);
+      showToast('Failed to save vegetable. Please try again.', 'error');
     }
   };
 
   const handleDelete = async (veg: Vegetable) => {
-    if (window.confirm(`Are you sure you want to delete ${veg.name}? This action cannot be undone.`)) {
+    if (window.confirm(`Are you sure you want to delete ${veg.name} from ${formatDateForDisplay(currentDate)}? This action cannot be undone.`)) {
       try {
-        const userId = window.localStorage.getItem('userId') || '';
-        
-        // Delete from available stock collection
-        try {
-          await syncAvailableStockWithVegetables(veg, 'delete', userId);
-          console.log('Available stock deleted for:', veg.name);
-        } catch (error) {
-          console.error('Failed to sync available stock for delete:', error);
-          // Don't show error to user if available stock doesn't exist
-          if (error.message && error.message.includes('not found')) {
-            console.log('Available stock entry not found, continuing with deletion');
-          } else {
-            showToast('Warning: Available stock may not be deleted correctly', 'error');
-          }
-        }
-        
-        // Delete from local state
-        deleteVegetable(veg.id);
-        showToast(`${veg.name} deleted.`, 'error');
+        await deleteVegetable(veg.id, currentDate); // Pass the selected date
+        showToast(`${veg.name} deleted from ${formatDateForDisplay(currentDate)}!`);
       } catch (error) {
         console.error('Error deleting vegetable:', error);
-        showToast('Error deleting vegetable. Please try again.', 'error');
+        showToast('Failed to delete vegetable. Please try again.', 'error');
       }
     }
   };
 
   return (
     <div className="space-y-6">
-      <div className="flex justify-between items-center">
-        <h1 className="text-3xl font-bold text-slate-800">Inventory Management</h1>
-        <Button onClick={() => handleOpenModal()}>
-            <PlusIcon className="h-5 w-5 mr-2" />
-            Add Stock
-        </Button>
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+        <div className="flex flex-col">
+          <h1 className="text-3xl font-bold text-slate-800">Inventory Management</h1>
+          <p className="text-slate-600 mt-1">Managing stock for {formatDateForDisplay(currentDate)}</p>
+        </div>
+        <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
+          {/* Date Selector */}
+          <div className="flex items-center gap-2 bg-white border border-slate-300 rounded-lg px-3 py-2 shadow-sm">
+            <CalendarDaysIcon className="h-5 w-5 text-slate-400" />
+            <input
+              type="date"
+              value={formatDateForInput(currentDate)}
+              onChange={(e) => {
+                const newDate = new Date(e.target.value + 'T00:00:00');
+                handleDateChange(newDate);
+              }}
+              className="border-0 bg-transparent focus:outline-none focus:ring-0 text-sm font-medium text-slate-700"
+            />
+          </div>
+          <Button onClick={() => handleOpenModal()}>
+              <PlusIcon className="h-5 w-5 mr-2" />
+              Add Stock
+          </Button>
+        </div>
       </div>
 
       {/* Selling Statistics Cards */}

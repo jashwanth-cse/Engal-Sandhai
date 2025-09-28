@@ -8,38 +8,76 @@ import {
   updateVegetableInDb,
   deleteVegetableFromDb,
   subscribeToOrders,
+  subscribeToDateOrders,
+  subscribeToTodayOrders,
+  subscribeToAvailableStock,
+  batchReduceVegetableStock,
 } from '../src/services/dbService.ts';
 
-export const useBillingData = () => {
+interface UseBillingDataProps {
+  selectedDate?: Date | null;
+}
+
+export const useBillingData = (props: UseBillingDataProps = {}) => {
+  const { selectedDate } = props;
   const [vegetables, setVegetables] = useState<Vegetable[]>([]);
   const [bills, setBills] = useState<Bill[]>(BILLS_DATA);
   const [vegetablesLoaded, setVegetablesLoaded] = useState(false);
+  const [availableStock, setAvailableStock] = useState<Map<string, number>>(new Map());
 
   useEffect(() => {
+    // Use date-based subscriptions for inventory when a date is selected
     const unsubscribeVeg = subscribeToVegetables((items) => {
       setVegetables(items);
       setVegetablesLoaded(true);
-    });
-    const unsubscribeOrders = subscribeToOrders((incomingBills) => {
-      setBills(incomingBills);
-    });
+    }, selectedDate);
+
+    // Subscribe to available stock for the selected date
+    const unsubscribeAvailableStock = subscribeToAvailableStock((stockMap) => {
+      setAvailableStock(stockMap);
+    }, selectedDate);
+
+    // Subscribe to orders based on selected date
+    let unsubscribeOrders: (() => void) | null = null;
+    
+    if (selectedDate) {
+      // Subscribe to orders for specific date
+      unsubscribeOrders = subscribeToDateOrders(selectedDate, (incomingBills) => {
+        setBills(incomingBills);
+      });
+    } else {
+      // Subscribe to today's orders (default behavior)
+      unsubscribeOrders = subscribeToTodayOrders((incomingBills) => {
+        setBills(incomingBills);
+      });
+    }
+
     return () => {
       unsubscribeVeg();
-      unsubscribeOrders();
+      unsubscribeAvailableStock();
+      if (unsubscribeOrders) {
+        unsubscribeOrders();
+      }
     };
-  }, []);
+  }, [selectedDate]);
 
-  const addVegetable = useCallback(async (newVegetable: Omit<Vegetable, 'id'>) => {
-    await addVegetableToDb(newVegetable);
-  }, []);
+  const addVegetable = useCallback(async (newVegetable: Omit<Vegetable, 'id'>, date?: Date) => {
+    // Use the provided date, or selected date from hook, or current date as fallback
+    const targetDate = date || selectedDate || new Date();
+    await addVegetableToDb(newVegetable, targetDate);
+  }, [selectedDate]);
 
-  const updateVegetable = useCallback(async (updatedVegetable: Vegetable) => {
-    await updateVegetableInDb(updatedVegetable);
-  }, []);
+  const updateVegetable = useCallback(async (updatedVegetable: Vegetable, date?: Date) => {
+    // Use the provided date, or selected date from hook, or current date as fallback
+    const targetDate = date || selectedDate || new Date();
+    await updateVegetableInDb(updatedVegetable, targetDate);
+  }, [selectedDate]);
 
-  const deleteVegetable = useCallback(async (vegId: string) => {
-    await deleteVegetableFromDb(vegId);
-  }, []);
+  const deleteVegetable = useCallback(async (vegId: string, date?: Date) => {
+    // Use the provided date, or selected date from hook, or current date as fallback
+    const targetDate = date || selectedDate || new Date();
+    await deleteVegetableFromDb(vegId, targetDate);
+  }, [selectedDate]);
 
   const addBill = useCallback(async (newBillData: Omit<Bill, 'id' | 'date'>): Promise<Bill> => {
     // --- START FIREBASE INTEGRATION POINT ---
@@ -73,8 +111,24 @@ export const useBillingData = () => {
       status: 'pending', // Default status
     };
 
-    // 3. For each item in the bill, you would update the stock in your 'vegetables' collection.
-    // This local state update correctly mimics that database transaction.
+    // 3. Update stock in the database using the batch stock reduction function
+    try {
+      const stockUpdates = newBill.items.map(item => ({
+        vegetableId: item.vegetableId,
+        quantityToReduce: item.quantityKg
+      }));
+
+      // Update stock in Firebase vegetables collection (this will also update availableStock)
+      await batchReduceVegetableStock(stockUpdates, selectedDate);
+      console.log('✅ Successfully updated vegetable stock in database for order:', invoiceId);
+    } catch (error) {
+      console.error('❌ Error updating vegetable stock in database for order:', invoiceId, error);
+      // You might want to handle this error appropriately
+      throw error; // Throw error to prevent order creation if stock update fails
+    }
+
+    // Keep the legacy vegetables stock update for immediate UI feedback
+    // The real-time listener will update this from the database, but this provides instant feedback
     setVegetables(prevVeggies => {
       const updatedVeggies = [...prevVeggies];
       newBill.items.forEach(item => {
@@ -100,7 +154,7 @@ export const useBillingData = () => {
     // The function returns the created bill, which is good practice.
     return newBill;
     // --- END FIREBASE INTEGRATION POINT ---
-  }, [bills]);
+  }, [bills, selectedDate]);
 
   const updateBill = useCallback((billId: string, updates: Partial<Bill>) => {
     setBills(prev =>
@@ -111,6 +165,7 @@ export const useBillingData = () => {
   return {
     vegetables,
     vegetablesLoaded,
+    availableStock,
     addVegetable,
     updateVegetable,
     deleteVegetable,

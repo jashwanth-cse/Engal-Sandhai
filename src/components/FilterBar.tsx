@@ -9,6 +9,7 @@ export interface FilterState {
 interface FilterBarProps {
   filters: FilterState;
   onFiltersChange: (filters: FilterState) => void;
+  onDateSelectionChange?: (date: Date | null) => void; // New prop for date-based subscription changes
   pendingCount?: number;
   packedCount?: number;
   deliveredCount?: number;
@@ -17,6 +18,7 @@ interface FilterBarProps {
 const FilterBar: React.FC<FilterBarProps> = ({ 
   filters, 
   onFiltersChange, 
+  onDateSelectionChange,
   pendingCount = 0, 
   packedCount = 0,
   deliveredCount = 0 
@@ -27,6 +29,15 @@ const FilterBar: React.FC<FilterBarProps> = ({
 
   const handleDateChange = (date: string) => {
     onFiltersChange({ ...filters, date });
+    
+    // Notify parent component about date change for subscription updates
+    if (onDateSelectionChange) {
+      if (date) {
+        onDateSelectionChange(new Date(date));
+      } else {
+        onDateSelectionChange(null); // null means use today's orders
+      }
+    }
   };
 
   const totalCount = pendingCount + packedCount + deliveredCount;

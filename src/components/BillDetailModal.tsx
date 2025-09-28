@@ -4,6 +4,11 @@ import { XMarkIcon, EyeIcon, ArrowDownTrayIcon } from './ui/Icon.tsx';
 import ImagePreviewModal from './ui/ImagePreviewModal.tsx';
 import Button from './ui/Button.tsx';
 import { roundTotal, formatRoundedTotal } from '../utils/roundUtils';
+import { getVegetableById } from '../services/dbService';
+
+// Firestore imports
+import { doc, getDoc } from 'firebase/firestore';
+import { db } from '../firebase';
 
 // Let TypeScript know that jspdf is available on the window object
 declare global {
@@ -31,6 +36,12 @@ const BillDetailModal: React.FC<BillDetailModalProps> = ({ isOpen, onClose, bill
   // const [bagCount, setBagCount] = useState(0); // Moved to user page
   const [showAddVegetables, setShowAddVegetables] = useState(false);
   
+  // Added: customer name fetched from DB (if possible)
+  const [customerNameFromDB, setCustomerNameFromDB] = useState<string>('');
+  
+  // Add state to track fetched vegetables for missing items
+  const [fetchedVegetables, setFetchedVegetables] = useState<Map<string, Vegetable>>(new Map());
+  
   // const BAG_PRICE = 10; // ₹10 per bag - Moved to user page
   
   // Initialize edited items when bill changes
@@ -40,8 +51,38 @@ const BillDetailModal: React.FC<BillDetailModalProps> = ({ isOpen, onClose, bill
       // setBagCount(bill.bags || 0); // Moved to user page
       setCalculatedTotal(roundTotal(bill.total));
       setHasUnsavedChanges(false);
+      setFetchedVegetables(new Map()); // Reset fetched vegetables for new bill
     }
   }, [bill]);
+  
+  // Effect to fetch missing vegetable data
+  useEffect(() => {
+    if (!bill) return;
+    
+    const fetchMissingVegetables = async () => {
+      const missingVegetables = new Map<string, Vegetable>();
+      
+      for (const item of bill.items) {
+        // If vegetable is not in the current vegetableMap, try to fetch it
+        if (!vegetableMap.has(item.vegetableId) && !fetchedVegetables.has(item.vegetableId)) {
+          console.log(`🔍 Fetching missing vegetable data for: ${item.vegetableId}`);
+          const vegetableData = await getVegetableById(item.vegetableId);
+          if (vegetableData) {
+            console.log(`✅ Found vegetable data: ${vegetableData.name}`);
+            missingVegetables.set(item.vegetableId, vegetableData);
+          } else {
+            console.warn(`❌ Could not find vegetable data for: ${item.vegetableId}`);
+          }
+        }
+      }
+      
+      if (missingVegetables.size > 0) {
+        setFetchedVegetables(prev => new Map([...prev, ...missingVegetables]));
+      }
+    };
+    
+    fetchMissingVegetables();
+  }, [bill, vegetableMap]); // Remove fetchedVegetables from dependency to avoid infinite loop
   
   // Recalculate total when items change (bags moved to user page)
   useEffect(() => {
@@ -68,6 +109,80 @@ const BillDetailModal: React.FC<BillDetailModalProps> = ({ isOpen, onClose, bill
       setHasUnsavedChanges(hasChanges);
     }
   }, [editedItems, bill]); // Removed bagCount dependency
+  
+  // SAFE helper to discover a "key" to fetch the customer record
+  const getCustomerKeyFromBill = (b: Bill): string | null => {
+    // try multiple likely property names without hard-failing TypeScript
+    const anyBill = b as any;
+    if ('customerId' in anyBill && typeof anyBill.customerId === 'string' && anyBill.customerId.trim()) {
+      return anyBill.customerId;
+    }
+    if ('customerUid' in anyBill && typeof anyBill.customerUid === 'string' && anyBill.customerUid.trim()) {
+      return anyBill.customerUid;
+    }
+    if ('customerEmail' in anyBill && typeof anyBill.customerEmail === 'string' && anyBill.customerEmail.trim()) {
+      // many apps store email local-part as doc id
+      return (anyBill.customerEmail as string).split('@')[0];
+    }
+    if ('customerPhone' in anyBill && typeof anyBill.customerPhone === 'string' && anyBill.customerPhone.trim()) {
+      return anyBill.customerPhone;
+    }
+    // fallback: maybe bill has createdBy or owner or userId
+    if ('userId' in anyBill && typeof anyBill.userId === 'string' && anyBill.userId.trim()) {
+      return anyBill.userId;
+    }
+    if ('createdBy' in anyBill && typeof anyBill.createdBy === 'string' && anyBill.createdBy.trim()) {
+      return anyBill.createdBy;
+    }
+    return null;
+  };
+
+  // Fetch the customer name from Firestore if we can find a key on the bill
+  useEffect(() => {
+    const loadName = async () => {
+      setCustomerNameFromDB(''); // reset while loading
+      if (!bill) return;
+      const key = getCustomerKeyFromBill(bill);
+      if (!key) {
+        // no usable key available on bill -> nothing to fetch
+        setCustomerNameFromDB('');
+        return;
+      }
+
+      try {
+        // try users collection first
+        const userDocRef = doc(db, 'users', key);
+        const userSnap = await getDoc(userDocRef);
+        if (userSnap.exists()) {
+          const data = userSnap.data() as any;
+          setCustomerNameFromDB(
+            data.employee_name || data.name || data.fullName || data.displayName || ''
+          );
+          return;
+        }
+
+        // fallback: try customers collection (if you store customers separately)
+        const custDocRef = doc(db, 'customers', key);
+        const custSnap = await getDoc(custDocRef);
+        if (custSnap.exists()) {
+          const data = custSnap.data() as any;
+          setCustomerNameFromDB(
+            data.employee_name || data.name || data.fullName || data.displayName || ''
+          );
+          return;
+        }
+
+        // If no document found, keep empty (fallback to bill.customerName later)
+        setCustomerNameFromDB('');
+      } catch (err) {
+        console.error('Error fetching customer name from Firestore:', err);
+        setCustomerNameFromDB('');
+      }
+    };
+
+    loadName();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bill]); // run whenever bill changes
   
   if (!isOpen || !bill) return null;
 
@@ -157,177 +272,138 @@ const BillDetailModal: React.FC<BillDetailModalProps> = ({ isOpen, onClose, bill
   const handleDownload = () => {
     const { jsPDF } = window.jspdf;
     const doc = new jsPDF();
-    
-    const centerX = doc.internal.pageSize.getWidth() / 2;
-    let y = 20;
 
-    // Header
-    doc.setFontSize(20);
-    doc.setFont('helvetica', 'bold');
-    doc.text('Engal Santhai', centerX, y, { align: 'center' });
-    y += 10;
-    
-    doc.setFontSize(10);
-    doc.setFont('helvetica', 'normal');
-    doc.text('Your Fresh Vegetable Partner', centerX, y, { align: 'center' });
-    y += 15;
-    
-    // Bill Details
-    doc.setFontSize(12);
-    doc.setFont('helvetica', 'bold');
-    doc.text('INVOICE', 14, y);
-    y += 8;
-    
-    // Date and Time on separate lines
-    const billDate = new Date(bill.date);
-    const dateStr = billDate.toLocaleDateString('en-IN', { 
-      day: '2-digit', 
-      month: '2-digit', 
-      year: 'numeric' 
-    });
-    const timeStr = billDate.toLocaleTimeString('en-IN', { 
-      hour: '2-digit', 
-      minute: '2-digit',
-      hour12: true 
-    }).toUpperCase(); // Convert AM/PM to uppercase
-    
-    // Get employee ID from current user's email (before @ symbol)
-    const employeeId = currentUser?.email?.split('@')[0] || currentUser?.id?.substring(0, 8) || 'N/A';
-    
-    doc.setFont('helvetica', 'normal');
-    doc.text(`BILL NUMBER : ${bill.id}`, 14, y);
-    doc.text(`Date: ${dateStr}`, doc.internal.pageSize.getWidth() - 14, y, { align: 'right' });
-    y += 8;
-    doc.text(`CUSTOMER NAME : ${bill.customerName}`, 14, y);
-    doc.text(`Time: ${timeStr}`, doc.internal.pageSize.getWidth() - 14, y, { align: 'right' });
-    y += 8;
-    if (bill.department) {
-      doc.text(`DEPARTMENT : ${bill.department}`, 14, y);
-      y += 8;
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const ITEMS_PER_PAGE = 25; // Maximum items per page
+    const totalPages = Math.max(1, Math.ceil(editedItems.length / ITEMS_PER_PAGE));
+
+    // Get employee ID from current user
+    const employeeId = currentUser?.email?.split('@')[0] || currentUser?.id || 'N/A';
+    // Format bill number as ESDDMMYYYY-001
+    const billDateObj = new Date(bill.date);
+    const dd = String(billDateObj.getDate()).padStart(2, '0');
+    const mm = String(billDateObj.getMonth() + 1).padStart(2, '0');
+    const yyyy = billDateObj.getFullYear();
+    // If bill.id is a string, extract a serial number (last 3 digits or fallback to 001)
+    let serial = '001';
+    const idMatch = bill.id.match(/(\d{3,})$/);
+    if (idMatch) {
+      serial = idMatch[1].slice(-3).padStart(3, '0');
     }
-    doc.text(`EMP ID : ${employeeId}`, 14, y);
-    y += 10;
-    
-    // Table Header with borders
-    doc.setDrawColor(0); // black lines
-    doc.setLineWidth(0.5);
-    
-    // Table dimensions
-    const tableStartX = 14;
-    const tableEndX = doc.internal.pageSize.getWidth() - 14;
-    const tableWidth = tableEndX - tableStartX;
-    
-    // Column positions (cumulative)
-    const col1End = tableStartX + 20;   // S.No.
-    const col2End = col1End + 70;       // Item  
-    const col3End = col2End + 30;       // Qty
-    const col4End = col3End + 35;       // Rate
-    const col5End = tableEndX;          // Amount
-    
-    const headerHeight = 12;
-    const rowHeight = 10;
-    
-    // Draw table header background and borders
-    const headerY = y;
-    
-    // Header top border
-    doc.line(tableStartX, headerY, tableEndX, headerY);
-    
-    // Header text
-    doc.setFont('helvetica', 'bold');
-    doc.text('S.No.', tableStartX + 10, headerY + 7, { align: 'center' });
-    doc.text('Item', tableStartX + 25, headerY + 7);
-    doc.text('Qty (kg)', (col2End + col3End) / 2, headerY + 7, { align: 'center' });
-    doc.text('Rate (Rs.)', (col3End + col4End) / 2, headerY + 7, { align: 'center' });
-    doc.text('Amount (Rs.)', (col4End + col5End) / 2, headerY + 7, { align: 'center' });
-    
-    // Header vertical lines
-    doc.line(tableStartX, headerY, tableStartX, headerY + headerHeight);      // left
-    doc.line(col1End, headerY, col1End, headerY + headerHeight);              // after S.No.
-    doc.line(col2End, headerY, col2End, headerY + headerHeight);              // after Item
-    doc.line(col3End, headerY, col3End, headerY + headerHeight);              // after Qty
-    doc.line(col4End, headerY, col4End, headerY + headerHeight);              // after Rate
-    doc.line(col5End, headerY, col5End, headerY + headerHeight);              // right
-    
-    // Header bottom border
-    y = headerY + headerHeight;
-    doc.line(tableStartX, y, tableEndX, y);
+    const formattedBillNumber = `ES${dd}${mm}${yyyy}-${serial}`;
 
-    // Table Items with proper borders
-    doc.setFont('courier', 'normal');
-    editedItems.forEach((item, index) => {
+    // Generate each page
+    for (let pageNum = 0; pageNum < totalPages; pageNum++) {
+      if (pageNum > 0) {
+        doc.addPage();
+      }
+
+      let y = 20;
+
+      // Header
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(20);
+      doc.text('Engal Santhai', pageWidth / 2, y, { align: 'center' });
+      y += 8;
+
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(11);
+      doc.text('Your Fresh Vegetable Partner', pageWidth / 2, y, { align: 'center' });
+      y += 15;
+
+      // INVOICE heading
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(12);
+      doc.text('INVOICE', 14, y);
+      y += 8;
+
+      // Bill details
+      const billDate = new Date(bill.date);
+      const dateStr = billDate.toLocaleDateString('en-GB', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric'
+      });
+      const timeStr = billDate.toLocaleTimeString('en-US', {
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: true
+      }).toLowerCase();
+
+      doc.setFont('helvetica', 'normal');
+      doc.text(`BILL NO: ${formattedBillNumber}`, 14, y);
+      doc.text(`Date: ${dateStr}`, pageWidth - 14, y, { align: 'right' });
+      y += 6;
+      doc.text(`CUSTOMER NAME : ${customerNameFromDB || bill.customerName}`, 14, y);
+      doc.text(`Time: ${timeStr}`, pageWidth - 14, y, { align: 'right' });
+      y += 6;
+      doc.text(`EMP ID: ${employeeId}`, 14, y);
+      y += 10;
+
+      // Table header
+      const startX = 14;
+      const endX = pageWidth - 14;
+
+      // Column x-positions
+      const colSNo = startX;               // Serial Number
+      const colItem = startX + 20;         // Item left
+      const colQty = startX + 90;          // Qty
+      const colRate = startX + 130;        // Rate
+      const colAmount = endX;              // Amount right
+
+      doc.setLineWidth(0.2);
+      doc.line(startX, y, endX, y); // top border
+      y += 6;
+
+      doc.setFont('helvetica', 'bold');
+      doc.text('S.No.', colSNo, y);
+      doc.text('Item', colItem, y);
+      doc.text('Qty (kg)', colQty, y, { align: 'right' });
+      doc.text('Rate (Rs.)', colRate, y, { align: 'right' });
+      doc.text('Amount (Rs.)', colAmount, y, { align: 'right' });
+
+      y += 2;
+      doc.line(startX, y, endX, y); // header bottom
+      y += 6;
+
+      // Get items for this page
+      const startIdx = pageNum * ITEMS_PER_PAGE;
+      const endIdx = Math.min(startIdx + ITEMS_PER_PAGE, editedItems.length);
+      const pageItems = editedItems.slice(startIdx, endIdx);
+
+      // Table rows for this page
+      doc.setFont('courier', 'normal');
+      pageItems.forEach((item, pageIndex) => {
         const vegetable = vegetableMap.get(item.vegetableId);
-        const serialNo = (index + 1).toString();
-        const name = vegetable?.name || 'Unknown Item';
+        const globalSerialNo = startIdx + pageIndex + 1; // Continue serial number across pages
+        const name = vegetable?.name || 'Unknown';
         const qty = item.quantityKg.toFixed(2);
         const rate = (vegetable?.pricePerKg || 0).toFixed(2);
         const amount = item.subtotal.toFixed(2);
 
-        const rowY = y;
-        
-        // Row data
-        doc.text(serialNo, tableStartX + 10, rowY + 7, { align: 'center' });
-        doc.text(name, tableStartX + 22, rowY + 7);
-        doc.text(qty, (col2End + col3End) / 2, rowY + 7, { align: 'center' });
-        doc.text(rate, (col3End + col4End) / 2, rowY + 7, { align: 'center' });
-        doc.text(amount, (col4End + col5End) / 2, rowY + 7, { align: 'center' });
-        
-        // Row vertical lines
-        doc.line(tableStartX, rowY, tableStartX, rowY + rowHeight);      // left
-        doc.line(col1End, rowY, col1End, rowY + rowHeight);              // after S.No.
-        doc.line(col2End, rowY, col2End, rowY + rowHeight);              // after Item
-        doc.line(col3End, rowY, col3End, rowY + rowHeight);              // after Qty
-        doc.line(col4End, rowY, col4End, rowY + rowHeight);              // after Rate
-        doc.line(col5End, rowY, col5End, rowY + rowHeight);              // right
-        
-        y += rowHeight;
-        
-        // Row bottom border
-        doc.line(tableStartX, y, tableEndX, y);
-    });
+        doc.text(globalSerialNo.toString(), colSNo, y);
+        doc.text(name, colItem, y);
+        doc.text(qty, colQty, y, { align: 'right' });
+        doc.text(rate, colRate, y, { align: 'right' });
+        doc.text(amount, colAmount, y, { align: 'right' });
+        y += 6;
+      });
 
-    y += 10; // Add space after table
+      doc.line(startX, y, endX, y); // bottom border
+      y += 10;
 
-    // Total - Use calculatedTotal instead of bill.total
-    const totalY = y + 5;
-    doc.line(120, totalY, doc.internal.pageSize.getWidth() - 14, totalY);
-    y += 10;
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(14);
-    doc.text('TOTAL:', 122, y);
-    doc.text(`Rs. ${roundTotal(calculatedTotal)}`, 195, y, { align: 'right' });
-    
-    // Payment Details Section
-    y += 20;
-    doc.setFontSize(12);
-    doc.setFont('helvetica', 'bold');
-    doc.text('Pay using UPI:', centerX, y, { align: 'center' });
-    y += 10;
-    
-    // UPI ID in a box
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(14);
-    const upiId = 'qualitykannan1962-1@okhdfcbank';
-    const textWidth = doc.getTextWidth(upiId);
-    const boxWidth = textWidth + 10;
-    const boxHeight = 12;
-    const boxX = centerX - boxWidth / 2;
-    const boxY = y - 8;
-    
-    // Draw box around UPI ID
-    doc.setDrawColor(0);
-    doc.rect(boxX, boxY, boxWidth, boxHeight);
-    doc.text(upiId, centerX, y, { align: 'center' });
-    
-    // Footer
-    const footerY = doc.internal.pageSize.getHeight() - 20;
-    doc.setFontSize(10);
-    doc.setFont('helvetica', 'italic');
-    doc.text('Thank you for your purchase!', centerX, footerY, { align: 'center' });
+      // Show total only on the last page
+      if (pageNum === totalPages - 1) {
+        // TOTAL
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(12);
+        doc.text('TOTAL:', colRate, y);
+        doc.text(`Rs. ${roundTotal(calculatedTotal).toFixed(2)}`, colAmount, y, { align: 'right' });
+      }
+    }
 
-    // Save the PDF
     doc.save(`EngalSanthai-Bill-${bill.id}.pdf`);
-};
+  };
 
   return (
     <>
@@ -353,11 +429,22 @@ const BillDetailModal: React.FC<BillDetailModalProps> = ({ isOpen, onClose, bill
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
                 <div>
                     <p className="text-sm text-slate-500">Bill Number</p>
-                    <p className="font-mono text-sm text-slate-800">{bill.id}</p>
+                    <p className="font-mono text-sm text-slate-800">{(() => {
+                      const billDateObj = new Date(bill.date);
+                      const dd = String(billDateObj.getDate()).padStart(2, '0');
+                      const mm = String(billDateObj.getMonth() + 1).padStart(2, '0');
+                      const yyyy = billDateObj.getFullYear();
+                      let serial = '001';
+                      const idMatch = bill.id.match(/(\d{3,})$/);
+                      if (idMatch) {
+                        serial = idMatch[1].slice(-3).padStart(3, '0');
+                      }
+                      return `ES${dd}${mm}${yyyy}-${serial}`;
+                    })()}</p>
                 </div>
                 <div>
-                    <p className="text-sm text-slate-500">Customer Number</p>
-                    <p className="font-semibold text-slate-800">{bill.customerName}</p>
+                    <p className="text-sm text-slate-500">Customer Name</p>
+                    <p className="font-semibold text-slate-800">{customerNameFromDB || bill.customerName}</p>
                 </div>
                 <div>
                     <p className="text-sm text-slate-500">Date</p>
@@ -394,14 +481,14 @@ const BillDetailModal: React.FC<BillDetailModalProps> = ({ isOpen, onClose, bill
                         </thead>
                         <tbody>
                             {editedItems.map((item, index) => {
-                                const vegetable = vegetableMap.get(item.vegetableId);
+                                const vegetable = vegetableMap.get(item.vegetableId) || fetchedVegetables.get(item.vegetableId);
                                 return (
                                     <tr key={index} className="bg-white border-b last:border-0">
                                         <td className="px-2 py-3 text-center font-medium text-slate-700">
                                             {index + 1}
                                         </td>
                                         <td className="px-4 py-3 font-medium text-slate-900">
-                                            {vegetable?.name || 'N/A'}
+                                            {vegetable?.name || `Unknown Item (${item.vegetableId})`}
                                         </td>
                                         <td className="px-4 py-3 text-right">
                                             <input
@@ -414,7 +501,7 @@ const BillDetailModal: React.FC<BillDetailModalProps> = ({ isOpen, onClose, bill
                                                 onFocus={(e) => e.target.select()}
                                             />
                                         </td>
-                                        <td className="px-4 py-3 text-right">₹{vegetable?.pricePerKg.toFixed(2)}</td>
+                                        <td className="px-4 py-3 text-right">₹{vegetable?.pricePerKg?.toFixed(2) || 'N/A'}</td>
                                         <td className="px-4 py-3 text-right font-semibold text-primary-600">₹{item.subtotal.toFixed(2)}</td>
                                         <td className="px-4 py-3 text-center">
                                             <button

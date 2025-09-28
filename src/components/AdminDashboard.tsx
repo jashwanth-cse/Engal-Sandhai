@@ -9,14 +9,15 @@ import Orders from './Orders.tsx';
 import Settings from './Settings.tsx';
 import Reports from './Reports.tsx';
 import CreateBill from './CreateBill.tsx';
-import { updateUserNameInDb } from '../services/dbService';
+import { updateUserNameInDb, updateOrderStatus, debugLegacyOrders } from '../services/dbService';
 import { db } from '../firebase';
-import { doc, updateDoc, collection, query, where, getDocs } from 'firebase/firestore';
+import { doc, updateDoc } from 'firebase/firestore';
 
 interface AdminDashboardProps {
   user: User;
   onLogout: () => void;
   vegetables: Vegetable[];
+  availableStock: Map<string, number>;
   addVegetable: (newVegetable: Omit<Vegetable, 'id'>) => void;
   updateVegetable: (updatedVegetable: Vegetable) => void;
   deleteVegetable: (vegId: string) => void;
@@ -24,6 +25,8 @@ interface AdminDashboardProps {
   updateBill: (billId: string, updates: Partial<Bill>) => void;
   addBill: (newBill: Omit<Bill, 'id' | 'date'>) => Promise<Bill>;
   onUpdateUser: (updatedUser: User) => void;
+  selectedDate?: Date | null; // Selected date from parent
+  onDateSelectionChange?: (date: Date | null) => void; // Add optional date selection handler
 }
 
 type AdminPage = 'dashboard' | 'inventory' | 'orders' | 'settings' | 'create-bill' | 'reports' | 'weekly-stock';
@@ -74,57 +77,41 @@ const AdminDashboard: React.FC<AdminDashboardProps> = (props) => {
 
   const handleUpdateBillStatus = async (billId: string, status: 'pending' | 'packed' | 'delivered') => {
     props.updateBill(billId, { status });
+    
     try {
-      // Find corresponding order document by orderId field
-      const ordersCol = collection(db, 'orders');
-      const q = query(ordersCol, where('orderId', '==', billId));
-      const snap = await getDocs(q);
-      if (!snap.empty) {
-        await Promise.all(snap.docs.map(async (d) => {
-          const ref = doc(db, 'orders', d.id);
-          await updateDoc(ref, {
-            status,
-            bill: {
-              billId,
-              employeeId: props.user.id,
-              status,
-              updatedAt: new Date(),
-            }
-          });
-        }));
-      } else {
-        // Fallback: try updating doc whose id matches billId (legacy behavior)
-        const legacyRef = doc(db, 'orders', billId);
-        try {
-          await updateDoc(legacyRef, {
-            status,
-            bill: {
-              billId,
-              employeeId: props.user.id,
-              status,
-              updatedAt: new Date(),
-            }
-          });
-        } catch (e) {
-          console.warn('Order not found for status update (both orderId and doc id lookups failed):', billId);
-        }
+      // Use the new helper function to update order status across date-based collections
+      // Pass the selectedDate if available to update orders for the specific selected date
+      const success = await updateOrderStatus(billId, status, props.user.id, props.selectedDate);
+      
+      if (!success) {
+        console.warn('Order status update failed - order not found in recent collections:', billId);
       }
-    } catch (e) {
-      console.error('Failed to update order status in Firestore:', e);
+    } catch (error) {
+      console.error('Failed to update order status in Firestore:', error);
     }
   };
 
   const renderContent = () => {
     switch (currentPage) {
       case 'dashboard':
-        return <Dashboard bills={props.bills} vegetables={props.vegetables} onViewOrder={handleViewOrder} onUpdateBillStatus={handleUpdateBillStatus} onUpdateBill={props.updateBill} />;
+        return <Dashboard 
+                  bills={props.bills} 
+                  vegetables={props.vegetables} 
+                  onViewOrder={handleViewOrder} 
+                  onUpdateBillStatus={handleUpdateBillStatus} 
+                  onUpdateBill={props.updateBill} 
+                  onDateSelectionChange={props.onDateSelectionChange}
+               />;
       case 'inventory':
         return <Inventory 
                   vegetables={props.vegetables} 
                   bills={props.bills}
+                  availableStock={props.availableStock}
                   addVegetable={props.addVegetable} 
                   updateVegetable={props.updateVegetable}
                   deleteVegetable={props.deleteVegetable}
+                  selectedDate={props.selectedDate}
+                  onDateChange={props.onDateSelectionChange}
                />;
       case 'orders':
         return <Orders 
@@ -135,9 +122,10 @@ const AdminDashboard: React.FC<AdminDashboardProps> = (props) => {
                   onUpdateBillStatus={handleUpdateBillStatus}
                   onUpdateBill={props.updateBill}
                   currentUser={props.user}
+                  onDateSelectionChange={props.onDateSelectionChange}
                />;
       case 'reports':
-        return <Reports bills={props.bills} vegetables={props.vegetables} />;
+        return <Reports />;
       case 'weekly-stock':
         navigate('/weekly-stock');
         return null;

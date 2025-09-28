@@ -1,4 +1,4 @@
-  import React from "react";
+import React from "react";
 import type { BillItem } from "../../types/types";
 import Button from "./ui/Button.tsx";
 import {
@@ -10,10 +10,8 @@ import {
   TrashIcon,
 } from "./ui/Icon.tsx";
 import { formatRoundedTotal } from "../utils/roundUtils";
-import { db } from "../firebase";
-import { collection, addDoc, doc, updateDoc, getDoc, query, where, Timestamp, getCountFromServer } from "firebase/firestore";
+import { placeOrder, type OrderData, getOrderProcessingStatus } from "../services/dbService";
 import { getAuth } from "firebase/auth";
-import { batchUpdateAvailableStock } from "../utils/availableStockUtils";
 
 type CartItemDetails = BillItem & {
   name: string;
@@ -46,90 +44,66 @@ const CartContent: React.FC<Omit<CartViewProps, "isOpen">> = ({
   onClose,
   isPlacingOrder = false,
 }) => {
+  const [isInQueue, setIsInQueue] = React.useState(false);
+  const [queueMessage, setQueueMessage] = React.useState("");
   const BAG_PRICE = 10;
 
   const handlePlaceOrder = async () => {
     try {
       const auth = getAuth();
       const currentUser = auth.currentUser;
-      if (!currentUser) return alert("Please login again.");
-
-      const userId = currentUser.uid;
-      const userRef = doc(db, "users", userId);
-      const userSnap = await getDoc(userRef);
-
-      if (!userSnap.exists()) return alert("User not found in Firestore.");
-      const userData = userSnap.data();
-
-      // Generate daily sequential orderId: ESDDMMYYYY-001
-      const now = new Date();
-      const day = now.getDate().toString().padStart(2, "0");
-      const month = (now.getMonth() + 1).toString().padStart(2, "0");
-      const year = now.getFullYear();
-      const datePrefix = `ES${day}${month}${year}`;
-
-      const startOfDay = new Date(year, now.getMonth(), now.getDate(), 0, 0, 0, 0);
-      const endOfDay = new Date(year, now.getMonth(), now.getDate(), 23, 59, 59, 999);
-      const ordersCol = collection(db, "orders");
-      const todayOrdersQuery = query(
-        ordersCol,
-        where("createdAt", ">=", Timestamp.fromDate(startOfDay)),
-        where("createdAt", "<=", Timestamp.fromDate(endOfDay))
-      );
-      const countSnap = await getCountFromServer(todayOrdersQuery);
-      const todayCount = Number(countSnap.data().count || 0);
-      const sequence = (todayCount + 1).toString().padStart(3, "0");
-      const orderId = `${datePrefix}-${sequence}`;
-
-      const order = {
-        userId,
-        employee_id: userData.employee_id || "",
-        items: cartItems.map((item) => ({
-          id: item.vegetableId,
-          name: item.name,
-          quantity: item.quantityKg,
-          pricePerKg: item.pricePerKg,
-          subtotal: item.subtotal,
-        })),
-        totalAmount: total,
-        bagCount,
-        orderId,
-        status: 'pending',
-        createdAt: new Date(),
-      };
-
-      await addDoc(collection(db, "orders"), order);
-
-      // Update stock for all users (not just admin)
-      try {
-        // Update vegetables collection
-        await Promise.all(
-          cartItems.map((item) =>
-            updateDoc(doc(db, "vegetables", item.vegetableId), {
-              stockKg: item.stockKg - item.quantityKg,
-            })
-          )
-        );
-        console.log('Vegetables stock updated for purchase');
-        
-        // Update available stock in the availableStock collection
-        const stockUpdates = cartItems.map((item) => ({
-          productId: item.vegetableId,
-          quantitySold: item.quantityKg
-        }));
-        await batchUpdateAvailableStock(stockUpdates, userId);
-        console.log('Available stock updated for purchase');
-      } catch (error) {
-        console.error('Failed to update stock for purchase:', error);
-        // Don't fail the entire purchase, just log the error
-        alert('Order placed but stock may not be updated correctly. Please check with admin.');
+      if (!currentUser) {
+        alert("Please log in to place an order");
+        return;
       }
 
-      alert("Order placed successfully!");
-      onPlaceOrder();
+      // Check if another order is being processed
+      const isProcessing = getOrderProcessingStatus();
+      if (isProcessing) {
+        setIsInQueue(true);
+        setQueueMessage("Another order is being processed. You're next in queue...");
+      } else {
+        setQueueMessage("Preparing your order...");
+      }
+
+      const orderData: OrderData = {
+        bagCost: bagCount * BAG_PRICE,
+        bagCount,
+        cartSubtotal: total - (bagCount * BAG_PRICE),
+        employee_id: currentUser.uid,
+        items: cartItems.map(item => ({
+          id: item.vegetableId,
+          name: item.name,
+          pricePerKg: item.pricePerKg,
+          quantity: item.quantityKg,
+          subtotal: item.subtotal
+        })),
+        status: 'pending' as const,
+        totalAmount: total,
+        userId: currentUser.uid
+      };
+
+      console.log('Placing order in queue...');
+      setQueueMessage("Processing your order...");
+      
+      const billNumber = await placeOrder(orderData);
+      
+      console.log('Order completed:', billNumber);
+      alert(`Order placed successfully! Bill Number: ${billNumber}`);
+      onPlaceOrder(); // Call original onPlaceOrder for UI updates
+      
     } catch (error) {
-      console.error("Error placing order:", error);
-      alert("Failed to place order. Check console for details.");
+      console.error('Error placing order:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+      
+      if (errorMessage.includes('Please try again')) {
+        alert('Order conflict detected. Please wait a moment and try again.');
+      } else {
+        alert(`Failed to place order: ${errorMessage}`);
+      }
+    } finally {
+      setIsInQueue(false);
+      setQueueMessage("");
     }
   };
 
@@ -315,7 +289,16 @@ const CartContent: React.FC<Omit<CartViewProps, "isOpen">> = ({
             {isPlacingOrder ? (
               <>
                 <div className="w-5 h-5 mr-2 animate-spin rounded-full border-2 border-white border-t-transparent"></div>
-                <span>Placing Order...</span>
+                <div className="flex flex-col items-center">
+                  <span className="text-sm font-medium">
+                    {isInQueue ? "In Queue" : "Placing Order..."}
+                  </span>
+                  {queueMessage && (
+                    <span className="text-xs opacity-90 mt-1">
+                      {queueMessage}
+                    </span>
+                  )}
+                </div>
               </>
             ) : (
               <>
@@ -325,6 +308,15 @@ const CartContent: React.FC<Omit<CartViewProps, "isOpen">> = ({
             )}
           </div>
         </Button>
+        
+        {/* Queue Information */}
+        {isInQueue && (
+          <div className="mt-2 p-2 bg-yellow-50 border border-yellow-200 rounded-md">
+            <p className="text-xs text-yellow-800 text-center">
+              💡 <strong>Queue System Active:</strong> Orders are processed one at a time to ensure unique invoice numbers. Please wait...
+            </p>
+          </div>
+        )}
       </div>
     </div>
   );

@@ -16,7 +16,7 @@ import { AvailableStock } from '../types/firestore';
 /**
  * Create or update available stock entry
  */
-export const upsertAvailableStock = async (stockData: Omit<AvailableStock, 'lastUpdated' | 'updatedBy'>) => {
+export const upsertAvailableStock = async (stockData: Omit<AvailableStock, 'lastUpdated'> & { updatedBy?: string }) => {
   try {
     console.log('Upserting available stock for:', stockData.productId);
     const availableStockRef = doc(db, 'availableStock', stockData.productId);
@@ -31,7 +31,11 @@ export const upsertAvailableStock = async (stockData: Omit<AvailableStock, 'last
     if (stockDoc.exists()) {
       // Update existing entry
       console.log('Updating existing available stock entry');
-      await updateDoc(availableStockRef, availableStockData);
+      await updateDoc(availableStockRef, {
+        ...availableStockData,
+        lastUpdated: availableStockData.lastUpdated,
+        updatedBy: availableStockData.updatedBy
+      });
     } else {
       // Create new entry
       console.log('Creating new available stock entry');

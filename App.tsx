@@ -15,7 +15,8 @@ const App: React.FC = () => {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [loginError, setLoginError] = useState<string | null>(null);
-  const billingData = useBillingData();
+  const [selectedDate, setSelectedDate] = useState<Date | null>(null); // Add date state
+  const billingData = useBillingData({ selectedDate }); // Pass selected date to hook
   const navigate = useNavigate();
 
   // Disable browser cache for security
@@ -222,6 +223,10 @@ const App: React.FC = () => {
     }
   };
 
+  const handleDateSelectionChange = (date: Date | null) => {
+    setSelectedDate(date);
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-50">
@@ -257,6 +262,7 @@ const App: React.FC = () => {
             <OrderPage
               user={currentUser}
               vegetables={billingData.vegetables}
+              availableStock={billingData.availableStock}
               addBill={billingData.addBill}
               onLogout={handleLogout}
               onUpdateUser={handleUpdateUser}
@@ -271,6 +277,7 @@ const App: React.FC = () => {
             <AdminDashboard
               user={currentUser}
               vegetables={billingData.vegetables}
+              availableStock={billingData.availableStock}
               addVegetable={billingData.addVegetable}
               updateVegetable={billingData.updateVegetable}
               deleteVegetable={billingData.deleteVegetable}
@@ -279,6 +286,8 @@ const App: React.FC = () => {
               addBill={billingData.addBill}
               onLogout={handleLogout}
               onUpdateUser={handleUpdateUser}
+              selectedDate={selectedDate}
+              onDateSelectionChange={handleDateSelectionChange}
             />
           </ProtectedRoute>
         }

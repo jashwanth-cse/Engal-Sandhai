@@ -15,9 +15,10 @@ interface OrdersProps {
   onUpdateBillStatus?: (billId: string, status: 'pending' | 'packed' | 'delivered') => void;
   onUpdateBill?: (billId: string, updates: Partial<Bill>) => void;
   currentUser?: { id: string; name: string; role: string; email?: string };
+  onDateSelectionChange?: (date: Date | null) => void; // Add date selection handler
 }
 
-const Orders: React.FC<OrdersProps> = ({ bills, vegetables, initialBillId, onClearInitialBill, onUpdateBillStatus, onUpdateBill, currentUser }) => {
+const Orders: React.FC<OrdersProps> = ({ bills, vegetables, initialBillId, onClearInitialBill, onUpdateBillStatus, onUpdateBill, currentUser, onDateSelectionChange }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [viewingBill, setViewingBill] = useState<Bill | null>(null);
   const [filters, setFilters] = useState<FilterState>({
@@ -255,6 +256,7 @@ const Orders: React.FC<OrdersProps> = ({ bills, vegetables, initialBillId, onCle
       <FilterBar 
         filters={filters}
         onFiltersChange={setFilters}
+        onDateSelectionChange={onDateSelectionChange}
         pendingCount={statusCounts.pending}
         packedCount={statusCounts.packed}
         deliveredCount={statusCounts.delivered}

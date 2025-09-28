@@ -10,9 +10,10 @@ interface DashboardProps {
     onViewOrder: (billId: string) => void;
     onUpdateBillStatus?: (billId: string, status: 'pending' | 'packed' | 'delivered') => void;
     onUpdateBill?: (billId: string, updates: Partial<Bill>) => void;
+    onDateSelectionChange?: (date: Date | null) => void; // Add date selection handler
 }
 
-const Dashboard: React.FC<DashboardProps> = ({ bills, vegetables, onViewOrder, onUpdateBillStatus, onUpdateBill }) => {
+const Dashboard: React.FC<DashboardProps> = ({ bills, vegetables, onViewOrder, onUpdateBillStatus, onUpdateBill, onDateSelectionChange }) => {
     const [searchTerm, setSearchTerm] = useState('');
 
     // Filter bills based on search term
@@ -53,6 +54,7 @@ const Dashboard: React.FC<DashboardProps> = ({ bills, vegetables, onViewOrder, o
                 onViewOrder={onViewOrder}
                 onUpdateBillStatus={onUpdateBillStatus}
                 onUpdateBill={onUpdateBill}
+                onDateSelectionChange={onDateSelectionChange}
             />
         </div>
     );

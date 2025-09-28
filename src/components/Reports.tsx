@@ -2,7 +2,8 @@ import React, { useEffect, useMemo, useState } from 'react';
 import Button from './ui/Button.tsx';
 import MetricCard from './ui/MetricCard.tsx';
 import { db } from '../firebase';
-import { collection, getDocs, orderBy, query as fsQuery, Timestamp, where, doc, getDoc } from 'firebase/firestore';
+import { collection, getDocs, getDoc, orderBy, query as fsQuery, Timestamp, where, doc } from 'firebase/firestore';
+import { getOrdersCol, getDateKey } from '../services/dbService';
 
 const Reports: React.FC = () => {
   const [reportDate, setReportDate] = useState<string>(() => {
@@ -16,42 +17,121 @@ const Reports: React.FC = () => {
   const [userInfoMap, setUserInfoMap] = useState<Record<string, { name: string; department?: string; employeeId?: string }>>({});
   const [orders, setOrders] = useState<Array<{
     id: string;
-    userId: string;
+    customerId: string;
+    customerName: string;
     totalAmount: number;
-    orderItems: any[];
+    items: any[];
     createdAt: Date;
   }>>([]);
   const [loading, setLoading] = useState(false);
 
-  // Fetch orders for the selected date from Firestore
+  // Fetch orders for the selected date from Firestore using our database architecture
   useEffect(() => {
     const fetchOrders = async () => {
       try {
         setLoading(true);
         const sel = new Date(reportDate);
-        const start = new Date(sel.getFullYear(), sel.getMonth(), sel.getDate(), 0, 0, 0, 0);
-        const end = new Date(sel.getFullYear(), sel.getMonth(), sel.getDate(), 23, 59, 59, 999);
-        const col = collection(db, 'orders');
-        const q = fsQuery(
-          col,
-          where('createdAt', '>=', Timestamp.fromDate(start)),
-          where('createdAt', '<=', Timestamp.fromDate(end)),
-          orderBy('createdAt', 'asc')
-        );
-        const snap = await getDocs(q);
-        const rows = snap.docs.map(d => {
-          const data: any = d.data();
-          const createdAtTs = data.createdAt?.toDate ? data.createdAt.toDate() : new Date();
-          const itemsArr: any[] = Array.isArray(data.orderItems) ? data.orderItems : (Array.isArray(data.items) ? data.items : []);
-          return {
-            id: String(data.orderId || d.id),
-            userId: String(data.userId || data.employee_id || ''),
-            totalAmount: Number(data.totalAmount) || 0,
-            orderItems: itemsArr,
-            createdAt: createdAtTs,
-          };
+        const dateStr = reportDate; // Already in YYYY-MM-DD format
+        
+        console.log(`📊 Fetching orders for Reports on: ${reportDate}`);
+        
+        // Check if this is September 24th or 25th, 2025 - use legacy collection only
+        const isLegacyDate = dateStr === '2025-09-24' || dateStr === '2025-09-25';
+        
+        let allOrders: Array<{
+          id: string;
+          customerId: string;
+          customerName: string;
+          totalAmount: number;
+          items: any[];
+          createdAt: Date;
+        }> = [];
+        
+        if (isLegacyDate) {
+          // Fetch only from legacy orders collection for Sept 24-25
+          try {
+            console.log(`📊 Fetching from legacy collection for: ${reportDate}`);
+            const legacyOrdersCol = collection(db, 'orders');
+            const legacyQuery = fsQuery(
+              legacyOrdersCol, 
+              where('createdAt', '>=', new Date(dateStr + 'T00:00:00')),
+              where('createdAt', '<', new Date(dateStr + 'T23:59:59')),
+              orderBy('createdAt', 'desc')
+            );
+            
+            const legacySnap = await getDocs(legacyQuery);
+            console.log(`📦 Found ${legacySnap.size} legacy orders for ${reportDate}`);
+            
+            const legacyOrders = legacySnap.docs.map((docSnap) => {
+              const orderData = docSnap.data();
+              const createdAtTs = orderData.createdAt?.toDate ? orderData.createdAt.toDate() : new Date();
+              // Handle different possible field names for legacy orders
+              const itemsArr: any[] = Array.isArray(orderData.items) 
+                ? orderData.items 
+                : Array.isArray(orderData.orderItems) 
+                  ? orderData.orderItems 
+                  : [];
+              
+              return {
+                id: String(orderData.orderId || orderData.billNumber || docSnap.id),
+                customerId: String(orderData.userId || orderData.employee_id || orderData.customerId || ''),
+                customerName: String(orderData.customerName || orderData.name || orderData.userId || ''),
+                totalAmount: Number(orderData.totalAmount) || 0,
+                items: itemsArr,
+                createdAt: createdAtTs,
+              };
+            });
+            
+            allOrders = legacyOrders;
+          } catch (legacyError) {
+            console.warn('No legacy orders found for', reportDate, legacyError);
+          }
+        } else {
+          // Fetch only from date-based collection for all other dates
+          try {
+            console.log(`📊 Fetching from date-based collection for: ${reportDate}`);
+            const ordersCollectionRef = getOrdersCol(sel);
+            
+            const ordersSnap = await getDocs(ordersCollectionRef);
+            console.log(`📦 Found ${ordersSnap.size} date-based orders for ${reportDate}`);
+            
+            const dateBasedOrders = ordersSnap.docs.map((docSnap) => {
+              const orderData = docSnap.data();
+              const createdAtTs = orderData.createdAt?.toDate ? orderData.createdAt.toDate() : new Date();
+              // Handle different possible field names for new orders
+              const itemsArr: any[] = Array.isArray(orderData.items) 
+                ? orderData.items 
+                : Array.isArray(orderData.orderItems) 
+                  ? orderData.orderItems 
+                  : [];
+              
+              return {
+                id: String(orderData.orderId || orderData.billNumber || docSnap.id),
+                customerId: String(orderData.userId || orderData.employee_id || orderData.customerId || ''),
+                customerName: String(orderData.customerName || orderData.name || orderData.userId || ''),
+                totalAmount: Number(orderData.totalAmount) || 0,
+                items: itemsArr,
+                createdAt: createdAtTs,
+              };
+            });
+            
+            allOrders = dateBasedOrders;
+          } catch (dateError) {
+            console.warn('No date-based orders found for', reportDate, dateError);
+          }
+        }
+        
+        // Sort by createdAt descending (most recent first)
+        allOrders.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+        
+        console.log(`📊 Reports Summary for ${reportDate}:`, {
+          isLegacyDate,
+          totalOrders: allOrders.length,
+          totalRevenue: allOrders.reduce((sum, order) => sum + order.totalAmount, 0),
+          collectionType: isLegacyDate ? 'Legacy (orders/)' : 'Date-based (orders/YYYY-MM-DD/items/)'
         });
-        setOrders(rows);
+        
+        setOrders(allOrders);
       } catch (e) {
         console.error('Failed to fetch orders for report:', e);
         setOrders([]);
@@ -67,7 +147,7 @@ const Reports: React.FC = () => {
     const loadUserInfos = async () => {
       const missing = new Set<string>();
       (orders || []).forEach((b) => {
-        const uid = String(b.userId || '').trim();
+        const uid = String(b.customerId || '').trim();
         if (uid && !userInfoMap[uid]) missing.add(uid);
       });
       if (missing.size === 0) return;
@@ -116,10 +196,58 @@ const Reports: React.FC = () => {
   
   const totalItems = useMemo(() => {
     return orders.reduce((sum, order) => {
-      const items = Array.isArray(order.orderItems) ? order.orderItems : [];
-      return sum + items.reduce((itemSum, item: any) => itemSum + Math.floor(Number(item.quantity) || 0), 0);
+      const items = Array.isArray(order.items) ? order.items : [];
+      return sum + items.reduce((itemSum, item) => itemSum + Math.floor(Number(item.quantity) || 1), 0);
     }, 0);
   }, [orders]);
+
+  // Ensure we have user info for all orders shown
+  useEffect(() => {
+    const loadUserInfos = async () => {
+      const missing = new Set<string>();
+      (orders || []).forEach((b) => {
+        const uid = String(b.customerId || '').trim();
+        if (uid && !userInfoMap[uid]) missing.add(uid);
+      });
+      if (missing.size === 0) return;
+      const entries: [string, { name: string; department?: string; employeeId?: string }][] = [];
+      await Promise.all(Array.from(missing).map(async (uid) => {
+        try {
+          const ref = doc(db, 'users', uid);
+          const snap = await getDoc(ref);
+          if (snap.exists()) {
+            const data = snap.data() as any;
+            const emp = data.employee || {};
+            const name = emp.name || data['employee name'] || data.employee_name || data.name || 'Unknown';
+            const department = emp.department || data['employee department'] || data.department;
+            const employeeId = emp.employee_id || data.employee_id || uid;
+            entries.push([uid, { name: String(name), department: department ? String(department) : undefined, employeeId: String(employeeId) }]);
+          } else {
+            const usersCol = collection(db, 'users');
+            const byEmpId = fsQuery(usersCol, where('employee_id', '==', uid));
+            const byNestedEmpId = fsQuery(usersCol, where('employee.employee_id', '==', uid));
+            let foundDoc: any | null = null;
+            const [snap1, snap2] = await Promise.all([getDocs(byEmpId), getDocs(byNestedEmpId)]);
+            if (!snap1.empty) foundDoc = snap1.docs[0].data();
+            else if (!snap2.empty) foundDoc = snap2.docs[0].data();
+            if (foundDoc) {
+              const emp2 = foundDoc.employee || {};
+              const name2 = emp2.name || foundDoc['employee name'] || foundDoc.employee_name || foundDoc.name || 'Unknown';
+              const department2 = emp2.department || foundDoc['employee department'] || foundDoc.department;
+              const employeeId2 = emp2.employee_id || foundDoc.employee_id || uid;
+              entries.push([uid, { name: String(name2), department: department2 ? String(department2) : undefined, employeeId: String(employeeId2) }]);
+            } else {
+              entries.push([uid, { name: 'Unknown', employeeId: uid }]);
+            }
+          }
+        } catch {
+          entries.push([uid, { name: 'Unknown', employeeId: uid }]);
+        }
+      }));
+      if (entries.length > 0) setUserInfoMap((prev) => ({ ...prev, ...Object.fromEntries(entries) }));
+    };
+    loadUserInfos();
+  }, [orders, userInfoMap]);
 
   // Lazy-load jsPDF and autoTable from CDN
   const ensureJsPdf = async (): Promise<any> => {
@@ -166,162 +294,155 @@ const Reports: React.FC = () => {
 
   const generatePdf = async () => {
     try {
+      if (orders.length === 0) {
+        alert('No data available for the selected date to generate PDF.');
+        return;
+      }
+
       const JsPDF = await ensureJsPdf();
-      // Access UMD as window.jspdf.jsPDF if available
       const DocCtor = (window as any)?.jspdf?.jsPDF || JsPDF;
       const doc = new DocCtor({ orientation: 'portrait', unit: 'pt', format: 'a4' });
 
       const pageWidth = (doc as any).internal.pageSize.getWidth();
       const pageHeight = (doc as any).internal.pageSize.getHeight();
+      
+      let pageNumber = 1;
       let currentY = 40;
+      const pageBreakMargin = 60; // Space needed for page totals
+      const rowHeight = 20;
+      const headerHeight = 60;
+      
+      // Track page totals
+      let currentPageTotal = 0;
+      const pageTotals: number[] = [];
+      let currentPageOrders: any[] = [];
 
-      // Helper function to add a new page if needed
-      const checkPageBreak = (requiredSpace: number) => {
-        if (currentY + requiredSpace > pageHeight - 40) {
-          doc.addPage();
-          currentY = 40;
-          return true;
-        }
-        return false;
-      };
-
-      // Helper function to add bill header
-      const addBillHeader = (order: any, index: number) => {
-        const empName = userInfoMap[order.userId]?.name || 'Unknown';
-        const empId = userInfoMap[order.userId]?.employeeId || order.userId;
-        const customerName = userInfoMap[order.userId]?.name || 'Unknown Customer';
-        const orderDate = order.createdAt.toLocaleDateString();
-        const orderTime = order.createdAt.toLocaleTimeString();
-
-        // Company name and tagline
-        doc.setFontSize(16);
+      // Helper function to add header
+      const addHeader = () => {
+        doc.setFontSize(20);
         doc.setFont(undefined, 'bold');
         doc.text('Engal Sandhai', 40, currentY);
-        currentY += 15;
+        currentY += 25;
         
-        doc.setFontSize(10);
-        doc.setFont(undefined, 'normal');
-        doc.text('Your Fresh Vegetable Partner', 40, currentY);
-        currentY += 20;
-
-        // Invoice title
         doc.setFontSize(14);
-        doc.setFont(undefined, 'bold');
-        doc.text('INVOICE', 40, currentY);
-        currentY += 20;
-
-        // Bill details
-        doc.setFontSize(10);
-        doc.setFont(undefined, 'normal');
-        doc.text(`BILL NUMBER: ${order.id}`, 40, currentY);
-        currentY += 12;
-
-        doc.text(`CUSTOMER NAME: ${customerName}`, 40, currentY);
-        currentY += 12;
-
-        doc.text(`EMP ID: ${empId}`, 40, currentY);
-        currentY += 12;
-
-        doc.text(`Date: ${orderDate}`, 40, currentY);
-        doc.text(`Time: ${orderTime}`, 200, currentY);
-        currentY += 20;
-      };
-
-      // Helper function to add items list (no table)
-      const addItemsList = (order: any) => {
-        const items = Array.isArray(order.orderItems) ? order.orderItems : [];
-        
-        if (items.length === 0) {
-          doc.setFontSize(10);
-          doc.text('No items in this order', 40, currentY);
-          currentY += 15;
-          return;
-        }
-
-        // Items list without table format
-        doc.setFontSize(10);
-        doc.setFont(undefined, 'normal');
-        
-        items.forEach((item: any, index: number) => {
-          const quantity = Math.floor(Number(item.quantity) || 1);
-          const price = Number(item.price) || 0;
-          const total = quantity * price;
-          
-          // Item number and name
-          doc.text(`${index + 1}. ${item.name || 'Unknown Item'}`, 40, currentY);
-          currentY += 12;
-          
-          // Quantity and rate
-          doc.text(`   Qty: ${quantity} kg`, 60, currentY);
-          doc.text(`Rate: ₹${price.toFixed(2)}`, 200, currentY);
-          currentY += 12;
-          
-          // Amount
-          doc.text(`   Amount: ₹${total.toFixed(2)}`, 60, currentY);
-          currentY += 15;
-        });
-
-        currentY += 10;
-      };
-
-      // Helper function to add bill total
-      const addBillTotal = (order: any) => {
-        const totalAmount = Number(order.totalAmount) || 0;
-        
-        // Total section
-        doc.setFontSize(12);
-        doc.setFont(undefined, 'bold');
-        doc.text(`TOTAL: ₹${totalAmount.toFixed(2)}`, 40, currentY);
+        doc.text(`Daily Report - ${reportDate}`, 40, currentY);
         currentY += 30;
-
-        // Payment section
+        
+        // Table header
         doc.setFontSize(10);
-        doc.setFont(undefined, 'normal');
-        doc.text('Pay using UPI:', 40, currentY);
-        currentY += 12;
-        doc.text('UPI ID: qualitykannan1962-1@okhdfcbank', 40, currentY);
-        currentY += 20;
+        doc.setFont(undefined, 'bold');
+        doc.text('S.No', 40, currentY);
+        doc.text('Employee Name', 80, currentY);
+        doc.text('Customer', 250, currentY);
+        doc.text('Total Items', 350, currentY);
+        doc.text('Total Amount', 450, currentY);
+        currentY += 5;
+        
+        // Header line
+        doc.setLineWidth(1);
+        doc.line(40, currentY, pageWidth - 40, currentY);
+        currentY += 15;
       };
 
-      // Generate individual bills
+      // Helper function to add page total and break
+      const addPageBreak = () => {
+        // Add page total
+        currentY += 10;
+        doc.setFont(undefined, 'bold');
+        doc.setFontSize(12);
+        doc.text(`Page ${pageNumber} total - Rs ${currentPageTotal.toFixed(2)}`, 40, currentY);
+        
+        pageTotals.push(currentPageTotal);
+        currentPageTotal = 0;
+        currentPageOrders = [];
+        
+        doc.addPage();
+        pageNumber++;
+        currentY = 40;
+        addHeader();
+      };
+
+      // Add initial header
+      addHeader();
+
+      // Process each order
       orders.forEach((order, index) => {
-        // Check if we need a new page
-        checkPageBreak(150); // Approximate space needed for a bill
-
-        // Add bill header
-        addBillHeader(order, index);
+        const userInfo = userInfoMap[order.customerId];
+        const employeeName = userInfo?.name || order.customerName || 'Unknown';
+        const employeeId = userInfo?.employeeId || order.customerId || 'Unknown';
+        const itemsCount = (Array.isArray(order.items) ? order.items : []).reduce((sum, it: any) => sum + Math.floor(Number(it.quantity) || 1), 0);
+        const amount = Number(order.totalAmount) || 0;
         
-        // Add items list (no table)
-        addItemsList(order);
+        // Check if we need a page break
+        if (currentY + rowHeight + pageBreakMargin > pageHeight - 40) {
+          addPageBreak();
+        }
         
-        // Add bill total
-        addBillTotal(order);
-
-        // Add some space between bills
-        currentY += 20;
+        // Add order data
+        doc.setFont(undefined, 'normal');
+        doc.setFontSize(9);
+        doc.text(String(index + 1), 40, currentY);
+        doc.text(employeeName.substring(0, 25), 80, currentY); // Limit name length
+        doc.text(employeeId, 250, currentY);
+        doc.text(String(itemsCount), 350, currentY);
+        doc.text(`Rs. ${amount.toFixed(2)}`, 450, currentY);
+        
+        currentPageTotal += amount;
+        currentPageOrders.push(order);
+        currentY += rowHeight;
       });
 
-      // Add summary at the end
-      if (currentY + 50 > pageHeight - 40) {
-        doc.addPage();
-        currentY = 40;
+      // Add final page total
+      if (currentPageOrders.length > 0) {
+        currentY += 10;
+        doc.setFont(undefined, 'bold');
+        doc.setFontSize(12);
+        doc.text(`Page ${pageNumber} total - Rs ${currentPageTotal.toFixed(2)}`, 40, currentY);
+        pageTotals.push(currentPageTotal);
       }
 
-      // Summary section
-      doc.setFontSize(14);
-      doc.setFont(undefined, 'bold');
-      doc.text('Daily Summary', 40, currentY);
-      currentY += 20;
+      // Add summary page if we have multiple pages
+      if (pageTotals.length > 1) {
+        doc.addPage();
+        currentY = 40;
+        
+        doc.setFontSize(16);
+        doc.setFont(undefined, 'bold');
+        doc.text('Report Summary', 40, currentY);
+        currentY += 30;
+        
+        // Show all page totals
+        doc.setFontSize(12);
+        doc.setFont(undefined, 'normal');
+        pageTotals.forEach((pageTotal, idx) => {
+          doc.text(`Page ${idx + 1} total - Rs ${pageTotal.toFixed(2)}`, 40, currentY);
+          currentY += 20;
+        });
+        
+        currentY += 10;
+        doc.setFont(undefined, 'bold');
+        doc.setFontSize(14);
+        doc.text(`Total Sales - Rs ${totalSales.toFixed(2)}`, 40, currentY);
+      } else {
+        // Single page - add total sales at the end
+        currentY += 20;
+        doc.setFont(undefined, 'bold');
+        doc.setFontSize(14);
+        doc.text(`Total Sales - Rs ${totalSales.toFixed(2)}`, 40, currentY);
+      }
 
-      doc.setFontSize(12);
+      // Additional summary info
+      currentY += 30;
       doc.setFont(undefined, 'normal');
+      doc.setFontSize(11);
       doc.text(`Total Orders: ${totalOrders}`, 40, currentY);
       currentY += 15;
       doc.text(`Total Items: ${totalItems}`, 40, currentY);
       currentY += 15;
-      doc.text(`Total Sales: ₹${totalSales.toFixed(2)}`, 40, currentY);
+      doc.text(`Generated on: ${new Date().toLocaleString()}`, 40, currentY);
 
       doc.save(`Daily_Report_${reportDate}.pdf`);
+      
     } catch (e) {
       console.error('Failed to generate PDF:', e);
       alert('Failed to generate PDF. Please try again.');
@@ -388,19 +509,21 @@ const Reports: React.FC = () => {
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={4} className="px-4 py-6 text-center text-slate-500">Loading...</td></tr>
+                <tr><td colSpan={5} className="px-4 py-6 text-center text-slate-500">Loading...</td></tr>
               ) : orders.length === 0 ? (
                 <tr><td colSpan={5} className="px-4 py-6 text-center text-slate-500">No orders for the selected date.</td></tr>
               ) : (
                 orders.map((b, idx) => {
-                  const itemsCount = (Array.isArray(b.orderItems) ? b.orderItems : []).reduce((sum, it: any) => sum + Math.floor(Number(it.quantity) || 1), 0);
-                  const empName = userInfoMap[b.userId]?.name || 'Unknown';
-                  const empId = userInfoMap[b.userId]?.employeeId || b.userId;
+                  const itemsCount = (Array.isArray(b.items) ? b.items : []).reduce((sum, it: any) => sum + Math.floor(Number(it.quantity) || 1), 0);
+                  const userInfo = userInfoMap[b.customerId];
+                  const employeeName = userInfo?.name || b.customerName || 'Unknown';
+                  const employeeId = userInfo?.employeeId || b.customerId || 'Unknown';
+                  
                   return (
                     <tr key={b.id} className="border-b last:border-b-0">
                       <td className="px-4 py-2">{idx + 1}</td>
-                      <td className="px-4 py-2 font-medium text-slate-900">{empName}</td>
-                      <td className="px-4 py-2 font-medium text-slate-900">{empId}</td>
+                      <td className="px-4 py-2 font-medium text-slate-900">{employeeName}</td>
+                      <td className="px-4 py-2 font-medium text-slate-900">{employeeId}</td>
                       <td className="px-4 py-2">{itemsCount}</td>
                       <td className="px-4 py-2 text-right font-semibold">₹{(Number(b.totalAmount) || 0).toFixed(2)}</td>
                     </tr>
@@ -424,5 +547,3 @@ const Reports: React.FC = () => {
 };
 
 export default Reports;
-
-

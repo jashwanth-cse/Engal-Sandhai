@@ -40,7 +40,12 @@ const AvailableStockDisplay: React.FC<AvailableStockDisplayProps> = ({ productId
       }
     };
 
-    const unsubscribe = fetchStocks();
+    let unsubscribe: (() => void) | undefined;
+    
+    fetchStocks().then((unsub) => {
+      unsubscribe = unsub;
+    });
+    
     return () => {
       if (unsubscribe) {
         unsubscribe();

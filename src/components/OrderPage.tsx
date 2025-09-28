@@ -15,6 +15,7 @@ import { roundTotal, formatRoundedTotal } from '../utils/roundUtils';
 interface OrderPageProps {
   user: User;
   vegetables: Vegetable[];
+  availableStock: Map<string, number>; // Real-time available stock from database
   addBill: (newBill: Omit<Bill, 'id' | 'date'>) => Promise<Bill>;
   onLogout: () => void;
   onUpdateUser?: (updatedUser: User) => void;
@@ -35,7 +36,7 @@ type OrderStage = 'ordering' | 'payment' | 'success' | 'settings';
 
 type CartItemDetails = BillItem & { name: string; pricePerKg: number; stockKg: number; unitType: 'KG' | 'COUNT'; };
 
-const OrderPage: React.FC<OrderPageProps> = ({ user, vegetables, addBill, onLogout, onUpdateUser }) => {
+const OrderPage: React.FC<OrderPageProps> = ({ user, vegetables, availableStock, addBill, onLogout, onUpdateUser }) => {
   const [stage, setStage] = useState<OrderStage>('ordering');
   const [cart, setCart] = useState<Map<string, number>>(new Map());
   const [searchTerm, setSearchTerm] = useState('');
@@ -54,9 +55,12 @@ const OrderPage: React.FC<OrderPageProps> = ({ user, vegetables, addBill, onLogo
     return vegetables.filter(v => {
       const matchesCategory = category === 'All' || v.category === category;
       const matchesSearch = v.name.toLowerCase().includes(searchTerm.toLowerCase());
-      return matchesCategory && matchesSearch;
+      // Filter out vegetables with 0 stock
+      const availableStockAmount = availableStock.get(v.id) || 0;
+      const hasStock = availableStockAmount > 0;
+      return matchesCategory && matchesSearch && hasStock;
     }).sort((a,b) => a.name.localeCompare(b.name));
-  }, [vegetables, searchTerm, category]);
+  }, [vegetables, searchTerm, category, availableStock]);
 
   const updateCart = (vegId: string, quantity: number) => {
     console.log(`Updating cart for ${vegId} with quantity ${quantity}`);
@@ -68,9 +72,11 @@ const OrderPage: React.FC<OrderPageProps> = ({ user, vegetables, addBill, onLogo
         return prev;
       }
 
-      // Clamp quantity between 0 and stockKg
-      const clampedQuantity = Math.max(0, Math.min(quantity, vegetable.stockKg));
-      console.log(`Clamped quantity: ${clampedQuantity} (original: ${quantity}, max: ${vegetable.stockKg})`);
+      // Use available stock instead of stockKg
+      const maxStock = availableStock.get(vegId) || 0;
+      // Clamp quantity between 0 and available stock
+      const clampedQuantity = Math.max(0, Math.min(quantity, maxStock));
+      console.log(`Clamped quantity: ${clampedQuantity} (original: ${quantity}, max: ${maxStock})`);
 
       if (clampedQuantity > 0) {
         newCart.set(vegId, parseFloat(clampedQuantity.toFixed(2)));
@@ -91,13 +97,14 @@ const OrderPage: React.FC<OrderPageProps> = ({ user, vegetables, addBill, onLogo
       const veg = vegetableMap.get(vegId);
       if (veg) {
         const subtotal = veg.pricePerKg * quantity;
+        const availableStockAmount = availableStock.get(vegId) || 0;
         items.push({ 
             vegetableId: vegId, 
             quantityKg: quantity, 
             subtotal,
             name: veg.name,
             pricePerKg: veg.pricePerKg,
-            stockKg: veg.stockKg,
+            stockKg: availableStockAmount,
             unitType: veg.unitType,
         });
         currentTotal += subtotal;
@@ -111,7 +118,7 @@ const OrderPage: React.FC<OrderPageProps> = ({ user, vegetables, addBill, onLogo
     
     items.sort((a, b) => a.name.localeCompare(b.name));
     return { cartItems: items, total: roundTotal(finalTotal), totalItems: itemCount };
-  }, [cart, vegetableMap, bagCount, BAG_PRICE]);
+  }, [cart, vegetableMap, bagCount, BAG_PRICE, availableStock]);
 
   const handleBagCountChange = (increment: boolean) => {
     setBagCount(prev => {
@@ -271,6 +278,7 @@ const OrderPage: React.FC<OrderPageProps> = ({ user, vegetables, addBill, onLogo
           <div className="space-y-3">
             {filteredVegetables.length > 0 ? filteredVegetables.map((veg, index) => {
               const quantity = cart.get(veg.id) || 0;
+              const availableStockAmount = availableStock.get(veg.id) || 0;
               return (
               <div key={veg.id} className="flex items-center justify-between p-3 bg-white rounded-lg shadow-sm">
                 <div className="flex items-center">
@@ -298,7 +306,7 @@ const OrderPage: React.FC<OrderPageProps> = ({ user, vegetables, addBill, onLogo
                       onChange={(e) => updateCart(veg.id, parseFloat(e.target.value) || 0)}
                       className="w-16 text-center font-bold text-primary-700 border-b-2 border-slate-300 focus:outline-none focus:border-primary-500 transition bg-transparent"
                       min="0"
-                      max={veg.stockKg}
+                      max={availableStockAmount}
                       step={veg.unitType === 'COUNT' ? "1" : "0.25"}
                       aria-label={`${veg.name} quantity in ${veg.unitType === 'KG' ? 'kg' : 'pieces'}`}
                     />
@@ -308,7 +316,7 @@ const OrderPage: React.FC<OrderPageProps> = ({ user, vegetables, addBill, onLogo
                         updateCart(veg.id, quantity + increment);
                       }} 
                       className="p-2 rounded-full bg-slate-200 text-slate-700 hover:bg-slate-300 disabled:opacity-50" 
-                      disabled={quantity >= veg.stockKg}
+                      disabled={quantity >= availableStockAmount}
                     >
                       <PlusIcon className="h-4 w-4"/>
                     </button>

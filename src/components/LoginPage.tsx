@@ -117,7 +117,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ error, clearError, currentUser })
         {currentUser ? (
           <div className="space-y-4">
             <div className="text-center p-4 bg-green-50 rounded-lg">
-              <CheckCircleIcon className="h-8 w-8 text-green-500 mx-auto mb-2" />
+              <XCircleIcon className="h-8 w-8 text-green-500 mx-auto mb-2" />
               <p className="text-green-700 font-medium">Login Successful!</p>
               <p className="text-sm text-green-600">You are logged in as {currentUser.role}</p>
             </div>
@@ -144,7 +144,6 @@ const LoginPage: React.FC<LoginPageProps> = ({ error, clearError, currentUser })
                   auth.signOut();
                   window.location.reload();
                 }} 
-                variant="outline" 
                 className="w-full"
               >
                 Logout
