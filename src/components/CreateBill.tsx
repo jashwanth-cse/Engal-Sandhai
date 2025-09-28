@@ -5,6 +5,7 @@ import { PlusIcon, MinusIcon, MagnifyingGlassIcon, CheckCircleIcon } from './ui/
 import CartView from './CartView.tsx';
 import BillPreviewPage from './BillPreviewPage.tsx';
 import { roundTotal, formatRoundedTotal } from '../utils/roundUtils';
+import { getUserFromDb } from '../services/dbService';
 
 interface CreateBillProps {
   user: User;
@@ -25,8 +26,10 @@ const CreateBill: React.FC<CreateBillProps> = ({ user, vegetables, bills, addBil
   const [isCartVisible, setIsCartVisible] = useState(false);
   const [finalBill, setFinalBill] = useState<Bill | null>(null);
   const [isPlacingOrder, setIsPlacingOrder] = useState(false);
+  const [customerId, setCustomerId] = useState('');
   const [customerName, setCustomerName] = useState('');
-  // const [department, setDepartment] = useState(''); // Commented out for future use
+  const [customerIdError, setCustomerIdError] = useState('');
+  const [isFetchingCustomer, setIsFetchingCustomer] = useState(false);
   const [bagCount, setBagCount] = useState(0);
   
   const BAG_PRICE = 10; // ₹10 per bag
@@ -123,26 +126,26 @@ const CreateBill: React.FC<CreateBillProps> = ({ user, vegetables, bills, addBil
   };
 
   const handleConfirmOrder = useCallback(async () => {
-    if (!customerName.trim()) {
-      alert('Please enter customer name');
+    if (!customerId.trim() || !customerName.trim()) {
+      alert('Please enter a valid Customer ID and ensure name is fetched');
       return;
     }
-    
     const createdBill = await addBill({
       items: cartItems.map(({name, pricePerKg, stockKg, unitType, ...item}) => item),
       total,
       customerName: customerName.trim(),
-      // department: department.trim() || undefined, // Commented out for future use
+      customerId: customerId.trim(),
       status: 'pending',
-      bags: bagCount, // Include the bag count from state
+      bags: bagCount,
     });
     setFinalBill(createdBill);
     setStage('success');
     setCart(new Map());
-    setBagCount(0); // Reset bag count after order creation
+    setBagCount(0);
     setCustomerName('');
-    // setDepartment(''); // Commented out for future use
-  }, [cartItems, total, addBill, customerName, bagCount]); // Added bagCount dependency
+    setCustomerId('');
+    setCustomerIdError('');
+  }, [cartItems, total, addBill, customerName, customerId, bagCount]);
 
   const handlePlaceOrder = async () => {
       setIsCartVisible(false);
@@ -192,30 +195,74 @@ const CreateBill: React.FC<CreateBillProps> = ({ user, vegetables, bills, addBil
               <p className="text-slate-600 mt-1">Select items and create a new bill for customer</p>
             </div>
             <div className="flex flex-col sm:flex-row gap-4 items-end">
-              <div className="flex flex-col sm:w-60">
-                <label className="text-sm font-medium text-slate-700 mb-2">Customer Name *</label>
+              <div className="flex flex-col sm:w-60 mb-2">
+                <label className="text-sm font-medium text-slate-700 mb-2">Customer ID *</label>
                 <input
                   type="text"
-                  value={customerName}
-                  onChange={(e) => setCustomerName(e.target.value)}
-                  placeholder="Enter customer name"
+                  value={customerId}
+                  onChange={async (e) => {
+                    const id = e.target.value.trim();
+                    setCustomerId(id);
+                    setCustomerName('');
+                    setCustomerIdError('');
+                    if (id.length > 0) {
+                      setIsFetchingCustomer(true);
+                      const user = await getUserFromDb(id);
+                      setIsFetchingCustomer(false);
+                      console.log('Fetched user from DB:', user, Object.keys(user || {}));
+                      let name = '';
+                      if (user) {
+                        if (typeof user['employee_name'] === 'string') {
+                          name = user['employee_name'];
+                        } else if (typeof user['name'] === 'string') {
+                          name = user['name'];
+                        } else {
+                          // Fallback: use first string property except id
+                          for (const key of Object.keys(user)) {
+                            if (typeof user[key] === 'string' && key !== 'id') {
+                              name = user[key];
+                              break;
+                            }
+                          }
+                        }
+                      }
+                      if (name) {
+                        setCustomerName(name);
+                        setCustomerIdError('');
+                      } else {
+                        setCustomerName('');
+                        setCustomerIdError('Customer not found');
+                      }
+                    } else {
+                      setCustomerName('');
+                      setCustomerIdError('');
+                    }
+                  }}
+                  placeholder="Enter customer ID"
                   className="px-4 py-3 border border-slate-300 rounded-lg focus:ring-primary-500 focus:border-primary-500 shadow-sm"
                   required
                 />
+                {isFetchingCustomer && (
+                  <span className="text-xs text-slate-500 mt-1">Fetching customer...</span>
+                )}
+                {customerIdError && (
+                  <span className="text-xs text-red-500 mt-1">{customerIdError}</span>
+                )}
+                {customerName && !customerIdError && (
+                  <span className="text-xs text-green-600 mt-1">Name: {customerName}</span>
+                )}
               </div>
-              {/* Department field - commented out for future use */}
-              {/* 
               <div className="flex flex-col sm:w-60">
-                <label className="text-sm font-medium text-slate-700 mb-2">Department</label>
+                <label className="text-sm font-medium text-slate-700 mb-2">Customer Name</label>
                 <input
                   type="text"
-                  value={department}
-                  onChange={(e) => setDepartment(e.target.value)}
-                  placeholder="Enter department (optional)"
-                  className="px-4 py-3 border border-slate-300 rounded-lg focus:ring-primary-500 focus:border-primary-500 shadow-sm"
+                  value={customerName}
+                  readOnly
+                  placeholder="Customer name will appear here"
+                  className="px-4 py-3 border border-slate-300 rounded-lg focus:ring-primary-500 focus:border-primary-500 shadow-sm bg-gray-100"
+                  required
                 />
               </div>
-              */}
               {/* Employee Name Display - commented out for future use */}
               {/*
               <div className="flex flex-col items-end">

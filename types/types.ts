@@ -24,6 +24,7 @@ export interface Bill {
   paymentScreenshot?: string; // base64 string
   status: 'pending' | 'packed' | 'delivered';
   bags?: number; // Number of bags purchased (₹10 each)
+  customerId?: string; // Added for customer ID reference
 }
 
 export interface User {
