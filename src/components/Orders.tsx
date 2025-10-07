@@ -5,6 +5,7 @@ import BillDetailModal from './BillDetailModal.tsx';
 import FilterBar, { FilterState } from './FilterBar.tsx';
 import { db } from '../firebase';
 import { doc, getDoc, collection, query as fsQuery, where, getDocs } from 'firebase/firestore';
+import { getDateKey } from '../services/dbService';
 
 interface OrdersProps {
   bills: Bill[];
@@ -33,6 +34,74 @@ const Orders: React.FC<OrdersProps> = ({ bills, vegetables, initialBillId, onCle
 
   // Cache of user info keyed by userId: { name, department }
   const [userInfoMap, setUserInfoMap] = useState<Record<string, { name: string; department?: string }>>({});
+  
+  // State to track refreshed bill data (bills updated from database)
+  const [refreshedBills, setRefreshedBills] = useState<Map<string, Bill>>(new Map());
+
+  // Function to refresh bill data from database
+  const refreshBillData = async (billId: string) => {
+    try {
+      console.log(`🔄 Refreshing bill data for: ${billId}`);
+      
+      // Find the original bill to get its date
+      const originalBill = bills.find(b => b.id === billId);
+      if (!originalBill) {
+        console.warn(`❌ Original bill ${billId} not found in bills array`);
+        return;
+      }
+
+      const billDate = new Date(originalBill.date);
+      const dateKey = getDateKey(billDate);
+      
+      // Fetch updated bill from database
+      const billRef = doc(db, 'orders', dateKey, 'items', billId);
+      const billDoc = await getDoc(billRef);
+      
+      if (billDoc.exists()) {
+        const updatedBillData = billDoc.data();
+        const updatedBill: Bill = {
+          id: billDoc.id,
+          date: updatedBillData.date || originalBill.date,
+          items: updatedBillData.items || [],
+          total: updatedBillData.total || 0,
+          customerName: updatedBillData.customerName || 'Unknown',
+          department: updatedBillData.department,
+          status: updatedBillData.status || 'pending',
+          bags: updatedBillData.bags,
+          customerId: updatedBillData.customerId,
+          paymentScreenshot: updatedBillData.paymentScreenshot
+        };
+        
+        console.log(`✅ Bill ${billId} refreshed from database. New total: ₹${updatedBill.total}`);
+        
+        // Update the refreshed bills map
+        setRefreshedBills(prev => new Map(prev.set(billId, updatedBill)));
+      } else {
+        console.warn(`❌ Bill ${billId} not found in database at path: orders/${dateKey}/items/${billId}`);
+      }
+    } catch (error) {
+      console.error(`❌ Error refreshing bill ${billId}:`, error);
+    }
+  };
+
+  // Function to handle bill updates from modal
+  const handleBillUpdate = async (billId: string, updates: Partial<Bill>) => {
+    // Call the original onUpdateBill function if provided
+    if (onUpdateBill) {
+      await onUpdateBill(billId, updates);
+    }
+    
+    // Refresh the bill data to show updated amounts
+    refreshBillData(billId);
+  };
+
+  // Function to refresh all visible bills
+  const refreshAllBills = async () => {
+    console.log('🔄 Refreshing all visible bills...');
+    const visibleBills = filteredBills.slice(0, 20); // Limit to first 20 visible bills to avoid overwhelming
+    await Promise.all(visibleBills.map(bill => refreshBillData(bill.id)));
+    console.log('✅ All visible bills refreshed');
+  };
 
   // Fetch missing user infos for visible bills
   useEffect(() => {
@@ -82,6 +151,19 @@ const Orders: React.FC<OrdersProps> = ({ bills, vegetables, initialBillId, onCle
     };
     loadUserInfos();
   }, [bills, userInfoMap]);
+
+  // Auto-refresh bills when bills array changes (e.g., new bills added)
+  useEffect(() => {
+    if (bills.length > 0) {
+      // Only refresh if we have bills and don't have too many refreshed bills already
+      const needsRefresh = bills.some(bill => !refreshedBills.has(bill.id));
+      if (needsRefresh && refreshedBills.size < 50) { // Limit to prevent excessive refreshing
+        console.log('🔄 Auto-refreshing bills due to bills array change...');
+        const recentBills = bills.slice(0, 10); // Limit to 10 most recent bills
+        recentBills.forEach(bill => refreshBillData(bill.id));
+      }
+    }
+  }, [bills.length]); // Only trigger when the number of bills changes
 
   const formatItems = (items: BillItem[], bags?: number) => {
     const itemText = items && items.length > 0 
@@ -140,8 +222,19 @@ const Orders: React.FC<OrdersProps> = ({ bills, vegetables, initialBillId, onCle
   };
 
   const filteredBills = useMemo(() => {
+    // First, merge bills with refreshed data from database
+    let mergedBills = bills ? [...bills] : [];
+    mergedBills = mergedBills.map(bill => {
+      const refreshedBill = refreshedBills.get(bill.id);
+      if (refreshedBill) {
+        console.log(`📊 Using refreshed data for bill ${bill.id}: ₹${bill.total} -> ₹${refreshedBill.total}`);
+        return refreshedBill; // Use refreshed data
+      }
+      return bill; // Use original data
+    });
+
     // Work on a copy to avoid mutating props during sort
-    let filtered = bills ? [...bills] : [];
+    let filtered = mergedBills;
 
     // Apply search filter
     if (searchTerm) {
@@ -214,7 +307,7 @@ const Orders: React.FC<OrdersProps> = ({ bills, vegetables, initialBillId, onCle
     }
 
     return filtered;
-  }, [bills, searchTerm, filters, sortConfig]);
+  }, [bills, searchTerm, filters, sortConfig, refreshedBills, vegetableMap, userInfoMap]);
 
   // Calculate counts for filter tabs
   const statusCounts = useMemo(() => {
@@ -250,6 +343,18 @@ const Orders: React.FC<OrdersProps> = ({ bills, vegetables, initialBillId, onCle
             className="block w-full sm:w-64 rounded-md border-slate-300 bg-white pl-10 py-2 text-slate-900 focus:ring-primary-500 focus:border-primary-500"
             />
         </div>
+        
+        {/* Refresh Button */}
+        <button
+          onClick={refreshAllBills}
+          className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+          title="Refresh bill amounts from database"
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+          </svg>
+          Refresh Amounts
+        </button>
       </div>
 
       <FilterBar 
@@ -346,7 +451,7 @@ const Orders: React.FC<OrdersProps> = ({ bills, vegetables, initialBillId, onCle
         bill={viewingBill}
         vegetableMap={vegetableMap}
         vegetables={vegetables}
-        onUpdateBill={onUpdateBill}
+        onUpdateBill={handleBillUpdate}
         currentUser={currentUser}
       />
     </div>
