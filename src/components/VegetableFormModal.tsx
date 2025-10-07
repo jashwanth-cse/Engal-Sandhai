@@ -101,6 +101,7 @@ const VegetableFormModal: React.FC<VegetableFormModalProps> = ({
               <input type="number" name="pricePerKg" id="pricePerKg" value={formData.pricePerKg} onChange={handleChange} required min="0" step="0.01" className="mt-1 block w-full rounded-md border border-slate-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 bg-white text-slate-900 placeholder-slate-400 px-3 py-2" placeholder="e.g., 150.50" />
             </div>
             <div>
+              
               <label htmlFor="totalStockKg" className="block text-sm font-medium text-slate-700">
                 Total Stock ({formData.unitType === 'KG' ? 'kg' : 'pieces'})
               </label>
