@@ -4,7 +4,8 @@ import Button from './ui/Button.tsx';
 import { PlusIcon, MinusIcon, MagnifyingGlassIcon, CheckCircleIcon } from './ui/Icon.tsx';
 import CartView from './CartView.tsx';
 import BillPreviewPage from './BillPreviewPage.tsx';
-import { roundTotal, formatRoundedTotal } from '../utils/roundUtils';
+import VegetableFormModal from './VegetableFormModal';
+import ImagePreviewModal from './ui/ImagePreviewModal';
 import { getUserFromDb } from '../services/dbService';
 
 interface CreateBillProps {
@@ -115,7 +116,7 @@ const CreateBill: React.FC<CreateBillProps> = ({ user, vegetables, bills, addBil
     const finalTotal = currentTotal + bagsTotal;
 
     items.sort((a, b) => a.name.localeCompare(b.name));
-    return { cartItems: items, total: roundTotal(finalTotal), totalItems: itemCount };
+    return { cartItems: items, total: finalTotal, totalItems: itemCount };
   }, [cart, vegetableMap, bagCount, BAG_PRICE]);
 
   const handleBagCountChange = (increment: boolean) => {
@@ -187,98 +188,132 @@ const CreateBill: React.FC<CreateBillProps> = ({ user, vegetables, bills, addBil
       )}
       
       {/* Header */}
-      <header className="bg-white shadow-sm border-b border-slate-200 px-4 sm:px-6 py-6">
-        <div className="max-w-4xl mx-auto">
-          <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
-            <div>
-              <h1 className="text-3xl font-bold text-slate-800">Create Bill</h1>
-              <p className="text-slate-600 mt-1">Select items and create a new bill for customer</p>
+      <header className="bg-gradient-to-br from-blue-50 via-white to-green-50 shadow-sm border-b border-slate-200 px-4 py-3">
+        <div className="max-w-6xl mx-auto">
+          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+            <div className="flex items-center space-x-2">
+              <div className="p-1.5 bg-gradient-to-br from-green-500 to-green-600 rounded-md shadow-sm">
+                <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+              </div>
+              <div>
+                <h1 className="text-xl font-bold bg-gradient-to-r from-blue-700 to-green-600 bg-clip-text text-transparent">
+                  Create Bill
+                </h1>
+                <p className="text-slate-700 text-sm">Select items and create a new bill for customer</p>
+              </div>
             </div>
-            <div className="flex flex-col sm:flex-row gap-4 items-end">
-              <div className="flex flex-col sm:w-60 mb-2">
-                <label className="text-sm font-medium text-slate-700 mb-2">Customer ID *</label>
-                <input
-                  type="text"
-                  value={customerId}
-                  onChange={async (e) => {
-                    const id = e.target.value.trim();
-                    setCustomerId(id);
-                    setCustomerName('');
-                    setCustomerIdError('');
-                    if (id.length > 0) {
-                      setIsFetchingCustomer(true);
-                      const user = await getUserFromDb(id);
-                      setIsFetchingCustomer(false);
-                      console.log('Fetched user from DB:', user, Object.keys(user || {}));
-                      let name = '';
-                      if (user) {
-                        if (typeof user['employee_name'] === 'string') {
-                          name = user['employee_name'];
-                        } else if (typeof user['name'] === 'string') {
-                          name = user['name'];
-                        } else {
-                          // Fallback: use first string property except id
-                          for (const key of Object.keys(user)) {
-                            if (typeof user[key] === 'string' && key !== 'id') {
-                              name = user[key];
-                              break;
+            <div className="bg-white rounded-lg shadow-md border border-slate-200 p-4">
+              <div className="flex items-center mb-3">
+                <svg className="w-4 h-4 mr-2 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                </svg>
+                <h3 className="text-base font-semibold text-slate-800">Customer Information</h3>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="relative">
+                  <label className="block text-sm font-medium text-slate-700 mb-2">Customer ID *</label>
+                  <div className="relative">
+                    <input
+                      type="text"
+                      value={customerId}
+                      onChange={async (e) => {
+                          // Normalize input to uppercase so lookup is case-insensitive
+                          const id = e.target.value.trim().toUpperCase();
+                          setCustomerId(id);
+                          setCustomerName('');
+                          setCustomerIdError('');
+                          if (id.length > 0) {
+                            setIsFetchingCustomer(true);
+                            const user = await getUserFromDb(id);
+                            setIsFetchingCustomer(false);
+                            console.log('Fetched user from DB:', user, Object.keys(user || {}));
+                            let name = '';
+                            if (user) {
+                              if (typeof user['employee_name'] === 'string') {
+                                name = user['employee_name'];
+                              } else if (typeof user['name'] === 'string') {
+                                name = user['name'];
+                              } else {
+                                // Fallback: use first string property except id
+                                for (const key of Object.keys(user)) {
+                                  if (typeof user[key] === 'string' && key !== 'id') {
+                                    name = user[key];
+                                    break;
+                                  }
+                                }
+                              }
                             }
+                            if (name) {
+                              setCustomerName(name);
+                              setCustomerIdError('');
+                            } else {
+                              setCustomerName('');
+                              setCustomerIdError('Customer not found');
+                            }
+                          } else {
+                            setCustomerName('');
+                            setCustomerIdError('');
                           }
-                        }
-                      }
-                      if (name) {
-                        setCustomerName(name);
-                        setCustomerIdError('');
-                      } else {
-                        setCustomerName('');
-                        setCustomerIdError('Customer not found');
-                      }
-                    } else {
-                      setCustomerName('');
-                      setCustomerIdError('');
-                    }
-                  }}
-                  placeholder="Enter customer ID"
-                  className="px-4 py-3 border border-slate-300 rounded-lg focus:ring-primary-500 focus:border-primary-500 shadow-sm"
-                  required
-                />
-                {isFetchingCustomer && (
-                  <span className="text-xs text-slate-500 mt-1">Fetching customer...</span>
-                )}
-                {customerIdError && (
-                  <span className="text-xs text-red-500 mt-1">{customerIdError}</span>
-                )}
-                {customerName && !customerIdError && (
-                  <span className="text-xs text-green-600 mt-1">Name: {customerName}</span>
-                )}
-              </div>
-              <div className="flex flex-col sm:w-60">
-                <label className="text-sm font-medium text-slate-700 mb-2">Customer Name</label>
-                <input
-                  type="text"
-                  value={customerName}
-                  readOnly
-                  placeholder="Customer name will appear here"
-                  className="px-4 py-3 border border-slate-300 rounded-lg focus:ring-primary-500 focus:border-primary-500 shadow-sm bg-gray-100"
-                  required
-                />
-              </div>
-              {/* Employee Name Display - commented out for future use */}
-              {/*
-              <div className="flex flex-col items-end">
-                <p className="text-sm font-medium text-slate-500 mb-1">Employee</p>
-                <div className="flex items-center gap-2 px-3 py-2 bg-primary-50 border border-primary-200 rounded-lg">
-                  <div className="w-8 h-8 bg-primary-500 rounded-full flex items-center justify-center">
-                    <span className="text-white font-semibold text-sm">
-                      {user.name ? user.name.charAt(0).toUpperCase() : 'U'}
-                    </span>
+                        }}
+                      placeholder="Enter customer ID"
+                      className={`w-full px-4 py-2.5 text-sm border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 font-mono ${
+                        customerIdError ? 'border-red-300 bg-red-50' : 
+                        customerName && !customerIdError ? 'border-green-300 bg-green-50' : 
+                        'border-slate-300 bg-white'
+                      } shadow-sm`}
+                      required
+                    />
+                    {isFetchingCustomer && (
+                      <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
+                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
+                      </div>
+                    )}
                   </div>
-                  <span className="text-primary-700 font-medium text-sm">
-                    {user.name || 'Loading...'}
-                  </span>
+                  {/* Fixed height container for status messages to prevent layout shift */}
+                  <div className="h-5 mt-1">
+                    {isFetchingCustomer && (
+                      <div className="flex items-center text-xs text-blue-600">
+                        <svg className="animate-spin -ml-1 mr-1 h-3 w-3" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                        Fetching customer...
+                      </div>
+                    )}
+                    {customerIdError && (
+                      <div className="flex items-center text-xs text-red-600">
+                        <svg className="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                          <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                        </svg>
+                        {customerIdError}
+                      </div>
+                    )}
+                    {customerName && !customerIdError && (
+                      <div className="flex items-center text-xs text-green-600">
+                        <svg className="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                          <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                        </svg>
+                        Customer found: {customerName}
+                      </div>
+                    )}
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">Customer Name</label>
+                  <input
+                    type="text"
+                    value={customerName}
+                    readOnly
+                    placeholder="Customer name will appear here"
+                    className="w-full px-4 py-2.5 text-sm border border-slate-300 rounded-lg bg-slate-50 text-slate-700 shadow-sm cursor-not-allowed"
+                    required
+                  />
+                  {/* Fixed height spacer to match the other column */}
+                  <div className="h-5 mt-1"></div>
                 </div>
               </div>
-              */}
             </div>
           </div>
         </div>
@@ -328,12 +363,12 @@ const CreateBill: React.FC<CreateBillProps> = ({ user, vegetables, bills, addBil
                     <div className="w-8 h-8 rounded-full bg-primary-100 text-primary-700 flex items-center justify-center font-semibold text-sm">{index + 1}</div>
                     <div>
                       <h3 className="font-semibold text-slate-800 text-lg">{veg.name}</h3>
-                      <p className="text-slate-600">₹{veg.pricePerKg.toFixed(2)}/{veg.unitType === 'KG' ? 'kg' : 'piece'}</p>
+                      <p className="text-slate-600">₹{veg.pricePerKg}/{veg.unitType === 'KG' ? 'kg' : 'piece'}</p>
                       {availableStock <= 0 && (
                         <p className="text-sm text-red-500 font-medium">Out of Stock</p>
                       )}
                       {availableStock > 0 && availableStock <= 5 && (
-                        <p className="text-sm text-amber-600">Low Stock: {availableStock.toFixed(1)}kg available</p>
+                        <p className="text-sm text-amber-600">Low Stock: {availableStock}kg available</p>
                       )}
                     </div>
                   </div>
@@ -355,7 +390,7 @@ const CreateBill: React.FC<CreateBillProps> = ({ user, vegetables, bills, addBil
                         </button>
                         <input
                           type="number"
-                          value={veg.unitType === 'COUNT' ? quantity.toFixed(0) : quantity}
+                          value={veg.unitType === 'COUNT' ? Math.floor(quantity) : quantity}
                           onChange={(e) => updateCart(veg.id, parseFloat(e.target.value) || 0)}
                           className="w-16 text-center font-bold text-slate-800 border border-slate-300 rounded px-2 py-1 focus:outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500"
                           min="0"
@@ -417,7 +452,7 @@ const CreateBill: React.FC<CreateBillProps> = ({ user, vegetables, bills, addBil
         <div className="flex items-center justify-between">
           <div>
             <span className="text-xs font-semibold text-slate-500">{totalItems} {totalItems > 1 ? 'ITEMS' : 'ITEM'}</span>
-            <p className="text-xl font-bold text-slate-800">{formatRoundedTotal(total)}</p>
+            <p className="text-xl font-bold text-slate-800">₹{total}</p>
           </div>
           <Button 
             onClick={() => setIsCartVisible(true)} 

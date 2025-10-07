@@ -3,7 +3,6 @@ import type { Bill, Vegetable, BillItem } from '../../types/types';
 import { MagnifyingGlassIcon, DocumentMagnifyingGlassIcon } from './ui/Icon.tsx';
 import BillDetailModal from './BillDetailModal.tsx';
 import FilterBar, { FilterState } from './FilterBar.tsx';
-import { formatRoundedTotal } from '../utils/roundUtils';
 import { db } from '../firebase';
 import { doc, getDoc, collection, query as fsQuery, where, getDocs } from 'firebase/firestore';
 
@@ -324,7 +323,7 @@ const Orders: React.FC<OrdersProps> = ({ bills, vegetables, initialBillId, onCle
                         </div>
                       </td>
                       <td className="px-6 py-4 text-right font-semibold text-slate-800">
-                          {formatRoundedTotal(bill.total)}
+                          ₹{bill.total}
                       </td>
                       <td className="px-6 py-4 text-center">
                         <button 

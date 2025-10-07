@@ -290,6 +290,8 @@ export interface OrderData {
   status: 'pending' | 'packed' | 'delivered';
   totalAmount: number;
   userId: string;
+  customerName?: string; // Add customer name
+  customerId?: string;   // Add customer ID
 }
 
 // Global order processing queue to prevent concurrent order placement
@@ -573,11 +575,11 @@ export const subscribeToTodayOrders = (
           date: new Date(createdAt).toISOString(),
           items,
           total: Number(orderData.totalAmount) || 0,
-          customerName: String(orderData.userId || orderData.employee_id || 'Unknown'),
+          customerName: String(orderData.customerName || orderData.userId || orderData.employee_id || 'Unknown'),
           status: (orderData.status as Bill['status']) || 'pending',
           bags: Number(orderData.bagCount || orderData.bags || 0) || undefined,
         };
-        (bill as any).customerId = String(orderData.userId || orderData.employee_id || '');
+        (bill as any).customerId = String(orderData.customerId || orderData.userId || orderData.employee_id || '');
         return bill;
       });
       onChange(bills);
@@ -597,22 +599,28 @@ export const subscribeToTodayOrders = (
       const orderData = docSnapshot.data();
       const createdAt = orderData.createdAt?.toDate ? orderData.createdAt.toDate() : (orderData.createdAt || new Date());
       const items: BillItem[] = Array.isArray(orderData.items)
-        ? orderData.items.map((it: any) => ({
-            vegetableId: it.id,
-            quantityKg: Number(it.quantity) || 0,
-            subtotal: Number(it.subtotal) || 0,
-          }))
+        ? orderData.items.map((it: any) => {
+            const billItem: any = {
+              vegetableId: it.id,
+              quantityKg: Number(it.quantity) || 0,
+              subtotal: Number(it.subtotal) || 0,
+            };
+            // Preserve historical data for PDF generation
+            if (it.name) billItem.name = it.name;
+            if (it.pricePerKg) billItem.pricePerKg = Number(it.pricePerKg);
+            return billItem;
+          })
         : [];
       const bill: Bill = {
         id: String(orderData.billNumber || orderData.orderId || docSnapshot.id),
         date: new Date(createdAt).toISOString(),
         items,
         total: Number(orderData.totalAmount) || 0,
-        customerName: String(orderData.userId || orderData.employee_id || 'Unknown'),
+        customerName: String(orderData.customerName || orderData.userId || orderData.employee_id || 'Unknown'),
         status: (orderData.status as Bill['status']) || 'pending',
         bags: Number(orderData.bagCount || orderData.bags || 0) || undefined,
       };
-      (bill as any).customerId = String(orderData.userId || orderData.employee_id || '');
+      (bill as any).customerId = String(orderData.customerId || orderData.userId || orderData.employee_id || '');
       return bill;
     });
     onChange(bills);
@@ -688,11 +696,11 @@ export const subscribeToDateOrders = (
           date: new Date(createdAt).toISOString(),
           items,
           total: Number(orderData.totalAmount) || 0,
-          customerName: String(orderData.userId || orderData.employee_id || 'Unknown'),
+          customerName: String(orderData.customerName || orderData.userId || orderData.employee_id || 'Unknown'),
           status: (orderData.status as Bill['status']) || 'pending',
           bags: Number(orderData.bagCount || orderData.bags || 0) || undefined,
         };
-        (bill as any).customerId = String(orderData.userId || orderData.employee_id || '');
+        (bill as any).customerId = String(orderData.customerId || orderData.userId || orderData.employee_id || '');
         return bill;
       });
       onChange(bills);
@@ -712,22 +720,28 @@ export const subscribeToDateOrders = (
       const orderData = docSnapshot.data();
       const createdAt = orderData.createdAt?.toDate ? orderData.createdAt.toDate() : (orderData.createdAt || new Date());
       const items: BillItem[] = Array.isArray(orderData.items)
-        ? orderData.items.map((it: any) => ({
-            vegetableId: it.id,
-            quantityKg: Number(it.quantity) || 0,
-            subtotal: Number(it.subtotal) || 0,
-          }))
+        ? orderData.items.map((it: any) => {
+            const billItem: any = {
+              vegetableId: it.id,
+              quantityKg: Number(it.quantity) || 0,
+              subtotal: Number(it.subtotal) || 0,
+            };
+            // Preserve historical data for PDF generation
+            if (it.name) billItem.name = it.name;
+            if (it.pricePerKg) billItem.pricePerKg = Number(it.pricePerKg);
+            return billItem;
+          })
         : [];
       const bill: Bill = {
         id: String(orderData.billNumber || orderData.orderId || docSnapshot.id),
         date: new Date(createdAt).toISOString(),
         items,
         total: Number(orderData.totalAmount) || 0,
-        customerName: String(orderData.userId || orderData.employee_id || 'Unknown'),
+        customerName: String(orderData.customerName || orderData.userId || orderData.employee_id || 'Unknown'),
         status: (orderData.status as Bill['status']) || 'pending',
         bags: Number(orderData.bagCount || orderData.bags || 0) || undefined,
       };
-      (bill as any).customerId = String(orderData.userId || orderData.employee_id || '');
+      (bill as any).customerId = String(orderData.customerId || orderData.userId || orderData.employee_id || '');
       return bill;
     });
     onChange(bills);
@@ -1155,6 +1169,142 @@ export const updateMultipleOrderStatuses = async (
   } catch (error) {
     console.error(`❌ Failed to batch update order statuses:`, error);
     throw error;
+  }
+};
+
+/**
+ * Fetch bills for a date range (e.g., weekly report)
+ * This is more efficient than multiple subscriptions
+ */
+export const fetchBillsForDateRange = async (
+  startDate: Date,
+  endDate: Date
+): Promise<Bill[]> => {
+  const allBills: Bill[] = [];
+  
+  // Generate all dates in the range
+  const dates: Date[] = [];
+  const currentDate = new Date(startDate);
+  
+  while (currentDate <= endDate) {
+    dates.push(new Date(currentDate));
+    currentDate.setDate(currentDate.getDate() + 1);
+  }
+  
+  // Fetch bills for each date
+  for (const date of dates) {
+    const dateStr = date.toISOString().split('T')[0];
+    const isLegacyDate = dateStr === '2025-09-24' || dateStr === '2025-09-25';
+    
+    try {
+      if (isLegacyDate) {
+        // Fetch from legacy collection for Sept 24-25
+        const legacyOrdersCol = collection(db, 'orders');
+        const legacyQuery = query(
+          legacyOrdersCol,
+          where('createdAt', '>=', new Date(dateStr + 'T00:00:00')),
+          where('createdAt', '<', new Date(dateStr + 'T23:59:59')),
+          orderBy('createdAt', 'desc')
+        );
+        
+        const snapshot = await getDocs(legacyQuery);
+        const dayBills = snapshot.docs.map((docSnapshot) => {
+          const orderData = docSnapshot.data();
+          const createdAt = orderData.createdAt?.toDate ? orderData.createdAt.toDate() : (orderData.createdAt || new Date());
+          const items = Array.isArray(orderData.items)
+            ? orderData.items.map((it: any) => ({
+                vegetableId: it.id,
+                quantityKg: Number(it.quantity) || 0,
+                subtotal: Number(it.subtotal) || 0,
+              }))
+            : [];
+          
+          const bill: Bill = {
+            id: String(orderData.billNumber || orderData.orderId || docSnapshot.id),
+            date: new Date(createdAt).toISOString(),
+            items,
+            total: Number(orderData.totalAmount) || 0,
+            customerName: String(orderData.userId || orderData.employee_id || 'Unknown'),
+            status: (orderData.status as Bill['status']) || 'pending',
+            bags: Number(orderData.bagCount || orderData.bags || 0) || undefined,
+          };
+          (bill as any).customerId = String(orderData.userId || orderData.employee_id || '');
+          return bill;
+        });
+        
+        allBills.push(...dayBills);
+      } else {
+        // Fetch from date-based collection
+        const ordersCollectionRef = getOrdersCol(date);
+        const q = query(ordersCollectionRef, orderBy('createdAt', 'desc'));
+        
+        const snapshot = await getDocs(q);
+        const dayBills = snapshot.docs.map((docSnapshot) => {
+          const orderData = docSnapshot.data();
+          const createdAt = orderData.createdAt?.toDate ? orderData.createdAt.toDate() : (orderData.createdAt || new Date());
+          const items = Array.isArray(orderData.items)
+            ? orderData.items.map((it: any) => ({
+                vegetableId: it.id,
+                quantityKg: Number(it.quantity) || 0,
+                subtotal: Number(it.subtotal) || 0,
+              }))
+            : [];
+          
+          const bill: Bill = {
+            id: String(orderData.billNumber || orderData.orderId || docSnapshot.id),
+            date: new Date(createdAt).toISOString(),
+            items,
+            total: Number(orderData.totalAmount) || 0,
+            customerName: String(orderData.userId || orderData.employee_id || 'Unknown'),
+            status: (orderData.status as Bill['status']) || 'pending',
+            bags: Number(orderData.bagCount || orderData.bags || 0) || undefined,
+          };
+          (bill as any).customerId = String(orderData.userId || orderData.employee_id || '');
+          return bill;
+        });
+        
+        allBills.push(...dayBills);
+      }
+    } catch (error) {
+      console.warn(`Failed to fetch bills for date ${dateStr}:`, error);
+      // Continue with other dates even if one fails
+    }
+  }
+  
+  // Sort all bills by date descending
+  return allBills.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+};
+
+/**
+ * Fetch vegetables for a specific date
+ * This is useful for getting historical stock information
+ */
+export const fetchVegetablesForDate = async (date?: Date): Promise<Vegetable[]> => {
+  try {
+    const isDateBased = date !== undefined;
+    const targetCol = isDateBased ? getVegetablesCol(date) : vegetablesCol;
+    
+    const q = query(targetCol, orderBy('name'));
+    const snapshot = await getDocs(q);
+    
+    const items: Vegetable[] = snapshot.docs.map((d) => {
+      const data = d.data() as Omit<Vegetable, 'id'>;
+      return {
+        id: d.id,
+        name: data.name,
+        unitType: data.unitType || 'KG',
+        pricePerKg: Number(data.pricePerKg) || 0,
+        totalStockKg: Number(data.totalStockKg) || Number(data.stockKg) || 0,
+        stockKg: Number(data.stockKg) || 0,
+        category: data.category,
+      };
+    });
+    
+    console.log(`Fetched ${items.length} vegetables for date ${date ? getDateKey(date) : 'current'}`);
+    return items;
+  } catch (error) {
+    console.error('Error fetching vegetables for date:', error);
+    return [];
   }
 };
 

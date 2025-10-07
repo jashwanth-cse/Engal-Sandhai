@@ -19,6 +19,7 @@ const Sidebar: React.FC<SidebarProps> = ({ user, onLogout, currentPage, setCurre
     { id: 'inventory', name: 'Inventory', icon: <CubeIcon className="h-6 w-6" /> },
     { id: 'orders', name: 'Orders', icon: <ShoppingCartIcon className="h-6 w-6" /> },
     { id: 'reports', name: 'Reports', icon: <DocumentMagnifyingGlassIcon className="h-6 w-6" /> },
+    { id: 'weekly-stock', name: 'Weekly Stock Report', icon: <CalendarDaysIcon className="h-6 w-6" /> },
     { id: 'create-bill', name: 'Create Bill', icon: <PlusIcon className="h-6 w-6" /> },
   ];
 
@@ -37,7 +38,11 @@ const Sidebar: React.FC<SidebarProps> = ({ user, onLogout, currentPage, setCurre
           <a
             key={item.name}
             href="#"
-            onClick={(e) => { e.preventDefault(); setCurrentPage(item.id); }}
+            onClick={(e) => { 
+              e.preventDefault(); 
+              setCurrentPage(item.id); 
+              setIsOpen(false); // Close mobile sidebar after navigation
+            }}
             className={`flex items-center px-4 py-2.5 text-base font-semibold rounded-lg transition-colors duration-200 ${
               currentPage === item.id
                 ? 'bg-primary-700 text-white'

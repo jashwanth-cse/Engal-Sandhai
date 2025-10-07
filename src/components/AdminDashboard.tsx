@@ -9,6 +9,7 @@ import Orders from './Orders.tsx';
 import Settings from './Settings.tsx';
 import Reports from './Reports.tsx';
 import CreateBill from './CreateBill.tsx';
+import WeeklyInventory from './WeeklyInventory.tsx';
 import { updateUserNameInDb, updateOrderStatus, debugLegacyOrders } from '../services/dbService';
 import { db } from '../firebase';
 import { doc, updateDoc } from 'firebase/firestore';
@@ -127,8 +128,11 @@ const AdminDashboard: React.FC<AdminDashboardProps> = (props) => {
       case 'reports':
         return <Reports />;
       case 'weekly-stock':
-        navigate('/weekly-stock');
-        return null;
+        return <WeeklyInventory 
+                  vegetables={props.vegetables}
+                  bills={props.bills}
+                  user={props.user}
+               />;
       case 'settings':
         return <Settings 
                   user={props.user}
@@ -152,7 +156,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = (props) => {
       inventory: 'Inventory',
       orders: 'Order History',
       reports: 'Reports',
-      'weekly-stock': 'Weekly Stock Update',
+      'weekly-stock': 'Weekly Stock Report',
       settings: 'Settings',
       'create-bill': 'Create Bill',
   };

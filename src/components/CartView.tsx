@@ -9,9 +9,7 @@ import {
   CheckCircleIcon,
   TrashIcon,
 } from "./ui/Icon.tsx";
-import { formatRoundedTotal } from "../utils/roundUtils";
-import { placeOrder, type OrderData, getOrderProcessingStatus } from "../services/dbService";
-import { getAuth } from "firebase/auth";
+
 
 type CartItemDetails = BillItem & {
   name: string;
@@ -46,65 +44,139 @@ const CartContent: React.FC<Omit<CartViewProps, "isOpen">> = ({
 }) => {
   const [isInQueue, setIsInQueue] = React.useState(false);
   const [queueMessage, setQueueMessage] = React.useState("");
+  const [showRecaptcha, setShowRecaptcha] = React.useState(false);
+  const [recaptchaLoaded, setRecaptchaLoaded] = React.useState(false);
+  const [recaptchaWidgetId, setRecaptchaWidgetId] = React.useState<number | null>(null);
+  const recaptchaResolveRef = React.useRef<((token: string) => void) | null>(null);
+  const recaptchaRejectRef = React.useRef<((err?: any) => void) | null>(null);
+  const SITE_KEY = '6LeCQ88rAAAAAJS8alTA0099YgvVMV3jGFVwsvLU';
   const BAG_PRICE = 10;
 
-  const handlePlaceOrder = async () => {
+  // Submit the order (core logic extracted so it can be called after CAPTCHA)
+  const submitOrder = async (recaptchaToken?: string) => {
     try {
-      const auth = getAuth();
-      const currentUser = auth.currentUser;
-      if (!currentUser) {
-        alert("Please log in to place an order");
-        return;
-      }
-
-      // Check if another order is being processed
-      const isProcessing = getOrderProcessingStatus();
-      if (isProcessing) {
-        setIsInQueue(true);
-        setQueueMessage("Another order is being processed. You're next in queue...");
-      } else {
-        setQueueMessage("Preparing your order...");
-      }
-
-      const orderData: OrderData = {
-        bagCost: bagCount * BAG_PRICE,
-        bagCount,
-        cartSubtotal: total - (bagCount * BAG_PRICE),
-        employee_id: currentUser.uid,
-        items: cartItems.map(item => ({
-          id: item.vegetableId,
-          name: item.name,
-          pricePerKg: item.pricePerKg,
-          quantity: item.quantityKg,
-          subtotal: item.subtotal
-        })),
-        status: 'pending' as const,
-        totalAmount: total,
-        userId: currentUser.uid
-      };
-
-      console.log('Placing order in queue...');
+      setIsInQueue(true);
       setQueueMessage("Processing your order...");
-      
-      const billNumber = await placeOrder(orderData);
-      
-      console.log('Order completed:', billNumber);
-      alert(`Order placed successfully! Bill Number: ${billNumber}`);
-      onPlaceOrder(); // Call original onPlaceOrder for UI updates
-      
+
+      // If you intend to send the recaptchaToken to the backend, attach it to orderData here.
+      if (recaptchaToken) {
+        console.log('Received reCAPTCHA token, proceeding with order...');
+      }
+
+      // Just call the parent's onPlaceOrder function which handles the complete order process
+      // This eliminates the duplicate order creation issue
+      onPlaceOrder();
+
     } catch (error) {
       console.error('Error placing order:', error);
       const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
-      
-      if (errorMessage.includes('Please try again')) {
-        alert('Order conflict detected. Please wait a moment and try again.');
-      } else {
-        alert(`Failed to place order: ${errorMessage}`);
-      }
+      alert(`Failed to place order: ${errorMessage}`);
     } finally {
       setIsInQueue(false);
       setQueueMessage("");
     }
+  };
+
+  // When Place Order button is clicked, show reCAPTCHA modal first
+  const handlePlaceOrder = async () => {
+    // Show reCAPTCHA modal with blur; once completed it will call submitOrder
+    setShowRecaptcha(true);
+    // Ensure script is loaded and widget is rendered when modal shows
+    try {
+      await loadAndRenderRecaptcha();
+      // Wait for user's captcha completion via promise
+      const token = await waitForRecaptchaToken();
+      setShowRecaptcha(false);
+      await submitOrder(token);
+    } catch (err) {
+      // If user cancelled or an error occurred, close modal and do nothing
+      console.warn('reCAPTCHA flow aborted or failed', err);
+      setShowRecaptcha(false);
+    }
+  };
+
+  // Load grecaptcha script and render widget into container if not already
+  const loadAndRenderRecaptcha = (): Promise<void> => {
+    return new Promise((resolve, reject) => {
+      if ((window as any).grecaptcha && recaptchaLoaded) {
+        // Already loaded and likely rendered
+        resolve();
+        return;
+      }
+
+      // Load script if not present
+      if (!(window as any).grecaptcha) {
+        const existing = document.getElementById('recaptcha-script');
+        if (!existing) {
+          const script = document.createElement('script');
+          script.id = 'recaptcha-script';
+          script.src = 'https://www.google.com/recaptcha/api.js';
+          script.async = true;
+          script.defer = true;
+          script.onload = () => {
+            setRecaptchaLoaded(true);
+            // small timeout to allow render target to exist in DOM
+            setTimeout(() => renderWidgetIfNeeded(resolve, reject), 100);
+          };
+          script.onerror = () => reject(new Error('Failed to load reCAPTCHA script'));
+          document.body.appendChild(script);
+        } else {
+          // script exists but grecaptcha not yet available
+          const waitFor = () => {
+            if ((window as any).grecaptcha) {
+              setRecaptchaLoaded(true);
+              renderWidgetIfNeeded(resolve, reject);
+            } else {
+              setTimeout(waitFor, 100);
+            }
+          };
+          waitFor();
+        }
+      } else {
+        setRecaptchaLoaded(true);
+        renderWidgetIfNeeded(resolve, reject);
+      }
+    });
+  };
+
+  const renderWidgetIfNeeded = (resolve: () => void, reject: (e: any) => void) => {
+    try {
+      const container = document.getElementById('recaptcha-container');
+      if (!container) {
+        // container may not be in DOM yet; resolve and wait for render attempt
+        resolve();
+        return;
+      }
+
+      if ((window as any).grecaptcha && recaptchaWidgetId === null) {
+        const id = (window as any).grecaptcha.render('recaptcha-container', {
+          sitekey: SITE_KEY,
+          theme: 'light',
+          callback: (token: string) => {
+            if (recaptchaResolveRef.current) recaptchaResolveRef.current(token);
+          }
+        });
+        setRecaptchaWidgetId(id);
+      }
+      resolve();
+    } catch (e) {
+      reject(e);
+    }
+  };
+
+  const waitForRecaptchaToken = (): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      recaptchaResolveRef.current = (token: string) => {
+        recaptchaResolveRef.current = null;
+        recaptchaRejectRef.current = null;
+        resolve(token);
+      };
+      recaptchaRejectRef.current = (err?: any) => {
+        recaptchaResolveRef.current = null;
+        recaptchaRejectRef.current = null;
+        reject(err ?? new Error('reCAPTCHA cancelled'));
+      };
+    });
   };
 
   const renderQuantityControls = (item: CartItemDetails) => {
@@ -120,7 +192,7 @@ const CartContent: React.FC<Omit<CartViewProps, "isOpen">> = ({
         </button>
         <input
           type="number"
-          value={item.unitType === "COUNT" ? item.quantityKg.toFixed(0) : item.quantityKg}
+          value={item.unitType === "COUNT" ? Math.floor(item.quantityKg) : item.quantityKg}
           onChange={(e) =>
             onUpdateCart(item.vegetableId, parseFloat(e.target.value) || 0)
           }
@@ -197,7 +269,7 @@ const CartContent: React.FC<Omit<CartViewProps, "isOpen">> = ({
                   <div>
                     <p className="font-semibold text-slate-800 text-sm">{item.name}</p>
                     <p className="text-xs text-slate-500">
-                      ₹{item.pricePerKg.toFixed(2)}/{item.unitType === "KG" ? "kg" : "piece"}
+                      ₹{item.pricePerKg}/{item.unitType === "KG" ? "kg" : "piece"}
                     </p>
                   </div>
                 </div>
@@ -205,7 +277,7 @@ const CartContent: React.FC<Omit<CartViewProps, "isOpen">> = ({
                 {/* Quantity */}
                 <div className="col-span-2 text-center">
                   <span className="text-sm font-medium text-slate-700">
-                    {item.unitType === "COUNT" ? item.quantityKg.toFixed(0) : item.quantityKg}
+                    {item.unitType === "COUNT" ? Math.floor(item.quantityKg) : item.quantityKg}
                     <span className="text-xs text-slate-500 ml-1">
                       {item.unitType === "KG" ? "kg" : "pcs"}
                     </span>
@@ -215,7 +287,7 @@ const CartContent: React.FC<Omit<CartViewProps, "isOpen">> = ({
                 {/* Total */}
                 <div className="col-span-2 text-right">
                   <span className="text-sm font-semibold text-slate-800">
-                    ₹{item.subtotal.toFixed(2)}
+                    ₹{item.subtotal}
                   </span>
                 </div>
                 
@@ -275,7 +347,7 @@ const CartContent: React.FC<Omit<CartViewProps, "isOpen">> = ({
         {/* Total */}
         <div className="flex justify-between text-xl font-bold mb-2">
           <span>Total</span>
-          <span>{formatRoundedTotal(total)}</span>
+          <span>₹{total}</span>
         </div>
 
         {/* Place Order Button */}
@@ -308,6 +380,43 @@ const CartContent: React.FC<Omit<CartViewProps, "isOpen">> = ({
             )}
           </div>
         </Button>
+        
+          {/* reCAPTCHA Modal */}
+          {showRecaptcha && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center">
+              {/* Backdrop - slight blur + dark overlay */}
+              <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => {
+                // clicking backdrop should cancel the captcha and reject waiting promise
+                if (recaptchaRejectRef.current) {
+                  recaptchaRejectRef.current();
+                }
+                // reset widget if present
+                try { if ((window as any).grecaptcha && recaptchaWidgetId !== null) (window as any).grecaptcha.reset(recaptchaWidgetId); } catch(e) {}
+                setShowRecaptcha(false);
+              }} />
+
+              <div className="relative bg-white rounded-lg shadow-lg p-6 w-full max-w-md z-10">
+                <h3 className="text-lg font-semibold mb-3">Verify you're human</h3>
+                <p className="text-sm text-slate-500 mb-4">Please complete the reCAPTCHA to continue placing your order.</p>
+
+                <div id="recaptcha-container" className="flex justify-center mb-4" />
+
+                <div className="flex justify-end gap-2">
+                  <button
+                    className="px-3 py-2 rounded-md bg-slate-100 hover:bg-slate-200"
+                    onClick={() => {
+                      // Cancel flow: reject pending promise and reset widget
+                      if (recaptchaRejectRef.current) recaptchaRejectRef.current();
+                      try { if ((window as any).grecaptcha && recaptchaWidgetId !== null) (window as any).grecaptcha.reset(recaptchaWidgetId); } catch(e) {}
+                      setShowRecaptcha(false);
+                    }}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         
         {/* Queue Information */}
         {isInQueue && (

@@ -62,7 +62,11 @@ const Inventory: React.FC<InventoryProps> = ({
 
   // Format date for input (YYYY-MM-DD)
   const formatDateForInput = (date: Date) => {
-    return date.toISOString().split('T')[0];
+    // Use local date parts to avoid timezone shifts introduced by toISOString()
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, '0');
+    const d = String(date.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
   };
 
   // Calculate used stock for each vegetable from bills
@@ -207,7 +211,14 @@ const Inventory: React.FC<InventoryProps> = ({
               type="date"
               value={formatDateForInput(currentDate)}
               onChange={(e) => {
-                const newDate = new Date(e.target.value + 'T00:00:00');
+                // Parse YYYY-MM-DD into a local Date to avoid timezone offset issues
+                const val = e.target.value;
+                if (!val) return;
+                const [yearStr, monthStr, dayStr] = val.split('-');
+                const year = Number(yearStr);
+                const month = Number(monthStr) - 1; // monthIndex
+                const day = Number(dayStr);
+                const newDate = new Date(year, month, day);
                 handleDateChange(newDate);
               }}
               className="border-0 bg-transparent focus:outline-none focus:ring-0 text-sm font-medium text-slate-700"
@@ -224,7 +235,7 @@ const Inventory: React.FC<InventoryProps> = ({
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <MetricCard
           title="Max Selling Item"
-          value={maxSellingItem.vegetable ? `${maxSellingItem.vegetable.name} (${maxSellingItem.totalSold.toFixed(1)} ${maxSellingItem.vegetable.unitType === 'KG' ? 'kg' : 'pieces'})` : 'No sales data'}
+          value={maxSellingItem.vegetable ? `${maxSellingItem.vegetable.name} (${maxSellingItem.totalSold} ${maxSellingItem.vegetable.unitType === 'KG' ? 'kg' : 'pieces'})` : 'No sales data'}
           icon={
             <svg className="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
@@ -233,7 +244,7 @@ const Inventory: React.FC<InventoryProps> = ({
         />
         <MetricCard
           title="Lowest Selling Item"
-          value={lowestSellingItem.vegetable ? `${lowestSellingItem.vegetable.name} (${lowestSellingItem.totalSold.toFixed(1)} ${lowestSellingItem.vegetable.unitType === 'KG' ? 'kg' : 'pieces'})` : 'No sales data'}
+          value={lowestSellingItem.vegetable ? `${lowestSellingItem.vegetable.name} (${lowestSellingItem.totalSold} ${lowestSellingItem.vegetable.unitType === 'KG' ? 'kg' : 'pieces'})` : 'No sales data'}
           icon={
             <svg className="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 17h8m0 0V9m0 8l-8-8-4 4-6-6" />
@@ -309,13 +320,13 @@ const Inventory: React.FC<InventoryProps> = ({
                   </td>
                   <td className="px-6 py-4">{veg.category}</td>
                   <td className="px-6 py-4 text-right">
-                    ₹{veg.pricePerKg.toFixed(2)}/{veg.unitType === 'KG' ? 'kg' : 'piece'}
+                    ₹{veg.pricePerKg}/{veg.unitType === 'KG' ? 'kg' : 'piece'}
                   </td>
                   <td className="px-6 py-4 text-right font-semibold">
-                    {veg.totalStockKg.toFixed(veg.unitType === 'KG' ? 1 : 0)} {veg.unitType === 'KG' ? 'kg' : 'pieces'}
+                    {veg.unitType === 'KG' ? veg.totalStockKg : Math.floor(veg.totalStockKg)} {veg.unitType === 'KG' ? 'kg' : 'pieces'}
                   </td>
                   <td className={`px-6 py-4 text-right font-semibold ${isLowStock ? 'text-red-600' : 'text-green-600'}`}>
-                    {availableStock.toFixed(veg.unitType === 'KG' ? 1 : 0)} {veg.unitType === 'KG' ? 'kg' : 'pieces'}
+                    {veg.unitType === 'KG' ? availableStock : Math.floor(availableStock)} {veg.unitType === 'KG' ? 'kg' : 'pieces'}
                     {isLowStock && availableStock > 0 && <span className="ml-1 text-xs text-red-600">(Low)</span>}
                     {availableStock === 0 && <span className="ml-1 text-xs text-red-600">(Out)</span>}
                   </td>

@@ -3,8 +3,8 @@ import type { Bill, Vegetable, BillItem } from '../../types/types';
 import { XMarkIcon, EyeIcon, ArrowDownTrayIcon } from './ui/Icon.tsx';
 import ImagePreviewModal from './ui/ImagePreviewModal.tsx';
 import Button from './ui/Button.tsx';
-import { roundTotal, formatRoundedTotal } from '../utils/roundUtils';
 import { getVegetableById } from '../services/dbService';
+import { upiPng } from '../assets/upi.ts';
 
 // Firestore imports
 import { doc, getDoc } from 'firebase/firestore';
@@ -16,6 +16,20 @@ declare global {
         jspdf: any;
     }
 }
+
+// UPI IDs configuration
+const UPI_IDS = [
+  {
+    id: 'qualitykannan1962-1@okhdfcbank',
+    name: 'Quality Kannan',
+    displayName: 'qualitykannan1962-1@okhdfcbank'
+  },
+  {
+    id: 'vishnusakra.doc-2@okhdfcbank', 
+    name: 'Vishnu Sakra',
+    displayName: 'vishnusakra.doc-2@okhdfcbank'
+  }
+];
 
 interface BillDetailModalProps {
   isOpen: boolean;
@@ -42,6 +56,20 @@ const BillDetailModal: React.FC<BillDetailModalProps> = ({ isOpen, onClose, bill
   // Add state to track fetched vegetables for missing items
   const [fetchedVegetables, setFetchedVegetables] = useState<Map<string, Vegetable>>(new Map());
   
+  // UPI selection state
+  const [selectedUpiId, setSelectedUpiId] = useState<string>('');
+  
+  // Copy UPI ID function
+  const copyUpiId = async (upiId: string) => {
+    try {
+      await navigator.clipboard.writeText(upiId);
+      // You could add a toast notification here if you have one
+      console.log('UPI ID copied to clipboard:', upiId);
+    } catch (err) {
+      console.error('Failed to copy UPI ID:', err);
+    }
+  };
+  
   // const BAG_PRICE = 10; // ₹10 per bag - Moved to user page
   
   // Initialize edited items when bill changes
@@ -49,9 +77,10 @@ const BillDetailModal: React.FC<BillDetailModalProps> = ({ isOpen, onClose, bill
     if (bill) {
       setEditedItems([...bill.items]);
       // setBagCount(bill.bags || 0); // Moved to user page
-      setCalculatedTotal(roundTotal(bill.total));
+      setCalculatedTotal(bill.total);
       setHasUnsavedChanges(false);
       setFetchedVegetables(new Map()); // Reset fetched vegetables for new bill
+      setSelectedUpiId(''); // Reset UPI selection for new bill
     }
   }, [bill]);
   
@@ -90,17 +119,16 @@ const BillDetailModal: React.FC<BillDetailModalProps> = ({ isOpen, onClose, bill
     // const bagsTotal = bagCount * BAG_PRICE; // Moved to user page
     // const newTotal = itemsTotal + bagsTotal; // Moved to user page
     const newTotal = itemsTotal;
-    const roundedTotal = roundTotal(newTotal);
-    setCalculatedTotal(roundedTotal);
+    setCalculatedTotal(newTotal);
     
     // Check if there are unsaved changes (bags moved to user page)
     if (bill) {
       const originalItemsTotal = bill.items.reduce((sum, item) => sum + item.subtotal, 0);
       // const originalBagsTotal = (bill.bags || 0) * BAG_PRICE; // Moved to user page
-      // const originalTotal = roundTotal(originalItemsTotal + originalBagsTotal); // Moved to user page
-      const originalTotal = roundTotal(originalItemsTotal);
+      // const originalTotal = originalItemsTotal + originalBagsTotal; // Moved to user page
+      const originalTotal = originalItemsTotal;
       
-      const hasChanges = roundedTotal !== originalTotal || 
+      const hasChanges = newTotal !== originalTotal || 
         // bagCount !== (bill.bags || 0) || // Moved to user page
         editedItems.some((item, index) => 
           item.quantityKg !== bill.items[index]?.quantityKg ||
@@ -228,7 +256,7 @@ const BillDetailModal: React.FC<BillDetailModalProps> = ({ isOpen, onClose, bill
       newItems[existingItemIndex] = {
         ...newItems[existingItemIndex],
         quantityKg: newQuantity,
-        subtotal: roundTotal(newQuantity * vegetable.pricePerKg)
+        subtotal: newQuantity * vegetable.pricePerKg
       };
       setEditedItems(newItems);
     } else {
@@ -236,7 +264,7 @@ const BillDetailModal: React.FC<BillDetailModalProps> = ({ isOpen, onClose, bill
       const newItem: BillItem = {
         vegetableId,
         quantityKg: quantity,
-        subtotal: roundTotal(quantity * vegetable.pricePerKg)
+        subtotal: quantity * vegetable.pricePerKg
       };
       setEditedItems(prev => [...prev, newItem]);
     }
@@ -374,12 +402,25 @@ const BillDetailModal: React.FC<BillDetailModalProps> = ({ isOpen, onClose, bill
       // Table rows for this page
       doc.setFont('courier', 'normal');
       pageItems.forEach((item, pageIndex) => {
-        const vegetable = vegetableMap.get(item.vegetableId);
+        const vegetable = vegetableMap.get(item.vegetableId) || fetchedVegetables.get(item.vegetableId);
         const globalSerialNo = startIdx + pageIndex + 1; // Continue serial number across pages
-        const name = vegetable?.name || 'Unknown';
-        const qty = item.quantityKg.toFixed(2);
-        const rate = (vegetable?.pricePerKg || 0).toFixed(2);
-        const amount = item.subtotal.toFixed(2);
+        
+        // Use historical data from bill item if available, otherwise fallback to vegetable lookup
+        const name = (item as any).name || vegetable?.name || 'Unknown';
+        const qty = String(item.quantityKg);
+        const rate = String((item as any).pricePerKg || vegetable?.pricePerKg || 0);
+        const amount = String(item.subtotal);
+        
+        // Debug logging
+        console.log(`PDF Item ${globalSerialNo}:`, {
+          vegetableId: item.vegetableId,
+          historicalName: (item as any).name,
+          historicalPrice: (item as any).pricePerKg,
+          vegetableName: vegetable?.name,
+          vegetablePrice: vegetable?.pricePerKg,
+          finalName: name,
+          finalRate: rate
+        });
 
         doc.text(globalSerialNo.toString(), colSNo, y);
         doc.text(name, colItem, y);
@@ -398,7 +439,39 @@ const BillDetailModal: React.FC<BillDetailModalProps> = ({ isOpen, onClose, bill
         doc.setFont('helvetica', 'bold');
         doc.setFontSize(12);
         doc.text('TOTAL:', colRate, y);
-        doc.text(`Rs. ${roundTotal(calculatedTotal).toFixed(2)}`, colAmount, y, { align: 'right' });
+        doc.text(`Rs. ${calculatedTotal}`, colAmount, y, { align: 'right' });
+        y += 15;
+        
+        // UPI Payment Information
+        if (selectedUpiId) {
+          const selectedUpi = UPI_IDS.find(upi => upi.id === selectedUpiId);
+          if (selectedUpi) {
+            doc.line(startX, y - 5, endX, y - 5); // separator line
+            y += 5;
+            
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(11);
+            doc.text('PAYMENT INFORMATION', startX, y);
+            y += 8;
+            
+            doc.setFont('helvetica', 'normal');
+            doc.setFontSize(10);
+            doc.text(`Payee Name: ${selectedUpi.name}`, startX, y);
+            y += 5;
+            doc.text(`UPI ID: ${selectedUpi.displayName}`, startX, y);
+            y += 5;
+            doc.text(`Amount: Rs. ${calculatedTotal}`, startX, y);
+            y += 8;
+            
+            doc.setFont('helvetica', 'italic');
+            doc.setFontSize(9);
+            doc.text('• Scan the QR code for instant payment', startX, y);
+            y += 4;
+            doc.text('• Use any UPI app like GPay, PhonePe, or Paytm', startX, y);
+            y += 4;
+            doc.text('• Payment confirmation required for order processing', startX, y);
+          }
+        }
       }
     }
 
@@ -501,8 +574,8 @@ const BillDetailModal: React.FC<BillDetailModalProps> = ({ isOpen, onClose, bill
                                                 onFocus={(e) => e.target.select()}
                                             />
                                         </td>
-                                        <td className="px-4 py-3 text-right">₹{vegetable?.pricePerKg?.toFixed(2) || 'N/A'}</td>
-                                        <td className="px-4 py-3 text-right font-semibold text-primary-600">₹{item.subtotal.toFixed(2)}</td>
+                                        <td className="px-4 py-3 text-right">₹{vegetable?.pricePerKg || 'N/A'}</td>
+                                        <td className="px-4 py-3 text-right font-semibold text-primary-600">₹{item.subtotal}</td>
                                         <td className="px-4 py-3 text-center">
                                             <button
                                                 onClick={() => handleRemoveVegetable(item.vegetableId)}
@@ -586,6 +659,86 @@ const BillDetailModal: React.FC<BillDetailModalProps> = ({ isOpen, onClose, bill
             </div>
             */}
 
+            {/* UPI Selection Section */}
+            <div className="mt-6 pt-4 border-t-2 border-slate-200">
+                <div className="bg-gradient-to-r from-blue-50 to-green-50 p-4 rounded-lg mb-4">
+                    <h3 className="text-lg font-semibold text-slate-800 mb-2 flex items-center">
+                        💳 Select UPI ID for Payment
+                    </h3>
+                    <p className="text-sm text-slate-600">Choose a UPI ID to generate the payment QR code and download the bill</p>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                    {UPI_IDS.map((upi) => (
+                        <div 
+                            key={upi.id}
+                            className={`p-4 border-2 rounded-lg cursor-pointer transition-all ${
+                                selectedUpiId === upi.id 
+                                    ? 'border-green-500 bg-green-50' 
+                                    : 'border-slate-300 hover:border-slate-400'
+                            }`}
+                            onClick={() => setSelectedUpiId(upi.id)}
+                        >
+                            <div className="flex items-center justify-between">
+                                <div className="flex-1">
+                                    <p className="font-medium text-slate-800">{upi.name}</p>
+                                    <p className="text-sm text-slate-600">{upi.displayName}</p>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <button
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            copyUpiId(upi.id);
+                                        }}
+                                        className="px-2 py-1 text-xs bg-slate-100 hover:bg-slate-200 rounded text-slate-600"
+                                        title="Copy UPI ID"
+                                    >
+                                        Copy
+                                    </button>
+                                    <div className={`w-4 h-4 rounded-full border-2 ${
+                                        selectedUpiId === upi.id 
+                                            ? 'border-green-500 bg-green-500' 
+                                            : 'border-slate-300'
+                                    }`}>
+                                        {selectedUpiId === upi.id && (
+                                            <div className="w-full h-full rounded-full bg-white scale-50"></div>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+                
+                {/* Show selected UPI QR Code */}
+                {selectedUpiId ? (
+                    <div className="bg-slate-50 p-6 rounded-lg">
+                        <div className="text-center">
+                            <p className="text-sm font-medium text-slate-700 mb-3">
+                                Payment QR Code for: {UPI_IDS.find(upi => upi.id === selectedUpiId)?.displayName}
+                            </p>
+                            <div className="inline-block p-4 bg-white rounded-lg shadow-sm">
+                                <img 
+                                    src={upiPng} 
+                                    alt="UPI QR Code" 
+                                    className="w-32 h-32 mx-auto rounded border" 
+                                />
+                            </div>
+                            <p className="text-xs text-slate-500 mt-2">
+                                Scan this QR code to pay ₹{calculatedTotal}
+                            </p>
+                        </div>
+                    </div>
+                ) : (
+                    <div className="bg-amber-50 p-4 rounded-lg border border-amber-200">
+                        <div className="text-center">
+                            <p className="text-sm text-amber-700">
+                                Please select a UPI ID above to view the payment QR code
+                            </p>
+                        </div>
+                    </div>
+                )}
+            </div>
+
             <div className="flex justify-between items-center mt-6 pt-4 border-t border-slate-200">
                 <div className="flex gap-3">
                     <Button 
@@ -595,17 +748,22 @@ const BillDetailModal: React.FC<BillDetailModalProps> = ({ isOpen, onClose, bill
                     >
                         {isSaving ? 'Saving...' : 'Save Changes'}
                     </Button>
-                    <Button onClick={handleDownload} className="bg-slate-600 hover:bg-slate-700">
+                    <Button 
+                        onClick={handleDownload} 
+                        disabled={!selectedUpiId}
+                        className={`${selectedUpiId ? 'bg-slate-600 hover:bg-slate-700' : 'bg-slate-400 cursor-not-allowed'}`}
+                        title={!selectedUpiId ? 'Please select a UPI ID first' : ''}
+                    >
                         <ArrowDownTrayIcon className="h-5 w-5 mr-2" />
                         Download Bill
                     </Button>
                 </div>
                 <div className="text-right">
                     <p className="text-sm text-slate-500">Total Amount</p>
-                    <p className="text-2xl font-bold text-slate-800">{formatRoundedTotal(calculatedTotal)}</p>
-                    {roundTotal(calculatedTotal) !== roundTotal(bill.total) && (
+                    <p className="text-2xl font-bold text-slate-800">₹{calculatedTotal}</p>
+                    {calculatedTotal !== bill.total && (
                         <p className="text-xs text-slate-500 mt-1">
-                            Original: {formatRoundedTotal(bill.total)}
+                            Original: ₹{bill.total}
                         </p>
                     )}
                 </div>
@@ -643,7 +801,7 @@ const VegetableAddRow: React.FC<VegetableAddRowProps> = ({ vegetable, onAdd }) =
       <div className="flex items-center gap-3">
         <div>
           <h5 className="font-medium text-slate-800">{vegetable.name}</h5>
-          <p className="text-sm text-slate-600">₹{vegetable.pricePerKg.toFixed(2)}/kg</p>
+          <p className="text-sm text-slate-600">₹{vegetable.pricePerKg}/kg</p>
         </div>
       </div>
       
@@ -677,7 +835,7 @@ const VegetableAddRow: React.FC<VegetableAddRowProps> = ({ vegetable, onAdd }) =
           onClick={handleAdd}
           className="bg-green-600 hover:bg-green-700 text-white px-3 py-1 text-sm"
         >
-          Add ₹{(quantity * vegetable.pricePerKg).toFixed(2)}
+          Add ₹{quantity * vegetable.pricePerKg}
         </Button>
       </div>
     </div>

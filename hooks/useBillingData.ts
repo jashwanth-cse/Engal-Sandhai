@@ -11,7 +11,7 @@ import {
   subscribeToDateOrders,
   subscribeToTodayOrders,
   subscribeToAvailableStock,
-  batchReduceVegetableStock,
+  placeOrder,
 } from '../src/services/dbService.ts';
 
 interface UseBillingDataProps {
@@ -43,11 +43,13 @@ export const useBillingData = (props: UseBillingDataProps = {}) => {
     if (selectedDate) {
       // Subscribe to orders for specific date
       unsubscribeOrders = subscribeToDateOrders(selectedDate, (incomingBills) => {
+        console.log('🔥 subscribeToDateOrders callback - received bills:', incomingBills.length);
         setBills(incomingBills);
       });
     } else {
       // Subscribe to today's orders (default behavior)
       unsubscribeOrders = subscribeToTodayOrders((incomingBills) => {
+        console.log('🔥 subscribeToTodayOrders callback - received bills:', incomingBills.length);
         setBills(incomingBills);
       });
     }
@@ -80,81 +82,59 @@ export const useBillingData = (props: UseBillingDataProps = {}) => {
   }, [selectedDate]);
 
   const addBill = useCallback(async (newBillData: Omit<Bill, 'id' | 'date'>): Promise<Bill> => {
-    // --- START FIREBASE INTEGRATION POINT ---
-    // In the future, this function will contain your Firebase logic.
-    // 1. You would start a Firebase transaction.
-    // 2. Create a new bill document in your 'bills' collection.
+    console.log('🔥 addBill called with data:', newBillData);
+    console.log('🔥 Current bills count before:', bills.length);
     
-    // Generate invoice number in format: ESdatemonthyear-ordernumber
-    const now = new Date();
-    const day = now.getDate().toString().padStart(2, '0');
-    const month = (now.getMonth() + 1).toString().padStart(2, '0');
-    const year = now.getFullYear();
-    const datePrefix = `ES${day}${month}${year}`;
-    
-    // Count existing bills for today to generate order number
-    const todayStart = new Date(year, now.getMonth(), now.getDate(), 0, 0, 0);
-    const todayEnd = new Date(year, now.getMonth(), now.getDate(), 23, 59, 59);
-    
-    const todayBillsCount = bills.filter(bill => {
-      const billDate = new Date(bill.date);
-      return billDate >= todayStart && billDate <= todayEnd;
-    }).length;
-    
-    const orderNumber = (todayBillsCount + 1).toString().padStart(3, '0');
-    const invoiceId = `${datePrefix}-${orderNumber}`;
-    
-    const newBill: Bill = {
-      ...newBillData,
-      id: invoiceId,
-      date: new Date().toISOString(),
-      status: 'pending', // Default status
-    };
-
-    // 3. Update stock in the database using the batch stock reduction function
     try {
-      const stockUpdates = newBill.items.map(item => ({
-        vegetableId: item.vegetableId,
-        quantityToReduce: item.quantityKg
-      }));
-
-      // Update stock in Firebase vegetables collection (this will also update availableStock)
-      await batchReduceVegetableStock(stockUpdates, selectedDate);
-      console.log('✅ Successfully updated vegetable stock in database for order:', invoiceId);
+      // Calculate bag cost and cart subtotal
+      const cartSubtotal = newBillData.items.reduce((sum, item) => sum + item.subtotal, 0);
+      const bagCost = (newBillData.bags || 0) * 10; // Assuming ₹10 per bag
+      
+      // Prepare order data for database
+      const orderData = {
+        bagCost,
+        bagCount: newBillData.bags || 0,
+        cartSubtotal,
+        employee_id: 'admin', // For now, using admin as employee
+        items: newBillData.items.map(item => ({
+          id: item.vegetableId,
+          name: vegetables.find(v => v.id === item.vegetableId)?.name || 'Unknown',
+          pricePerKg: vegetables.find(v => v.id === item.vegetableId)?.pricePerKg || 0,
+          quantity: item.quantityKg,
+          subtotal: item.subtotal
+        })),
+        status: newBillData.status || 'pending',
+        totalAmount: newBillData.total,
+        userId: newBillData.customerId || newBillData.customerName || 'unknown',
+        customerName: newBillData.customerName,
+        customerId: newBillData.customerId
+      };
+      
+      console.log('Placing order with data:', orderData);
+      
+      // Place order in database using the proper service
+      const billNumber = await placeOrder(orderData);
+      
+      console.log('✅ Order placed successfully with bill number:', billNumber);
+      console.log('🔥 Current bills count after order placed:', bills.length);
+      
+      // Return a minimal Bill object for the CreateBill component
+      // The real-time subscription will handle updating the actual bills list
+      const newBill: Bill = {
+        ...newBillData,
+        id: billNumber,
+        date: new Date().toISOString(),
+        status: 'pending'
+      };
+      
+      console.log('🔥 Returning bill object:', newBill);
+      return newBill;
+      
     } catch (error) {
-      console.error('❌ Error updating vegetable stock in database for order:', invoiceId, error);
-      // You might want to handle this error appropriately
-      throw error; // Throw error to prevent order creation if stock update fails
+      console.error('❌ Error creating bill:', error);
+      throw error;
     }
-
-    // Keep the legacy vegetables stock update for immediate UI feedback
-    // The real-time listener will update this from the database, but this provides instant feedback
-    setVegetables(prevVeggies => {
-      const updatedVeggies = [...prevVeggies];
-      newBill.items.forEach(item => {
-        const vegIndex = updatedVeggies.findIndex(v => v.id === item.vegetableId);
-        if (vegIndex !== -1) {
-          const originalStock = updatedVeggies[vegIndex].stockKg;
-          updatedVeggies[vegIndex] = {
-            ...updatedVeggies[vegIndex],
-            // Ensure stock doesn't go below zero
-            stockKg: Math.max(0, originalStock - item.quantityKg),
-          };
-        }
-      });
-      return updatedVeggies;
-    });
-
-    // 4. Finally, you would commit the transaction.
-    
-    // This local state update mimics adding the new bill to your app's state.
-    // With Firebase, you'd likely rely on a real-time listener for bills instead.
-    setBills(prev => [newBill, ...prev]);
-
-    // The function returns the created bill, which is good practice.
-    return newBill;
-    // --- END FIREBASE INTEGRATION POINT ---
-  }, [bills, selectedDate]);
+  }, [vegetables, selectedDate]);
 
   const updateBill = useCallback((billId: string, updates: Partial<Bill>) => {
     setBills(prev =>

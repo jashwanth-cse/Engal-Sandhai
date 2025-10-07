@@ -328,14 +328,15 @@ const Reports: React.FC = () => {
         doc.text(`Daily Report - ${reportDate}`, 40, currentY);
         currentY += 30;
         
-        // Table header
-        doc.setFontSize(10);
-        doc.setFont(undefined, 'bold');
-        doc.text('S.No', 40, currentY);
-        doc.text('Employee Name', 80, currentY);
-        doc.text('Customer', 250, currentY);
-        doc.text('Total Items', 350, currentY);
-        doc.text('Total Amount', 450, currentY);
+  // Table header (adjusted column positions to avoid overlap)
+  doc.setFontSize(10);
+  doc.setFont(undefined, 'bold');
+  doc.text('S.No', 40, currentY);
+  doc.text('Employee Name', 80, currentY);
+  doc.text('Bill No', 220, currentY);
+  doc.text('Customer', 320, currentY);
+  doc.text('Total Items', 420, currentY);
+  doc.text('Total Amount', 500, currentY);
         currentY += 5;
         
         // Header line
@@ -378,14 +379,15 @@ const Reports: React.FC = () => {
           addPageBreak();
         }
         
-        // Add order data
-        doc.setFont(undefined, 'normal');
-        doc.setFontSize(9);
-        doc.text(String(index + 1), 40, currentY);
-        doc.text(employeeName.substring(0, 25), 80, currentY); // Limit name length
-        doc.text(employeeId, 250, currentY);
-        doc.text(String(itemsCount), 350, currentY);
-        doc.text(`Rs. ${amount.toFixed(2)}`, 450, currentY);
+  // Add order data (truncating long fields to maintain layout)
+  doc.setFont(undefined, 'normal');
+  doc.setFontSize(9);
+  doc.text(String(index + 1), 40, currentY);
+  doc.text(employeeName.substring(0, 25), 80, currentY); // Limit name length
+  doc.text(String(order.id).substring(0, 22), 220, currentY);
+  doc.text(employeeId.substring(0, 18), 320, currentY);
+  doc.text(String(itemsCount), 420, currentY);
+  doc.text(`Rs. ${amount.toFixed(2)}`, 500, currentY);
         
         currentPageTotal += amount;
         currentPageOrders.push(order);
@@ -502,6 +504,7 @@ const Reports: React.FC = () => {
               <tr>
                 <th className="px-4 py-2">S.No</th>
                 <th className="px-4 py-2">Employee Name</th>
+                <th className="px-4 py-2">Bill Number</th>
                 <th className="px-4 py-2">Employee ID</th>
                 <th className="px-4 py-2">Total Items</th>
                 <th className="px-4 py-2 text-right">Total Amount</th>
@@ -509,9 +512,9 @@ const Reports: React.FC = () => {
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={5} className="px-4 py-6 text-center text-slate-500">Loading...</td></tr>
+                <tr><td colSpan={6} className="px-4 py-6 text-center text-slate-500">Loading...</td></tr>
               ) : orders.length === 0 ? (
-                <tr><td colSpan={5} className="px-4 py-6 text-center text-slate-500">No orders for the selected date.</td></tr>
+                <tr><td colSpan={6} className="px-4 py-6 text-center text-slate-500">No orders for the selected date.</td></tr>
               ) : (
                 orders.map((b, idx) => {
                   const itemsCount = (Array.isArray(b.items) ? b.items : []).reduce((sum, it: any) => sum + Math.floor(Number(it.quantity) || 1), 0);
@@ -523,6 +526,7 @@ const Reports: React.FC = () => {
                     <tr key={b.id} className="border-b last:border-b-0">
                       <td className="px-4 py-2">{idx + 1}</td>
                       <td className="px-4 py-2 font-medium text-slate-900">{employeeName}</td>
+                      <td className="px-4 py-2 font-medium text-slate-900 max-w-[10rem] truncate" title={String(b.id)}>{String(b.id)}</td>
                       <td className="px-4 py-2 font-medium text-slate-900">{employeeId}</td>
                       <td className="px-4 py-2">{itemsCount}</td>
                       <td className="px-4 py-2 text-right font-semibold">₹{(Number(b.totalAmount) || 0).toFixed(2)}</td>
@@ -534,7 +538,7 @@ const Reports: React.FC = () => {
             {orders.length > 0 && !loading && (
               <tfoot>
                 <tr>
-                  <td className="px-4 py-3" colSpan={4}><span className="font-semibold">Total Sales</span></td>
+                  <td className="px-4 py-3" colSpan={5}><span className="font-semibold">Total Sales</span></td>
                   <td className="px-4 py-3 text-right font-bold">₹{totalSales.toFixed(2)}</td>
                 </tr>
               </tfoot>
