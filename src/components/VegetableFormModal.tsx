@@ -116,6 +116,7 @@ const VegetableFormModal: React.FC<VegetableFormModalProps> = ({
               <option value="Fruits">Fruits</option>
               <option value="Vegetables">Vegetables</option>
               <option value="Greens">Greens</option>
+              <option value="Others">Others</option>
             </select>
           </div>
           
