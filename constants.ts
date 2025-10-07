@@ -11,6 +11,7 @@ export const VEGETABLES_DATA: Vegetable[] = [
   { id: 'veg8', name: 'Bell Pepper', unitType: 'KG', pricePerKg: 80, totalStockKg: 40, stockKg: 40, category: 'Vegetables' },
   { id: 'veg9', name: 'Lettuce', unitType: 'KG', pricePerKg: 100, totalStockKg: 30, stockKg: 30, category: 'Greens' },
   { id: 'veg10', name: 'Apple', unitType: 'COUNT', pricePerKg: 150, totalStockKg: 100, stockKg: 100, category: 'Fruits' },
+  { id: 'veg11', name: 'Organic Fertilizer', unitType: 'KG', pricePerKg: 200, totalStockKg: 25, stockKg: 25, category: 'Others' },
 ];
 
 export const USERS_DATA: User[] = [

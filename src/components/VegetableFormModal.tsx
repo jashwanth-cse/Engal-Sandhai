@@ -95,12 +95,15 @@ const VegetableFormModal: React.FC<VegetableFormModalProps> = ({
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
+              
+
               <label htmlFor="pricePerKg" className="block text-sm font-medium text-slate-700">
                 Price per {formData.unitType === 'KG' ? 'kg' : 'piece'} (₹)
               </label>
               <input type="number" name="pricePerKg" id="pricePerKg" value={formData.pricePerKg} onChange={handleChange} required min="0" step="0.01" className="mt-1 block w-full rounded-md border border-slate-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 bg-white text-slate-900 placeholder-slate-400 px-3 py-2" placeholder="e.g., 150.50" />
             </div>
             <div>
+
               <label htmlFor="totalStockKg" className="block text-sm font-medium text-slate-700">
                 Total Stock ({formData.unitType === 'KG' ? 'kg' : 'pieces'})
               </label>
@@ -116,6 +119,7 @@ const VegetableFormModal: React.FC<VegetableFormModalProps> = ({
               <option value="Fruits">Fruits</option>
               <option value="Vegetables">Vegetables</option>
               <option value="Greens">Greens</option>
+              <option value="Others">Others</option>
             </select>
           </div>
           
