@@ -16,7 +16,7 @@ const App: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [loginError, setLoginError] = useState<string | null>(null);
   const [selectedDate, setSelectedDate] = useState<Date | null>(null); // Add date state\n  const [sessionTimeout, setSessionTimeout] = useState<NodeJS.Timeout | null>(null); // Add session timeout
-  const billingData = useBillingData({ selectedDate }); // Pass selected date to hook
+  const billingData = useBillingData({ selectedDate, currentUser }); // Pass selected date and currentUser to hook
   const navigate = useNavigate();
 
   // Force logout on app startup to require authentication every time

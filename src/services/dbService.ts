@@ -292,6 +292,7 @@ export interface OrderData {
   userId: string;
   customerName?: string; // Add customer name
   customerId?: string;   // Add customer ID
+  department?: string;   // Add department field
 }
 
 // Global order processing queue to prevent concurrent order placement
@@ -393,14 +394,22 @@ const processOrderInternal = async (orderData: OrderData): Promise<string> => {
     throw new Error('Failed to verify order uniqueness. Please try again.');
   }
   
-  // Prepare the new order
+  // Prepare the new order with sanitized data (remove undefined values)
+  const sanitizedOrderData = Object.fromEntries(
+    Object.entries(orderData).filter(([key, value]) => value !== undefined)
+  );
+  
   const newOrder = {
-    ...orderData,
+    ...sanitizedOrderData,
     orderId: billNumber,
     billNumber: billNumber,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
-    dateKey: dateKey // Add date tracking for new format
+    dateKey: dateKey, // Add date tracking for new format
+    // Ensure required fields are never undefined
+    customerName: orderData.customerName || 'Unknown Customer',
+    customerId: orderData.customerId || 'unknown',
+    userId: orderData.userId || 'unknown'
   };
   
   console.log('Creating order and updating counter...');
@@ -443,43 +452,42 @@ const updateStockAsync = async (orderData: OrderData, billNumber: string, orderD
     const stockBatch = writeBatch(db);
     let stockUpdateCount = 0;
     
-    // Determine if we should use date-based collections
+    // Always use date-based collections since that's how vegetables are stored now
     const targetDate = orderDate || new Date();
     const dateKey = getDateKey(targetDate);
-    const isDateBased = targetDate && targetDate.toDateString() !== new Date().toDateString();
     
     for (const item of orderData.items) {
-      console.log(`Processing stock for item: ${item.id}, quantity: ${item.quantity} on ${dateKey}`);
+      console.log(`🔄 Processing stock for item: ${item.id} (${item.name}), quantity: ${item.quantity} on ${dateKey}`);
       
       try {
-        // Update vegetables collection (date-based if needed)
-        const vegRef = isDateBased 
-          ? doc(db, 'vegetables', dateKey, 'items', item.id)
-          : doc(vegetablesCol, item.id);
+        // Update vegetables collection (always date-based now)
+        const vegRef = doc(db, 'vegetables', dateKey, 'items', item.id);
+        console.log(`📍 Looking for vegetable at path: vegetables/${dateKey}/items/${item.id}`);
         const vegDoc = await getDoc(vegRef);
         
         if (vegDoc.exists()) {
           const currentStock = vegDoc.data().stockKg || 0;
           const newStock = Math.max(0, currentStock - item.quantity);
-          console.log(`Updating vegetable ${item.id} stock: ${currentStock} -> ${newStock} on ${dateKey}`);
+          console.log(`✅ Updating vegetable ${item.id} stock: ${currentStock} -> ${newStock} on ${dateKey}`);
           
           stockBatch.update(vegRef, {
             stockKg: newStock,
             updatedAt: serverTimestamp()
           });
           stockUpdateCount++;
+        } else {
+          console.warn(`❌ Vegetable ${item.id} not found in date ${dateKey} - cannot update stock`);
         }
         
-        // Update available stock (date-based if needed)
-        const availableStockRef = isDateBased
-          ? doc(db, 'availableStock', dateKey, 'items', item.id)
-          : doc(db, 'availableStock', item.id);
+        // Update available stock (always date-based now)
+        const availableStockRef = doc(db, 'availableStock', dateKey, 'items', item.id);
+        console.log(`📍 Looking for available stock at path: availableStock/${dateKey}/items/${item.id}`);
         const availableStockDoc = await getDoc(availableStockRef);
         
         if (availableStockDoc.exists()) {
           const currentAvailableStock = availableStockDoc.data().availableStockKg || 0;
           const newAvailableStock = Math.max(0, currentAvailableStock - item.quantity);
-          console.log(`Updating available stock ${item.id}: ${currentAvailableStock} -> ${newAvailableStock} on ${dateKey}`);
+          console.log(`✅ Updating available stock ${item.id}: ${currentAvailableStock} -> ${newAvailableStock} on ${dateKey}`);
           
           stockBatch.update(availableStockRef, { 
             availableStockKg: newAvailableStock,
@@ -488,7 +496,7 @@ const updateStockAsync = async (orderData: OrderData, billNumber: string, orderD
           });
           stockUpdateCount++;
         } else {
-          console.warn(`Available stock not found for vegetable ${item.id}`);
+          console.warn(`❌ Available stock not found for vegetable ${item.id} on ${dateKey}`);
         }
         
       } catch (itemError) {
@@ -576,6 +584,7 @@ export const subscribeToTodayOrders = (
           items,
           total: Number(orderData.totalAmount) || 0,
           customerName: String(orderData.customerName || orderData.userId || orderData.employee_id || 'Unknown'),
+          department: orderData.department || undefined, // Add department from order data
           status: (orderData.status as Bill['status']) || 'pending',
           bags: Number(orderData.bagCount || orderData.bags || 0) || undefined,
         };
@@ -617,6 +626,7 @@ export const subscribeToTodayOrders = (
         items,
         total: Number(orderData.totalAmount) || 0,
         customerName: String(orderData.customerName || orderData.userId || orderData.employee_id || 'Unknown'),
+        department: orderData.department || undefined, // Add department from order data
         status: (orderData.status as Bill['status']) || 'pending',
         bags: Number(orderData.bagCount || orderData.bags || 0) || undefined,
       };
@@ -697,6 +707,7 @@ export const subscribeToDateOrders = (
           items,
           total: Number(orderData.totalAmount) || 0,
           customerName: String(orderData.customerName || orderData.userId || orderData.employee_id || 'Unknown'),
+          department: orderData.department || undefined, // Add department from order data
           status: (orderData.status as Bill['status']) || 'pending',
           bags: Number(orderData.bagCount || orderData.bags || 0) || undefined,
         };
@@ -738,6 +749,7 @@ export const subscribeToDateOrders = (
         items,
         total: Number(orderData.totalAmount) || 0,
         customerName: String(orderData.customerName || orderData.userId || orderData.employee_id || 'Unknown'),
+        department: orderData.department || undefined, // Add department from order data
         status: (orderData.status as Bill['status']) || 'pending',
         bags: Number(orderData.bagCount || orderData.bags || 0) || undefined,
       };
@@ -1225,6 +1237,7 @@ export const fetchBillsForDateRange = async (
             items,
             total: Number(orderData.totalAmount) || 0,
             customerName: String(orderData.userId || orderData.employee_id || 'Unknown'),
+            department: orderData.department || undefined, // Add department from order data
             status: (orderData.status as Bill['status']) || 'pending',
             bags: Number(orderData.bagCount || orderData.bags || 0) || undefined,
           };
@@ -1258,6 +1271,7 @@ export const fetchBillsForDateRange = async (
             customerName: String(orderData.userId || orderData.employee_id || 'Unknown'),
             status: (orderData.status as Bill['status']) || 'pending',
             bags: Number(orderData.bagCount || orderData.bags || 0) || undefined,
+            department: String(orderData.department || ''),
           };
           (bill as any).customerId = String(orderData.userId || orderData.employee_id || '');
           return bill;

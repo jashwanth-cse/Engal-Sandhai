@@ -12,7 +12,7 @@ interface OrdersProps {
   initialBillId?: string | null;
   onClearInitialBill: () => void;
   onUpdateBillStatus?: (billId: string, status: 'pending' | 'packed' | 'delivered') => void;
-  onUpdateBill?: (billId: string, updates: Partial<Bill>) => void;
+  onUpdateBill?: (billId: string, updates: Partial<Bill>) => Promise<void>;
   currentUser?: { id: string; name: string; role: string; email?: string };
   onDateSelectionChange?: (date: Date | null) => void; // Add date selection handler
 }

@@ -3,11 +3,11 @@ import type { Bill, Vegetable, BillItem } from '../../types/types';
 import { XMarkIcon, EyeIcon, ArrowDownTrayIcon } from './ui/Icon.tsx';
 import ImagePreviewModal from './ui/ImagePreviewModal.tsx';
 import Button from './ui/Button.tsx';
-import { getVegetableById } from '../services/dbService';
+import { getVegetableById, getDateKey } from '../services/dbService';
 import { upiPng } from '../assets/upi.ts';
 
 // Firestore imports
-import { doc, getDoc } from 'firebase/firestore';
+import { doc, getDoc, writeBatch, serverTimestamp } from 'firebase/firestore';
 import { db } from '../firebase';
 
 // Let TypeScript know that jspdf is available on the window object
@@ -37,7 +37,7 @@ interface BillDetailModalProps {
   bill: Bill | null;
   vegetableMap: Map<string, Vegetable>;
   vegetables: Vegetable[]; // Add vegetables array for adding new items
-  onUpdateBill?: (billId: string, updates: Partial<Bill>) => void;
+  onUpdateBill?: (billId: string, updates: Partial<Bill>) => Promise<void>;
   currentUser?: { id: string; name: string; role: string; email?: string };
 }
 
@@ -55,6 +55,7 @@ const BillDetailModal: React.FC<BillDetailModalProps> = ({ isOpen, onClose, bill
   
   // Add state to track fetched vegetables for missing items
   const [fetchedVegetables, setFetchedVegetables] = useState<Map<string, Vegetable>>(new Map());
+  const [isLoadingVegetables, setIsLoadingVegetables] = useState(false);
   
   // UPI selection state
   const [selectedUpiId, setSelectedUpiId] = useState<string>('');
@@ -89,29 +90,97 @@ const BillDetailModal: React.FC<BillDetailModalProps> = ({ isOpen, onClose, bill
     if (!bill) return;
     
     const fetchMissingVegetables = async () => {
+      setIsLoadingVegetables(true);
       const missingVegetables = new Map<string, Vegetable>();
       
+      console.log(`🔍 Bill has ${bill.items.length} items. Checking for missing vegetables...`);
+      console.log(`📊 Current vegetableMap has ${vegetableMap.size} vegetables`);
+      console.log(`📊 Current fetchedVegetables has ${fetchedVegetables.size} vegetables`);
+      
       for (const item of bill.items) {
-        // If vegetable is not in the current vegetableMap, try to fetch it
-        if (!vegetableMap.has(item.vegetableId) && !fetchedVegetables.has(item.vegetableId)) {
+        console.log(`🔍 Checking item: ${item.vegetableId}`);
+        
+        // Always try to fetch vegetable data to ensure we have the most complete information
+        const existingVeg = vegetableMap.get(item.vegetableId) || fetchedVegetables.get(item.vegetableId);
+        
+        if (!existingVeg) {
           console.log(`🔍 Fetching missing vegetable data for: ${item.vegetableId}`);
-          const vegetableData = await getVegetableById(item.vegetableId);
-          if (vegetableData) {
-            console.log(`✅ Found vegetable data: ${vegetableData.name}`);
-            missingVegetables.set(item.vegetableId, vegetableData);
-          } else {
-            console.warn(`❌ Could not find vegetable data for: ${item.vegetableId}`);
+          
+          try {
+            const vegetableData = await getVegetableById(item.vegetableId);
+            if (vegetableData) {
+              console.log(`✅ Found vegetable data: ${vegetableData.name} (Price: ₹${vegetableData.pricePerKg})`);
+              missingVegetables.set(item.vegetableId, vegetableData);
+            } else {
+              console.warn(`❌ Could not find vegetable data for: ${item.vegetableId}`);
+              // Try to get the bill date and search in that specific date collection
+              const billDate = new Date(bill.date);
+              const dateKey = getDateKey(billDate);
+              console.log(`🔍 Trying to fetch from bill date collection: ${dateKey}`);
+              
+              // Try to fetch from the bill's date collection specifically
+              const dateBasedVegRef = doc(db, 'vegetables', dateKey, 'items', item.vegetableId);
+              const dateBasedVegDoc = await getDoc(dateBasedVegRef);
+              
+              if (dateBasedVegDoc.exists()) {
+                const data = dateBasedVegDoc.data();
+                const vegetableFromDate: Vegetable = {
+                  id: dateBasedVegDoc.id,
+                  name: data.name || `Item ${item.vegetableId}`,
+                  unitType: (data.unitType as 'KG' | 'COUNT') || 'KG',
+                  pricePerKg: Number(data.pricePerKg || data.price) || 0,
+                  totalStockKg: Number(data.totalStockKg || data.stock || data.totalStock) || 0,
+                  stockKg: Number(data.stockKg || data.availableStock) || 0,
+                  category: data.category || 'Other'
+                };
+                console.log(`✅ Found vegetable in date collection: ${vegetableFromDate.name}`);
+                missingVegetables.set(item.vegetableId, vegetableFromDate);
+              } else {
+                // Last resort: create a fallback vegetable object using bill data
+                console.warn(`❌ Still not found. Creating fallback for: ${item.vegetableId}`);
+                const fallbackVegetable: Vegetable = {
+                  id: item.vegetableId,
+                  name: `Item ${item.vegetableId.replace('veg_', '').toUpperCase()}`,
+                  unitType: 'KG',
+                  pricePerKg: item.subtotal / item.quantityKg || 0, // Calculate from bill data
+                  totalStockKg: 0,
+                  stockKg: 0,
+                  category: 'Unknown'
+                };
+                missingVegetables.set(item.vegetableId, fallbackVegetable);
+              }
+            }
+          } catch (error) {
+            console.error(`❌ Error fetching vegetable ${item.vegetableId}:`, error);
+            // Create fallback even on error
+            const fallbackVegetable: Vegetable = {
+              id: item.vegetableId,
+              name: `Item ${item.vegetableId.replace('veg_', '').toUpperCase()}`,
+              unitType: 'KG',
+              pricePerKg: item.subtotal / item.quantityKg || 0,
+              totalStockKg: 0,
+              stockKg: 0,
+              category: 'Unknown'
+            };
+            missingVegetables.set(item.vegetableId, fallbackVegetable);
           }
+        } else {
+          console.log(`✅ Vegetable ${item.vegetableId} already available: ${existingVeg.name}`);
         }
       }
       
       if (missingVegetables.size > 0) {
+        console.log(`📝 Setting ${missingVegetables.size} missing vegetables`);
         setFetchedVegetables(prev => new Map([...prev, ...missingVegetables]));
+      } else {
+        console.log(`✅ No missing vegetables to fetch`);
       }
+      
+      setIsLoadingVegetables(false);
     };
     
     fetchMissingVegetables();
-  }, [bill, vegetableMap]); // Remove fetchedVegetables from dependency to avoid infinite loop
+  }, [bill?.id]); // Only depend on bill.id to avoid infinite loops and ensure proper refetching
   
   // Recalculate total when items change (bags moved to user page)
   useEffect(() => {
@@ -283,17 +352,132 @@ const BillDetailModal: React.FC<BillDetailModalProps> = ({ isOpen, onClose, bill
     
     setIsSaving(true);
     try {
+      console.log(`💰 Updating bill ${bill.id} - Original total: ₹${bill.total}, New total: ₹${calculatedTotal}`);
+      
+      // Calculate stock reduction for quantity changes
+      await updateStockForQuantityChanges();
+      
+      // Update the bill with new items and total amount
       await onUpdateBill(bill.id, {
         items: editedItems,
         total: calculatedTotal,
         // bags: bagCount // Moved to user page
       });
+      
+      console.log(`✅ Bill ${bill.id} successfully updated in Firebase with new amount: ₹${calculatedTotal}`);
       setHasUnsavedChanges(false);
     } catch (error) {
       console.error('Error saving changes:', error);
-      // Could add toast notification here
+      alert('Failed to save changes. Please try again.');
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const updateStockForQuantityChanges = async () => {
+    try {
+      const stockBatch = writeBatch(db);
+      let stockUpdateCount = 0;
+      const targetDate = new Date(bill.date);
+      const dateKey = getDateKey(targetDate);
+      
+      console.log(`📝 Updating stock for bill quantity changes on ${dateKey}`);
+      console.log(`📊 Original items count: ${bill.items.length}, Edited items count: ${editedItems.length}`);
+
+      // Create maps for easier comparison
+      const originalItemsMap = new Map();
+      bill.items.forEach(item => {
+        originalItemsMap.set(item.vegetableId, item.quantityKg);
+      });
+
+      const editedItemsMap = new Map();
+      editedItems.forEach(item => {
+        editedItemsMap.set(item.vegetableId, item.quantityKg);
+      });
+
+      // Process all unique vegetable IDs from both original and edited items
+      const allVegetableIds = new Set([...originalItemsMap.keys(), ...editedItemsMap.keys()]);
+
+      for (const vegetableId of allVegetableIds) {
+        const originalQuantity = originalItemsMap.get(vegetableId) || 0;
+        const editedQuantity = editedItemsMap.get(vegetableId) || 0;
+        const quantityDifference = editedQuantity - originalQuantity;
+
+        // Only process items that have actually changed
+        if (quantityDifference !== 0) {
+          console.log(`� Processing ${vegetableId}: Original=${originalQuantity}kg, Edited=${editedQuantity}kg, Difference=${quantityDifference}kg`);
+
+          // Update vegetables collection
+          const vegRef = doc(db, 'vegetables', dateKey, 'items', vegetableId);
+          const vegDoc = await getDoc(vegRef);
+          
+          if (vegDoc.exists()) {
+            const currentStock = vegDoc.data().stockKg || 0;
+            let newStock;
+
+            if (quantityDifference > 0) {
+              // Quantity increased - reduce stock
+              newStock = Math.max(0, currentStock - quantityDifference);
+              console.log(`📈 Quantity increased by ${quantityDifference}kg - reducing stock: ${currentStock} -> ${newStock}`);
+            } else {
+              // Quantity decreased - add stock back
+              newStock = currentStock + Math.abs(quantityDifference);
+              console.log(`📉 Quantity decreased by ${Math.abs(quantityDifference)}kg - adding stock back: ${currentStock} -> ${newStock}`);
+            }
+            
+            stockBatch.update(vegRef, {
+              stockKg: newStock,
+              updatedAt: serverTimestamp()
+            });
+            stockUpdateCount++;
+          } else {
+            console.warn(`⚠️ Vegetable ${vegetableId} not found in vegetables collection`);
+          }
+          
+          // Update available stock collection
+          const availableStockRef = doc(db, 'availableStock', dateKey, 'items', vegetableId);
+          const availableStockDoc = await getDoc(availableStockRef);
+          
+          if (availableStockDoc.exists()) {
+            const currentAvailableStock = availableStockDoc.data().availableStockKg || 0;
+            let newAvailableStock;
+
+            if (quantityDifference > 0) {
+              // Quantity increased - reduce available stock
+              newAvailableStock = Math.max(0, currentAvailableStock - quantityDifference);
+              console.log(`📈 Available stock reduced: ${currentAvailableStock} -> ${newAvailableStock}`);
+            } else {
+              // Quantity decreased - add available stock back
+              newAvailableStock = currentAvailableStock + Math.abs(quantityDifference);
+              console.log(`📉 Available stock increased: ${currentAvailableStock} -> ${newAvailableStock}`);
+            }
+            
+            stockBatch.update(availableStockRef, {
+              availableStockKg: newAvailableStock,
+              lastUpdated: serverTimestamp(),
+              updatedBy: currentUser?.id || 'admin'
+            });
+            stockUpdateCount++;
+          } else {
+            console.warn(`⚠️ Available stock for ${vegetableId} not found`);
+          }
+        } else {
+          console.log(`➡️ No change for ${vegetableId} (${originalQuantity}kg) - skipping stock update`);
+        }
+      }
+
+      // Commit stock updates if we have any
+      if (stockUpdateCount > 0) {
+        console.log(`💾 Committing ${stockUpdateCount} stock updates for bill ${bill.id}...`);
+        await stockBatch.commit();
+        console.log(`✅ Stock updates completed for bill ${bill.id}`);
+      } else {
+        console.log(`ℹ️ No stock updates needed for bill ${bill.id}`);
+      }
+      
+    } catch (stockError) {
+      console.error(`❌ Stock update failed for bill ${bill.id}:`, stockError);
+      // This doesn't prevent the bill update from proceeding
     }
   };
 
@@ -411,16 +595,7 @@ const BillDetailModal: React.FC<BillDetailModalProps> = ({ isOpen, onClose, bill
         const rate = String((item as any).pricePerKg || vegetable?.pricePerKg || 0);
         const amount = String(item.subtotal);
         
-        // Debug logging
-        console.log(`PDF Item ${globalSerialNo}:`, {
-          vegetableId: item.vegetableId,
-          historicalName: (item as any).name,
-          historicalPrice: (item as any).pricePerKg,
-          vegetableName: vegetable?.name,
-          vegetablePrice: vegetable?.pricePerKg,
-          finalName: name,
-          finalRate: rate
-        });
+
 
         doc.text(globalSerialNo.toString(), colSNo, y);
         doc.text(name, colItem, y);
@@ -561,7 +736,21 @@ const BillDetailModal: React.FC<BillDetailModalProps> = ({ isOpen, onClose, bill
                                             {index + 1}
                                         </td>
                                         <td className="px-4 py-3 font-medium text-slate-900">
-                                            {vegetable?.name || `Unknown Item (${item.vegetableId})`}
+                                            {isLoadingVegetables && !vegetable ? (
+                                              <div className="flex items-center">
+                                                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-500 mr-2"></div>
+                                                Loading...
+                                              </div>
+                                            ) : (
+                                              <>
+                                                {vegetable?.name || `Item ${item.vegetableId}`}
+                                                {!vegetable && !isLoadingVegetables && (
+                                                  <div className="text-xs text-amber-600 mt-1">
+                                                    ⚠️ Using calculated price: ₹{(item.subtotal / item.quantityKg).toFixed(2)}/kg
+                                                  </div>
+                                                )}
+                                              </>
+                                            )}
                                         </td>
                                         <td className="px-4 py-3 text-right">
                                             <input

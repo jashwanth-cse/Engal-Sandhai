@@ -131,20 +131,32 @@ const OrderPage: React.FC<OrderPageProps> = ({ user, vegetables, availableStock,
     // COMMENTED OUT - Payment screenshot functionality preserved for future use
     // const paymentScreenshotBase64 = await fileToBase64(screenshot);
     
+    console.log('👤 Creating order for user:', {
+      id: user.id,
+      name: user.name,
+      role: user.role,
+      department: (user as any).department,
+      email: (user as any).email
+    });
+    
     const createdBill = await addBill({
       items: cartItems.map(({name, pricePerKg, stockKg, unitType, ...item}) => item),
       total,
       customerName: user.name,
+      customerId: user.id, // Add user ID so orders can be properly tracked
+      department: (user as any).department, // Add department if available
       status: 'pending', // Default status for new orders
       bags: bagCount, // Include bags count
       // COMMENTED OUT - Payment screenshot field preserved for future use
       // paymentScreenshot: paymentScreenshotBase64,
     });
+    
+    console.log('✅ Order created successfully:', createdBill);
     setFinalBill(createdBill);
     setStage('success');
     setCart(new Map());
     setBagCount(0); // Reset bag count
-  }, [cartItems, total, addBill, user.name, bagCount]);
+  }, [cartItems, total, addBill, user.name, user.id, bagCount]);
 
   const handlePlaceOrder = async () => {
       setIsCartVisible(false);

@@ -9,7 +9,7 @@ interface DashboardProps {
     vegetables: Vegetable[];
     onViewOrder: (billId: string) => void;
     onUpdateBillStatus?: (billId: string, status: 'pending' | 'packed' | 'delivered') => void;
-    onUpdateBill?: (billId: string, updates: Partial<Bill>) => void;
+    onUpdateBill?: (billId: string, updates: Partial<Bill>) => Promise<void>;
     onDateSelectionChange?: (date: Date | null) => void; // Add date selection handler
 }
 

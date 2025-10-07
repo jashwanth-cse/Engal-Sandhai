@@ -2,6 +2,8 @@
 import { useState, useCallback, useEffect } from 'react';
 import { BILLS_DATA } from '../constants.ts';
 import type { Vegetable, Bill } from '../types/types.ts';
+import { doc, updateDoc, serverTimestamp } from 'firebase/firestore';
+import { db } from '../src/firebase';
 import {
   subscribeToVegetables,
   addVegetableToDb,
@@ -12,14 +14,16 @@ import {
   subscribeToTodayOrders,
   subscribeToAvailableStock,
   placeOrder,
+  getDateKey,
 } from '../src/services/dbService.ts';
 
 interface UseBillingDataProps {
   selectedDate?: Date | null;
+  currentUser?: { id: string; name: string; role: string; email?: string; department?: string } | null;
 }
 
 export const useBillingData = (props: UseBillingDataProps = {}) => {
-  const { selectedDate } = props;
+  const { selectedDate, currentUser } = props;
   const [vegetables, setVegetables] = useState<Vegetable[]>([]);
   const [bills, setBills] = useState<Bill[]>(BILLS_DATA);
   const [vegetablesLoaded, setVegetablesLoaded] = useState(false);
@@ -95,7 +99,7 @@ export const useBillingData = (props: UseBillingDataProps = {}) => {
         bagCost,
         bagCount: newBillData.bags || 0,
         cartSubtotal,
-        employee_id: 'admin', // For now, using admin as employee
+        employee_id: currentUser?.id || 'unknown',
         items: newBillData.items.map(item => ({
           id: item.vegetableId,
           name: vegetables.find(v => v.id === item.vegetableId)?.name || 'Unknown',
@@ -105,9 +109,13 @@ export const useBillingData = (props: UseBillingDataProps = {}) => {
         })),
         status: newBillData.status || 'pending',
         totalAmount: newBillData.total,
-        userId: newBillData.customerId || newBillData.customerName || 'unknown',
-        customerName: newBillData.customerName,
-        customerId: newBillData.customerId
+        // For admin-created bills (Create Bill page), use the entered customer info
+        // For regular user orders, use the current user's info
+        userId: newBillData.customerId || currentUser?.id || 'unknown',
+        customerName: newBillData.customerName || currentUser?.name || 'Unknown Customer',
+        customerId: newBillData.customerId || currentUser?.id || 'unknown',
+        // Add department info for regular users
+        department: currentUser?.department || undefined
       };
       
       console.log('Placing order with data:', orderData);
@@ -136,11 +144,37 @@ export const useBillingData = (props: UseBillingDataProps = {}) => {
     }
   }, [vegetables, selectedDate]);
 
-  const updateBill = useCallback((billId: string, updates: Partial<Bill>) => {
-    setBills(prev =>
-      prev.map(bill => bill.id === billId ? { ...bill, ...updates } : bill)
-    );
-  }, []);
+  const updateBill = useCallback(async (billId: string, updates: Partial<Bill>) => {
+    try {
+      // Find the bill to get its date for the correct collection path
+      const targetBill = bills.find(bill => bill.id === billId);
+      if (!targetBill) {
+        console.error('Bill not found:', billId);
+        return;
+      }
+
+      const billDate = new Date(targetBill.date);
+      const dateKey = getDateKey(billDate);
+      
+      // Update in Firebase first
+      const billRef = doc(db, 'orders', dateKey, 'items', billId);
+      await updateDoc(billRef, {
+        ...updates,
+        updatedAt: serverTimestamp(),
+        lastModifiedBy: currentUser?.id || 'admin'
+      });
+
+      console.log(`✅ Bill ${billId} updated in Firebase with new total: ₹${updates.total || 'unchanged'}`);
+
+      // Then update local state
+      setBills(prev =>
+        prev.map(bill => bill.id === billId ? { ...bill, ...updates } : bill)
+      );
+    } catch (error) {
+      console.error('Error updating bill in Firebase:', error);
+      throw error; // Re-throw so the UI can handle the error
+    }
+  }, [bills, currentUser]);
 
   return {
     vegetables,

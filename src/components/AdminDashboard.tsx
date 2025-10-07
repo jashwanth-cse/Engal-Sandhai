@@ -23,7 +23,7 @@ interface AdminDashboardProps {
   updateVegetable: (updatedVegetable: Vegetable) => void;
   deleteVegetable: (vegId: string) => void;
   bills: Bill[];
-  updateBill: (billId: string, updates: Partial<Bill>) => void;
+  updateBill: (billId: string, updates: Partial<Bill>) => Promise<void>;
   addBill: (newBill: Omit<Bill, 'id' | 'date'>) => Promise<Bill>;
   onUpdateUser: (updatedUser: User) => void;
   selectedDate?: Date | null; // Selected date from parent

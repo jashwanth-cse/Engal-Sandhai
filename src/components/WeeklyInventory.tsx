@@ -8,6 +8,7 @@ interface WeeklyInventoryProps {
   vegetables: Vegetable[];
   bills: Bill[];
   user: User;
+  refreshTrigger?: number; // Optional prop to trigger data refresh
 }
 
 interface WeekStockData {
@@ -19,7 +20,7 @@ interface WeekStockData {
   totalRevenue: number;
 }
 
-const WeeklyInventory: React.FC<WeeklyInventoryProps> = ({ vegetables, bills, user }) => {
+const WeeklyInventory: React.FC<WeeklyInventoryProps> = ({ vegetables, bills, user, refreshTrigger }) => {
   const [selectedDate, setSelectedDate] = useState(() => {
     const today = new Date();
     // Get the Monday of current week
@@ -32,6 +33,7 @@ const WeeklyInventory: React.FC<WeeklyInventoryProps> = ({ vegetables, bills, us
   const [weeklyBills, setWeeklyBills] = useState<Bill[]>([]);
   const [weeklyVegetables, setWeeklyVegetables] = useState<Vegetable[]>([]);
   const [isLoadingData, setIsLoadingData] = useState(false);
+  const [lastRefreshTime, setLastRefreshTime] = useState<Date>(new Date());
 
   // Calculate week dates from selected date
   const weekDates = useMemo(() => {
@@ -75,7 +77,34 @@ const WeeklyInventory: React.FC<WeeklyInventoryProps> = ({ vegetables, bills, us
     };
 
     loadWeeklyData();
-  }, [weekDates]);
+  }, [weekDates, refreshTrigger, vegetables.length]); // Refresh when week changes, refresh trigger, or vegetables change
+
+  // Manual refresh function
+  const handleRefresh = async () => {
+    setIsLoadingData(true);
+    try {
+      const startDate = weekDates[0];
+      const endDate = weekDates[6];
+      
+      console.log('🔄 Manual refresh: Reloading weekly stock data...');
+      
+      // Fetch fresh data from database
+      const [bills, weekVegetables] = await Promise.all([
+        fetchBillsForDateRange(startDate, endDate),
+        fetchVegetablesForDate(startDate)
+      ]);
+      
+      setWeeklyBills(bills);
+      setWeeklyVegetables(weekVegetables);
+      setLastRefreshTime(new Date());
+      
+      console.log(`✅ Refreshed: ${bills.length} bills and ${weekVegetables.length} vegetables loaded`);
+    } catch (error) {
+      console.error('Error refreshing weekly data:', error);
+    } finally {
+      setIsLoadingData(false);
+    }
+  };
 
   // Calculate weekly stock data with percentages
   const weeklyStockData = useMemo((): WeekStockData[] => {
@@ -88,31 +117,37 @@ const WeeklyInventory: React.FC<WeeklyInventoryProps> = ({ vegetables, bills, us
     vegetablesToUse.forEach(veg => {
       stockMap.set(veg.id, {
         vegetable: veg,
-        totalStock: veg.totalStockKg,
-        availableStock: veg.totalStockKg,
+        totalStock: veg.totalStockKg, // Original total stock
+        availableStock: veg.stockKg, // Current available stock (reflects all changes including bill edits)
         ordersOut: 0,
         outPercentage: 0,
         totalRevenue: 0
       });
     });
 
-    // Calculate orders out from weekly bills
-    weeklyBills.forEach(bill => {
-      bill.items?.forEach(item => {
-        const stockData = stockMap.get(item.vegetableId);
-        if (stockData) {
-          stockData.ordersOut += item.quantityKg;
-          stockData.totalRevenue += item.subtotal;
-        }
-      });
-    });
-
-    // Calculate available stock and percentages
+    // Calculate orders out and percentages based on current stock levels
     const result: WeekStockData[] = [];
     stockMap.forEach(data => {
-      data.availableStock = Math.max(0, data.totalStock - data.ordersOut);
+      // Orders out = Total original stock - Current available stock (includes all orders and edits)
+      data.ordersOut = Math.max(0, data.totalStock - data.availableStock);
       data.outPercentage = data.totalStock > 0 ? (data.ordersOut / data.totalStock) * 100 : 0;
+      
+      // Calculate total revenue based on quantities sold (orders out) * price per kg
+      data.totalRevenue = data.ordersOut * data.vegetable.pricePerKg;
+      
       result.push(data);
+      
+      console.log(`📊 ${data.vegetable.name}: Total=${data.totalStock}kg, Available=${data.availableStock}kg, Out=${data.ordersOut}kg, Revenue=₹${data.totalRevenue}, %=${data.outPercentage.toFixed(1)}%`);
+    });
+
+    // Also add revenue from weekly bills for cross-verification
+    weeklyBills.forEach(bill => {
+      bill.items?.forEach(item => {
+        const stockData = result.find(data => data.vegetable.id === item.vegetableId);
+        if (stockData) {
+          console.log(`💰 Weekly bill revenue for ${stockData.vegetable.name}: ₹${item.subtotal} (${item.quantityKg}kg)`);
+        }
+      });
     });
 
     // Sort by highest out percentage
@@ -203,6 +238,9 @@ const WeeklyInventory: React.FC<WeeklyInventoryProps> = ({ vegetables, bills, us
               <div>
                 <h1 className="text-2xl font-bold text-slate-800">Weekly Stock Report</h1>
                 <p className="text-slate-600">Track inventory movement and stock percentages</p>
+                <p className="text-xs text-slate-500 mt-1">
+                  Last updated: {lastRefreshTime.toLocaleTimeString()} • Stock reflects all bill edits
+                </p>
               </div>
             </div>
             
@@ -217,6 +255,14 @@ const WeeklyInventory: React.FC<WeeklyInventoryProps> = ({ vegetables, bills, us
                 />
               </div>
               <div className="flex gap-2">
+                <Button
+                  onClick={handleRefresh}
+                  disabled={isLoadingData}
+                  className="bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white flex items-center"
+                >
+                  <CubeIcon className="h-4 w-4 mr-2" />
+                  {isLoadingData ? 'Refreshing...' : 'Refresh Data'}
+                </Button>
                 <Button
                   onClick={exportToCSV}
                   className="bg-green-600 hover:bg-green-700 text-white flex items-center"

@@ -22,7 +22,7 @@ interface CartViewProps {
   isOpen?: boolean;
   isDesktop?: boolean;
   onClose?: () => void;
-  onPlaceOrder: () => void;
+  onPlaceOrder: () => Promise<void>;
   cartItems: CartItemDetails[];
   total: number;
   bagCount?: number;
@@ -63,9 +63,10 @@ const CartContent: React.FC<Omit<CartViewProps, "isOpen">> = ({
         console.log('Received reCAPTCHA token, proceeding with order...');
       }
 
-      // Just call the parent's onPlaceOrder function which handles the complete order process
-      // This eliminates the duplicate order creation issue
-      onPlaceOrder();
+      // Call the parent's onPlaceOrder function and wait for it to complete
+      console.log('🔥 CartView: Calling onPlaceOrder...');
+      await onPlaceOrder();
+      console.log('✅ CartView: Order placement completed');
 
     } catch (error) {
       console.error('Error placing order:', error);
