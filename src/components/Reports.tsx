@@ -451,6 +451,96 @@ const Reports: React.FC = () => {
     }
   };
 
+  // Function to generate CSV download
+  const generateCsv = () => {
+    if (orders.length === 0) {
+      alert('No orders to generate CSV for this date.');
+      return;
+    }
+
+    try {
+      // Prepare CSV headers
+      const headers = [
+        'S.No',
+        'Employee Name',
+        'Bill Number',
+        'Employee ID',
+        'Department',
+        'Customer ID',
+        'Total Items',
+        'Total Amount (₹)',
+        'Order Date',
+        'Generated Time'
+      ];
+
+      // Prepare CSV data rows
+      const csvData = orders.map((order, index) => {
+        const itemsCount = (Array.isArray(order.items) ? order.items : []).reduce(
+          (sum, item: any) => sum + Math.floor(Number(item.quantity) || 1), 
+          0
+        );
+        const userInfo = userInfoMap[order.customerId];
+        const employeeName = userInfo?.name || order.customerName || 'Unknown';
+        const employeeId = userInfo?.employeeId || order.customerId || 'Unknown';
+        const department = userInfo?.department || 'Unknown';
+        const amount = Number(order.totalAmount) || 0;
+
+        return [
+          index + 1,
+          `"${employeeName}"`, // Wrap in quotes to handle commas in names
+          `"${String(order.id)}"`,
+          `"${employeeId}"`,
+          `"${department}"`,
+          `"${order.customerId}"`,
+          itemsCount,
+          amount.toFixed(2),
+          `"${order.createdAt.toLocaleDateString()}"`,
+          `"${new Date().toLocaleString()}"`
+        ];
+      });
+
+      // Add summary row
+      csvData.push([
+        '',
+        '',
+        '',
+        '',
+        '',
+        '',
+        `Total Orders: ${totalOrders}`,
+        `Total: ${totalSales.toFixed(2)}`,
+        '',
+        ''
+      ]);
+
+      // Convert to CSV format
+      const csvContent = [
+        headers.join(','),
+        ...csvData.map(row => row.join(','))
+      ].join('\n');
+
+      // Create and download the file
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const link = document.createElement('a');
+      
+      if (link.download !== undefined) {
+        const url = URL.createObjectURL(blob);
+        link.setAttribute('href', url);
+        link.setAttribute('download', `Daily_Report_${reportDate}.csv`);
+        link.style.visibility = 'hidden';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      }
+      
+      console.log(`✅ CSV report generated for ${reportDate} with ${orders.length} orders`);
+      
+    } catch (error) {
+      console.error('Failed to generate CSV:', error);
+      alert('Failed to generate CSV. Please try again.');
+    }
+  };
+
   return (
     <div className="space-y-6">
       <h1 className="text-3xl font-bold text-slate-800">Reports</h1>
@@ -491,7 +581,16 @@ const Reports: React.FC = () => {
           <label className="block text-sm font-medium text-slate-700 mb-1">Select Date</label>
           <input type="date" value={reportDate} onChange={(e) => setReportDate(e.target.value)} className="border rounded-md px-3 py-2" />
         </div>
-        <div className="sm:ml-auto">
+        <div className="sm:ml-auto flex gap-3">
+          <Button 
+            onClick={generateCsv}
+            className="bg-green-600 hover:bg-green-700 text-white flex items-center gap-2"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
+            Download CSV
+          </Button>
           <Button onClick={generatePdf}>Generate Report (PDF)</Button>
         </div>
       </div>

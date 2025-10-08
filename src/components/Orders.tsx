@@ -6,6 +6,7 @@ import FilterBar, { FilterState } from './FilterBar.tsx';
 import { db } from '../firebase';
 import { doc, getDoc, collection, query as fsQuery, where, getDocs } from 'firebase/firestore';
 import { getDateKey } from '../services/dbService';
+import { formatRoundedTotal } from '../utils/roundUtils';
 
 interface OrdersProps {
   bills: Bill[];
@@ -59,17 +60,24 @@ const Orders: React.FC<OrdersProps> = ({ bills, vegetables, initialBillId, onCle
       
       if (billDoc.exists()) {
         const updatedBillData = billDoc.data();
+        console.log(`🔍 Refreshing bill ${billId}:`, {
+          originalItems: originalBill.items?.length || 0,
+          updatedItems: updatedBillData.items?.length || 0,
+          originalTotal: originalBill.total,
+          updatedTotal: updatedBillData.total
+        });
+        
         const updatedBill: Bill = {
           id: billDoc.id,
           date: updatedBillData.date || originalBill.date,
-          items: updatedBillData.items || [],
-          total: updatedBillData.total || 0,
-          customerName: updatedBillData.customerName || 'Unknown',
-          department: updatedBillData.department,
-          status: updatedBillData.status || 'pending',
-          bags: updatedBillData.bags,
-          customerId: updatedBillData.customerId,
-          paymentScreenshot: updatedBillData.paymentScreenshot
+          items: updatedBillData.items || originalBill.items || [],
+          total: updatedBillData.total !== undefined ? updatedBillData.total : originalBill.total,
+          customerName: updatedBillData.customerName || originalBill.customerName || 'Unknown',
+          department: updatedBillData.department || originalBill.department,
+          status: updatedBillData.status || originalBill.status || 'pending',
+          bags: updatedBillData.bags !== undefined ? updatedBillData.bags : originalBill.bags,
+          customerId: updatedBillData.customerId || originalBill.customerId,
+          paymentScreenshot: updatedBillData.paymentScreenshot || originalBill.paymentScreenshot
         };
         
         console.log(`✅ Bill ${billId} refreshed from database. New total: ₹${updatedBill.total}`);
@@ -152,17 +160,19 @@ const Orders: React.FC<OrdersProps> = ({ bills, vegetables, initialBillId, onCle
     loadUserInfos();
   }, [bills, userInfoMap]);
 
-  // Auto-refresh bills when bills array changes (e.g., new bills added)
+  // Auto-refresh bills when bills array changes (e.g., new bills added) - TEMPORARILY DISABLED
   useEffect(() => {
-    if (bills.length > 0) {
-      // Only refresh if we have bills and don't have too many refreshed bills already
-      const needsRefresh = bills.some(bill => !refreshedBills.has(bill.id));
-      if (needsRefresh && refreshedBills.size < 50) { // Limit to prevent excessive refreshing
-        console.log('🔄 Auto-refreshing bills due to bills array change...');
-        const recentBills = bills.slice(0, 10); // Limit to 10 most recent bills
-        recentBills.forEach(bill => refreshBillData(bill.id));
-      }
-    }
+    // Temporarily disabled to debug items visibility issue
+    console.log('🔄 Auto-refresh disabled for debugging. Bills count:', bills.length);
+    // if (bills.length > 0) {
+    //   // Only refresh if we have bills and don't have too many refreshed bills already
+    //   const needsRefresh = bills.some(bill => !refreshedBills.has(bill.id));
+    //   if (needsRefresh && refreshedBills.size < 50) { // Limit to prevent excessive refreshing
+    //     console.log('🔄 Auto-refreshing bills due to bills array change...');
+    //     const recentBills = bills.slice(0, 10); // Limit to 10 most recent bills
+    //     recentBills.forEach(bill => refreshBillData(bill.id));
+    //   }
+    // }
   }, [bills.length]); // Only trigger when the number of bills changes
 
   const formatItems = (items: BillItem[], bags?: number) => {
@@ -412,7 +422,11 @@ const Orders: React.FC<OrdersProps> = ({ bills, vegetables, initialBillId, onCle
                       <td className="px-6 py-4 text-slate-600">{userInfoMap[String((bill as any).customerId || bill.customerName || '')]?.department || bill.department || 'N/A'}</td>
                       <td className="px-6 py-4">{new Date(bill.date).toLocaleString()}</td>
                       <td className="px-6 py-4 text-sm" title={formatItems(bill.items || [], bill.bags)}>
-                        {(bill.items || []).length} {(bill.items || []).length === 1 ? 'item' : 'items'}{bill.bags && bill.bags > 0 ? ` + ${bill.bags} bag${bill.bags === 1 ? '' : 's'}` : ''}
+                        {(() => {
+                          const itemCount = (bill.items || []).length;
+                          console.log(`📊 Bill ${bill.id} items:`, itemCount, bill.items);
+                          return `${itemCount} ${itemCount === 1 ? 'item' : 'items'}${bill.bags && bill.bags > 0 ? ` + ${bill.bags} bag${bill.bags === 1 ? '' : 's'}` : ''}`;
+                        })()}
                       </td>
                       <td className="px-6 py-4">
                         <div className="status-dropdown">
@@ -428,11 +442,19 @@ const Orders: React.FC<OrdersProps> = ({ bills, vegetables, initialBillId, onCle
                         </div>
                       </td>
                       <td className="px-6 py-4 text-right font-semibold text-slate-800">
-                          ₹{bill.total}
+                          {(() => {
+                            // Calculate total from items if bill.total is 0 or undefined
+                            const displayTotal = bill.total || (bill.items?.reduce((sum, item) => sum + (item.subtotal || 0), 0) || 0);
+                            return `₹${Number(displayTotal).toFixed(1)}`;
+                          })()}
                       </td>
                       <td className="px-6 py-4 text-center">
                         <button 
-                            onClick={() => setViewingBill(bill)}
+                            onClick={() => {
+                              console.log('🔍 Opening bill details for:', bill.id, 'Items count:', bill.items?.length || 0);
+                              console.log('📊 Bill data:', bill);
+                              setViewingBill(bill);
+                            }}
                             className="p-2 text-slate-500 hover:text-primary-600 rounded-full hover:bg-slate-100"
                         >
                             <DocumentMagnifyingGlassIcon className="h-5 w-5" />

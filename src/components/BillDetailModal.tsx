@@ -57,6 +57,9 @@ const BillDetailModal: React.FC<BillDetailModalProps> = ({ isOpen, onClose, bill
   const [fetchedVegetables, setFetchedVegetables] = useState<Map<string, Vegetable>>(new Map());
   const [isLoadingVegetables, setIsLoadingVegetables] = useState(false);
   
+  // Add global cache to avoid re-fetching same vegetables across different bills
+  const globalVegetableCache = React.useRef<Map<string, Vegetable>>(new Map());
+  
   // UPI selection state
   const [selectedUpiId, setSelectedUpiId] = useState<string>('');
   
@@ -73,19 +76,28 @@ const BillDetailModal: React.FC<BillDetailModalProps> = ({ isOpen, onClose, bill
   
   // const BAG_PRICE = 10; // ₹10 per bag - Moved to user page
   
+  // Memoized combined vegetable map for better performance
+  const combinedVegetableMap = React.useMemo(() => {
+    const combined = new Map(vegetableMap);
+    fetchedVegetables.forEach((veg, id) => combined.set(id, veg));
+    return combined;
+  }, [vegetableMap, fetchedVegetables]);
+
   // Initialize edited items when bill changes
   useEffect(() => {
     if (bill) {
-      setEditedItems([...bill.items]);
+      console.log('🔍 BillDetailModal received bill:', bill.id, 'Items:', bill.items?.length || 0);
+      console.log('📊 Bill items data:', bill.items);
+      setEditedItems(bill.items ? [...bill.items] : []);
       // setBagCount(bill.bags || 0); // Moved to user page
-      setCalculatedTotal(bill.total);
+      setCalculatedTotal(bill.total || 0);
       setHasUnsavedChanges(false);
       setFetchedVegetables(new Map()); // Reset fetched vegetables for new bill
       setSelectedUpiId(''); // Reset UPI selection for new bill
     }
   }, [bill]);
   
-  // Effect to fetch missing vegetable data
+  // Effect to fetch missing vegetable data - OPTIMIZED VERSION
   useEffect(() => {
     if (!bill) return;
     
@@ -93,87 +105,119 @@ const BillDetailModal: React.FC<BillDetailModalProps> = ({ isOpen, onClose, bill
       setIsLoadingVegetables(true);
       const missingVegetables = new Map<string, Vegetable>();
       
-      console.log(`🔍 Bill has ${bill.items.length} items. Checking for missing vegetables...`);
-      console.log(`📊 Current vegetableMap has ${vegetableMap.size} vegetables`);
-      console.log(`📊 Current fetchedVegetables has ${fetchedVegetables.size} vegetables`);
+      // Step 1: Identify truly missing vegetables (not in vegetableMap, fetchedVegetables, or global cache)
+      const missingIds: string[] = [];
+      const cachedVegetables = new Map<string, Vegetable>();
       
       for (const item of bill.items) {
-        console.log(`🔍 Checking item: ${item.vegetableId}`);
+        const existingVeg = vegetableMap.get(item.vegetableId) || 
+                           fetchedVegetables.get(item.vegetableId) ||
+                           globalVegetableCache.current.get(item.vegetableId);
         
-        // Always try to fetch vegetable data to ensure we have the most complete information
-        const existingVeg = vegetableMap.get(item.vegetableId) || fetchedVegetables.get(item.vegetableId);
-        
-        if (!existingVeg) {
-          console.log(`🔍 Fetching missing vegetable data for: ${item.vegetableId}`);
-          
+        if (existingVeg) {
+          // Add to local cache if found in global cache
+          if (globalVegetableCache.current.has(item.vegetableId)) {
+            cachedVegetables.set(item.vegetableId, existingVeg);
+          }
+        } else {
+          missingIds.push(item.vegetableId);
+        }
+      }
+      
+      // Add cached vegetables to fetched vegetables
+      if (cachedVegetables.size > 0) {
+        setFetchedVegetables(prev => new Map([...prev, ...cachedVegetables]));
+      }
+      
+      console.log(`🔍 Found ${missingIds.length} missing vegetables out of ${bill.items.length} items`);
+      
+      if (missingIds.length === 0) {
+        setIsLoadingVegetables(false);
+        return;
+      }
+      
+      // Step 2: Try to fetch missing vegetables in batches (much faster than individual calls)
+      const billDate = new Date(bill.date);
+      const dateKey = getDateKey(billDate);
+      
+      try {
+        // Batch fetch from date-based collection first (most likely to succeed)
+        const batchPromises = missingIds.map(async (vegId) => {
           try {
-            const vegetableData = await getVegetableById(item.vegetableId);
-            if (vegetableData) {
-              console.log(`✅ Found vegetable data: ${vegetableData.name} (Price: ₹${vegetableData.pricePerKg})`);
-              missingVegetables.set(item.vegetableId, vegetableData);
-            } else {
-              console.warn(`❌ Could not find vegetable data for: ${item.vegetableId}`);
-              // Try to get the bill date and search in that specific date collection
-              const billDate = new Date(bill.date);
-              const dateKey = getDateKey(billDate);
-              console.log(`🔍 Trying to fetch from bill date collection: ${dateKey}`);
-              
-              // Try to fetch from the bill's date collection specifically
-              const dateBasedVegRef = doc(db, 'vegetables', dateKey, 'items', item.vegetableId);
+            // Try current vegetables collection first
+            let vegetableData = await getVegetableById(vegId);
+            
+            if (!vegetableData) {
+              // Try date-based collection
+              const dateBasedVegRef = doc(db, 'vegetables', dateKey, 'items', vegId);
               const dateBasedVegDoc = await getDoc(dateBasedVegRef);
               
               if (dateBasedVegDoc.exists()) {
                 const data = dateBasedVegDoc.data();
-                const vegetableFromDate: Vegetable = {
+                vegetableData = {
                   id: dateBasedVegDoc.id,
-                  name: data.name || `Item ${item.vegetableId}`,
+                  name: data.name || `Item ${vegId}`,
                   unitType: (data.unitType as 'KG' | 'COUNT') || 'KG',
                   pricePerKg: Number(data.pricePerKg || data.price) || 0,
                   totalStockKg: Number(data.totalStockKg || data.stock || data.totalStock) || 0,
                   stockKg: Number(data.stockKg || data.availableStock) || 0,
                   category: data.category || 'Other'
                 };
-                console.log(`✅ Found vegetable in date collection: ${vegetableFromDate.name}`);
-                missingVegetables.set(item.vegetableId, vegetableFromDate);
-              } else {
-                // Last resort: create a fallback vegetable object using bill data
-                console.warn(`❌ Still not found. Creating fallback for: ${item.vegetableId}`);
-                const fallbackVegetable: Vegetable = {
-                  id: item.vegetableId,
-                  name: `Item ${item.vegetableId.replace('veg_', '').toUpperCase()}`,
-                  unitType: 'KG',
-                  pricePerKg: item.subtotal / item.quantityKg || 0, // Calculate from bill data
-                  totalStockKg: 0,
-                  stockKg: 0,
-                  category: 'Unknown'
-                };
-                missingVegetables.set(item.vegetableId, fallbackVegetable);
               }
             }
+            
+            if (vegetableData) {
+              return { id: vegId, vegetable: vegetableData };
+            } else {
+              // Create fallback using bill data
+              const billItem = bill.items.find(item => item.vegetableId === vegId);
+              const fallbackVegetable: Vegetable = {
+                id: vegId,
+                name: `Item ${vegId.replace('veg_', '').replace(/_/g, ' ').toUpperCase()}`,
+                unitType: 'KG',
+                pricePerKg: billItem ? (billItem.subtotal / billItem.quantityKg) || 0 : 0,
+                totalStockKg: 0,
+                stockKg: 0,
+                category: 'Unknown'
+              };
+              return { id: vegId, vegetable: fallbackVegetable };
+            }
           } catch (error) {
-            console.error(`❌ Error fetching vegetable ${item.vegetableId}:`, error);
+            console.error(`❌ Error fetching vegetable ${vegId}:`, error);
             // Create fallback even on error
+            const billItem = bill.items.find(item => item.vegetableId === vegId);
             const fallbackVegetable: Vegetable = {
-              id: item.vegetableId,
-              name: `Item ${item.vegetableId.replace('veg_', '').toUpperCase()}`,
+              id: vegId,
+              name: `Item ${vegId.replace('veg_', '').replace(/_/g, ' ').toUpperCase()}`,
               unitType: 'KG',
-              pricePerKg: item.subtotal / item.quantityKg || 0,
+              pricePerKg: billItem ? (billItem.subtotal / billItem.quantityKg) || 0 : 0,
               totalStockKg: 0,
               stockKg: 0,
               category: 'Unknown'
             };
-            missingVegetables.set(item.vegetableId, fallbackVegetable);
+            return { id: vegId, vegetable: fallbackVegetable };
           }
-        } else {
-          console.log(`✅ Vegetable ${item.vegetableId} already available: ${existingVeg.name}`);
+        });
+        
+        // Wait for all batch requests to complete
+        const results = await Promise.all(batchPromises);
+        
+        // Add all results to missing vegetables map and global cache
+        results.forEach(result => {
+          if (result) {
+            missingVegetables.set(result.id, result.vegetable);
+            globalVegetableCache.current.set(result.id, result.vegetable); // Cache globally
+          }
+        });
+        
+        console.log(`✅ Successfully fetched ${missingVegetables.size} vegetables`);
+        
+        if (missingVegetables.size > 0) {
+          setFetchedVegetables(prev => new Map([...prev, ...missingVegetables]));
         }
-      }
-      
-      if (missingVegetables.size > 0) {
-        console.log(`📝 Setting ${missingVegetables.size} missing vegetables`);
-        setFetchedVegetables(prev => new Map([...prev, ...missingVegetables]));
-      } else {
-        console.log(`✅ No missing vegetables to fetch`);
+        
+      } catch (error) {
+        console.error('❌ Error in batch vegetable fetch:', error);
       }
       
       setIsLoadingVegetables(false);
@@ -284,7 +328,7 @@ const BillDetailModal: React.FC<BillDetailModalProps> = ({ isOpen, onClose, bill
   if (!isOpen || !bill) return null;
 
   const handleQuantityChange = (index: number, newQuantity: number) => {
-    const vegetable = vegetableMap.get(editedItems[index].vegetableId);
+    const vegetable = combinedVegetableMap.get(editedItems[index].vegetableId);
     if (!vegetable) return;
     
     // Ensure quantity is not negative and not more than 2 decimal places
@@ -313,7 +357,7 @@ const BillDetailModal: React.FC<BillDetailModalProps> = ({ isOpen, onClose, bill
   */
 
   const handleAddVegetable = (vegetableId: string, quantity: number) => {
-    const vegetable = vegetableMap.get(vegetableId);
+    const vegetable = combinedVegetableMap.get(vegetableId);
     if (!vegetable || quantity <= 0) return;
 
     const existingItemIndex = editedItems.findIndex(item => item.vegetableId === vegetableId);
@@ -481,16 +525,64 @@ const BillDetailModal: React.FC<BillDetailModalProps> = ({ isOpen, onClose, bill
     }
   };
 
-  const handleDownload = () => {
+  const handleDownload = async () => {
     const { jsPDF } = window.jspdf;
-    const doc = new jsPDF();
+    const pdfDoc = new jsPDF();
 
-    const pageWidth = doc.internal.pageSize.getWidth();
+    const pageWidth = pdfDoc.internal.pageSize.getWidth();
     const ITEMS_PER_PAGE = 25; // Maximum items per page
     const totalPages = Math.max(1, Math.ceil(editedItems.length / ITEMS_PER_PAGE));
 
-    // Get employee ID from current user
-    const employeeId = currentUser?.email?.split('@')[0] || currentUser?.id || 'N/A';
+    // Extract employee ID from bill's customer information for PDF
+    let employeeId = 'N/A';
+    
+    try {
+      // First try to get from Firebase user data using customerId (most reliable)
+      if (bill.customerId) {
+        try {
+          const userRef = doc(db, 'users', bill.customerId);
+          const userDoc = await getDoc(userRef);
+          if (userDoc.exists()) {
+            const userData = userDoc.data() as any;
+            // Try multiple fields to get the employee ID, prioritizing stored employee ID
+            employeeId = userData.employee?.employeeId || 
+                        userData.employeeId || 
+                        bill.customerId;
+          } else {
+            employeeId = bill.customerId;
+          }
+        } catch (fetchError) {
+          console.warn('Could not fetch user data for employee ID, using customerId:', fetchError);
+          employeeId = bill.customerId;
+        }
+      } else if (bill.customerName) {
+        // Fallback to customerName if customerId not available
+        if (bill.customerName.includes('@')) {
+          employeeId = bill.customerName.split('@')[0];
+        } else {
+          employeeId = bill.customerName;
+        }
+      }
+      
+      // Clean and format employee ID properly
+      if (employeeId && employeeId !== 'N/A') {
+        // Remove email domain if present
+        if (employeeId.includes('@')) {
+          employeeId = employeeId.split('@')[0];
+        }
+        
+        // If it looks like a Firebase UID (long random string), don't modify it much
+        if (employeeId.length > 15 && /^[a-zA-Z0-9]+$/.test(employeeId)) {
+          employeeId = employeeId.substring(0, 10).toUpperCase();
+        } else {
+          // For normal employee IDs, just clean up basic formatting
+          employeeId = employeeId.toUpperCase().trim();
+        }
+      }
+    } catch (error) {
+      console.error('Error extracting employee ID for PDF:', error);
+      employeeId = 'N/A';
+    }
     // Format bill number as ESDDMMYYYY-001
     const billDateObj = new Date(bill.date);
     const dd = String(billDateObj.getDate()).padStart(2, '0');
@@ -507,26 +599,26 @@ const BillDetailModal: React.FC<BillDetailModalProps> = ({ isOpen, onClose, bill
     // Generate each page
     for (let pageNum = 0; pageNum < totalPages; pageNum++) {
       if (pageNum > 0) {
-        doc.addPage();
+        pdfDoc.addPage();
       }
 
       let y = 20;
 
       // Header
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(20);
-      doc.text('Engal Santhai', pageWidth / 2, y, { align: 'center' });
+      pdfDoc.setFont('helvetica', 'bold');
+      pdfDoc.setFontSize(20);
+      pdfDoc.text('Engal Santhai', pageWidth / 2, y, { align: 'center' });
       y += 8;
 
-      doc.setFont('helvetica', 'normal');
-      doc.setFontSize(11);
-      doc.text('Your Fresh Vegetable Partner', pageWidth / 2, y, { align: 'center' });
+      pdfDoc.setFont('helvetica', 'normal');
+      pdfDoc.setFontSize(11);
+      pdfDoc.text('Your Fresh Vegetable Partner', pageWidth / 2, y, { align: 'center' });
       y += 15;
 
       // INVOICE heading
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(12);
-      doc.text('INVOICE', 14, y);
+      pdfDoc.setFont('helvetica', 'bold');
+      pdfDoc.setFontSize(12);
+      pdfDoc.text('INVOICE', 14, y);
       y += 8;
 
       // Bill details
@@ -542,14 +634,14 @@ const BillDetailModal: React.FC<BillDetailModalProps> = ({ isOpen, onClose, bill
         hour12: true
       }).toLowerCase();
 
-      doc.setFont('helvetica', 'normal');
-      doc.text(`BILL NO: ${formattedBillNumber}`, 14, y);
-      doc.text(`Date: ${dateStr}`, pageWidth - 14, y, { align: 'right' });
+      pdfDoc.setFont('helvetica', 'normal');
+      pdfDoc.text(`BILL NO: ${formattedBillNumber}`, 14, y);
+      pdfDoc.text(`Date: ${dateStr}`, pageWidth - 14, y, { align: 'right' });
       y += 6;
-      doc.text(`CUSTOMER NAME : ${customerNameFromDB || bill.customerName}`, 14, y);
-      doc.text(`Time: ${timeStr}`, pageWidth - 14, y, { align: 'right' });
+      pdfDoc.text(`CUSTOMER NAME : ${customerNameFromDB || bill.customerName}`, 14, y);
+      pdfDoc.text(`Time: ${timeStr}`, pageWidth - 14, y, { align: 'right' });
       y += 6;
-      doc.text(`EMP ID: ${employeeId}`, 14, y);
+      pdfDoc.text(`EMP ID: ${employeeId}`, 14, y);
       y += 10;
 
       // Table header
@@ -563,19 +655,19 @@ const BillDetailModal: React.FC<BillDetailModalProps> = ({ isOpen, onClose, bill
       const colRate = startX + 130;        // Rate
       const colAmount = endX;              // Amount right
 
-      doc.setLineWidth(0.2);
-      doc.line(startX, y, endX, y); // top border
+      pdfDoc.setLineWidth(0.2);
+      pdfDoc.line(startX, y, endX, y); // top border
       y += 6;
 
-      doc.setFont('helvetica', 'bold');
-      doc.text('S.No.', colSNo, y);
-      doc.text('Item', colItem, y);
-      doc.text('Qty (kg)', colQty, y, { align: 'right' });
-      doc.text('Rate (Rs.)', colRate, y, { align: 'right' });
-      doc.text('Amount (Rs.)', colAmount, y, { align: 'right' });
+      pdfDoc.setFont('helvetica', 'bold');
+      pdfDoc.text('S.No.', colSNo, y);
+      pdfDoc.text('Item', colItem, y);
+      pdfDoc.text('Qty (kg)', colQty, y, { align: 'right' });
+      pdfDoc.text('Rate (Rs.)', colRate, y, { align: 'right' });
+      pdfDoc.text('Amount (Rs.)', colAmount, y, { align: 'right' });
 
       y += 2;
-      doc.line(startX, y, endX, y); // header bottom
+      pdfDoc.line(startX, y, endX, y); // header bottom
       y += 6;
 
       // Get items for this page
@@ -584,9 +676,9 @@ const BillDetailModal: React.FC<BillDetailModalProps> = ({ isOpen, onClose, bill
       const pageItems = editedItems.slice(startIdx, endIdx);
 
       // Table rows for this page
-      doc.setFont('courier', 'normal');
+      pdfDoc.setFont('courier', 'normal');
       pageItems.forEach((item, pageIndex) => {
-        const vegetable = vegetableMap.get(item.vegetableId) || fetchedVegetables.get(item.vegetableId);
+        const vegetable = combinedVegetableMap.get(item.vegetableId);
         const globalSerialNo = startIdx + pageIndex + 1; // Continue serial number across pages
         
         // Use historical data from bill item if available, otherwise fallback to vegetable lookup
@@ -597,60 +689,60 @@ const BillDetailModal: React.FC<BillDetailModalProps> = ({ isOpen, onClose, bill
         
 
 
-        doc.text(globalSerialNo.toString(), colSNo, y);
-        doc.text(name, colItem, y);
-        doc.text(qty, colQty, y, { align: 'right' });
-        doc.text(rate, colRate, y, { align: 'right' });
-        doc.text(amount, colAmount, y, { align: 'right' });
+        pdfDoc.text(globalSerialNo.toString(), colSNo, y);
+        pdfDoc.text(name, colItem, y);
+        pdfDoc.text(qty, colQty, y, { align: 'right' });
+        pdfDoc.text(rate, colRate, y, { align: 'right' });
+        pdfDoc.text(amount, colAmount, y, { align: 'right' });
         y += 6;
       });
 
-      doc.line(startX, y, endX, y); // bottom border
+      pdfDoc.line(startX, y, endX, y); // bottom border
       y += 10;
 
       // Show total only on the last page
       if (pageNum === totalPages - 1) {
         // TOTAL
-        doc.setFont('helvetica', 'bold');
-        doc.setFontSize(12);
-        doc.text('TOTAL:', colRate, y);
-        doc.text(`Rs. ${calculatedTotal}`, colAmount, y, { align: 'right' });
+        pdfDoc.setFont('helvetica', 'bold');
+        pdfDoc.setFontSize(12);
+        pdfDoc.text('TOTAL:', colRate, y);
+        pdfDoc.text(`Rs. ${calculatedTotal}`, colAmount, y, { align: 'right' });
         y += 15;
         
         // UPI Payment Information
         if (selectedUpiId) {
           const selectedUpi = UPI_IDS.find(upi => upi.id === selectedUpiId);
           if (selectedUpi) {
-            doc.line(startX, y - 5, endX, y - 5); // separator line
+            pdfDoc.line(startX, y - 5, endX, y - 5); // separator line
             y += 5;
             
-            doc.setFont('helvetica', 'bold');
-            doc.setFontSize(11);
-            doc.text('PAYMENT INFORMATION', startX, y);
+            pdfDoc.setFont('helvetica', 'bold');
+            pdfDoc.setFontSize(11);
+            pdfDoc.text('PAYMENT INFORMATION', startX, y);
             y += 8;
             
-            doc.setFont('helvetica', 'normal');
-            doc.setFontSize(10);
-            doc.text(`Payee Name: ${selectedUpi.name}`, startX, y);
+            pdfDoc.setFont('helvetica', 'normal');
+            pdfDoc.setFontSize(10);
+            pdfDoc.text(`Payee Name: ${selectedUpi.name}`, startX, y);
             y += 5;
-            doc.text(`UPI ID: ${selectedUpi.displayName}`, startX, y);
+            pdfDoc.text(`UPI ID: ${selectedUpi.displayName}`, startX, y);
             y += 5;
-            doc.text(`Amount: Rs. ${calculatedTotal}`, startX, y);
+            pdfDoc.text(`Amount: Rs. ${calculatedTotal}`, startX, y);
             y += 8;
             
-            doc.setFont('helvetica', 'italic');
-            doc.setFontSize(9);
-            doc.text('• Scan the QR code for instant payment', startX, y);
+            pdfDoc.setFont('helvetica', 'italic');
+            pdfDoc.setFontSize(9);
+            pdfDoc.text('• Scan the QR code for instant payment', startX, y);
             y += 4;
-            doc.text('• Use any UPI app like GPay, PhonePe, or Paytm', startX, y);
+            pdfDoc.text('• Use any UPI app like GPay, PhonePe, or Paytm', startX, y);
             y += 4;
-            doc.text('• Payment confirmation required for order processing', startX, y);
+            pdfDoc.text('• Payment confirmation required for order processing', startX, y);
           }
         }
       }
     }
 
-    doc.save(`EngalSanthai-Bill-${bill.id}.pdf`);
+    pdfDoc.save(`EngalSanthai-Bill-${bill.id}.pdf`);
   };
 
   return (
@@ -729,7 +821,7 @@ const BillDetailModal: React.FC<BillDetailModalProps> = ({ isOpen, onClose, bill
                         </thead>
                         <tbody>
                             {editedItems.map((item, index) => {
-                                const vegetable = vegetableMap.get(item.vegetableId) || fetchedVegetables.get(item.vegetableId);
+                                const vegetable = combinedVegetableMap.get(item.vegetableId);
                                 return (
                                     <tr key={index} className="bg-white border-b last:border-0">
                                         <td className="px-2 py-3 text-center font-medium text-slate-700">

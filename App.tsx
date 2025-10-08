@@ -188,9 +188,13 @@ const App: React.FC = () => {
       if (!docSnap.exists()) {
         role = 'faculty';
         await setDoc(docRef, {
-          name: userCredential.user.email || '',
+          name: employeeID, // Store the actual employee ID instead of email
           role,
           createdAt: new Date(),
+          employee: {
+            employeeId: employeeID,
+            email: userCredential.user.email
+          }
         });
       } else {
         const data = docSnap.data();
@@ -198,8 +202,9 @@ const App: React.FC = () => {
       }
       const loggedUser: User = {
         id: userCredential.user.uid,
-        name: userCredential.user.email || '',
+        name: employeeID, // Use the actual employee ID instead of email
         role: (role as 'admin' | 'user'),
+        email: userCredential.user.email, // Store email separately for reference
       };
       setCurrentUser(loggedUser);
       setLoginError(null);
