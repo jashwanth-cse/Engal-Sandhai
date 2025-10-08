@@ -12,6 +12,8 @@ export interface BillItem {
   vegetableId: string;
   quantityKg: number;
   subtotal: number;
+  name?: string; // Optional field for historical data preservation
+  pricePerKg?: number; // Optional field for historical data preservation
 }
 
 export interface Bill {

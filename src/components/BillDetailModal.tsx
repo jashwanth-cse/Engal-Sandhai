@@ -329,17 +329,32 @@ const BillDetailModal: React.FC<BillDetailModalProps> = ({ isOpen, onClose, bill
 
   const handleQuantityChange = (index: number, newQuantity: number) => {
     const vegetable = combinedVegetableMap.get(editedItems[index].vegetableId);
-    if (!vegetable) return;
+    const currentItem = editedItems[index];
     
     // Ensure quantity is not negative and not more than 2 decimal places
     const clampedQuantity = Math.max(0, Math.round(newQuantity * 100) / 100);
-    const newSubtotal = clampedQuantity * vegetable.pricePerKg;
+    
+    let pricePerKg: number;
+    if (vegetable) {
+      // Use vegetable price if available
+      pricePerKg = vegetable.pricePerKg;
+    } else if (currentItem.quantityKg > 0) {
+      // Calculate price from existing subtotal if vegetable data not available
+      pricePerKg = currentItem.subtotal / currentItem.quantityKg;
+    } else {
+      // Default to 0 if no data available
+      pricePerKg = 0;
+    }
+    
+    const newSubtotal = Math.round(clampedQuantity * pricePerKg * 100) / 100; // Round to 2 decimal places
     
     const updatedItems = [...editedItems];
     updatedItems[index] = {
       ...updatedItems[index],
       quantityKg: clampedQuantity,
-      subtotal: newSubtotal
+      subtotal: newSubtotal,
+      // Preserve the calculated price for future reference
+      pricePerKg: pricePerKg
     };
     
     setEditedItems(updatedItems);
@@ -855,7 +870,20 @@ const BillDetailModal: React.FC<BillDetailModalProps> = ({ isOpen, onClose, bill
                                                 onFocus={(e) => e.target.select()}
                                             />
                                         </td>
-                                        <td className="px-4 py-3 text-right">₹{vegetable?.pricePerKg || 'N/A'}</td>
+                                        <td className="px-4 py-3 text-right">
+                                            {(() => {
+                                              if (vegetable) {
+                                                return `₹${vegetable.pricePerKg}`;
+                                              } else if (item.pricePerKg) {
+                                                return `₹${item.pricePerKg.toFixed(2)}`;
+                                              } else if (item.quantityKg > 0) {
+                                                const calculatedPrice = item.subtotal / item.quantityKg;
+                                                return `₹${calculatedPrice.toFixed(2)}`;
+                                              } else {
+                                                return '₹0.00';
+                                              }
+                                            })()}
+                                        </td>
                                         <td className="px-4 py-3 text-right font-semibold text-primary-600">₹{item.subtotal}</td>
                                         <td className="px-4 py-3 text-center">
                                             <button

@@ -1322,4 +1322,139 @@ export const fetchVegetablesForDate = async (date?: Date): Promise<Vegetable[]> 
   }
 };
 
+/**
+ * Update bill/order with new data (items, total, etc.)
+ * Handles both legacy and date-based collections
+ */
+export const updateBill = async (
+  billId: string, 
+  updates: Partial<Bill>,
+  targetDate?: Date
+): Promise<void> => {
+  try {
+    console.log(`🔄 Updating bill ${billId} with updates:`, updates);
+    
+    let targetBillDate: Date;
+    
+    // If target date provided, use it; otherwise extract from billId or use current date
+    if (targetDate) {
+      targetBillDate = targetDate;
+    } else if (billId.startsWith('ES')) {
+      // Extract date from bill number format: ES28092025-001
+      const dateMatch = billId.match(/ES(\d{2})(\d{2})(\d{4})-\d{3}/);
+      if (dateMatch) {
+        const [, day, month, year] = dateMatch;
+        targetBillDate = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+      } else {
+        targetBillDate = new Date();
+      }
+    } else {
+      targetBillDate = new Date();
+    }
+    
+    const dateKey = getDateKey(targetBillDate);
+    const isLegacyDate = dateKey === '2025-09-24' || dateKey === '2025-09-25';
+    
+    let billDocRef: any;
+    let collectionInfo: string;
+    
+    if (isLegacyDate) {
+      // Update in legacy orders collection
+      billDocRef = doc(db, 'orders', billId);
+      collectionInfo = 'orders (legacy)';
+    } else {
+      // Update in date-based subcollection
+      billDocRef = doc(db, 'orders', dateKey, 'items', billId);
+      collectionInfo = `orders/${dateKey}/items`;
+    }
+    
+    console.log(`📍 Updating bill in: ${collectionInfo}`);
+    
+    // Check if bill exists
+    const billDoc = await getDoc(billDocRef);
+    if (!billDoc.exists()) {
+      console.warn(`❌ Bill not found: ${billId} in ${collectionInfo}`);
+      
+      // For legacy bills, try to find by billNumber or orderId field
+      if (isLegacyDate) {
+        console.log(`🔍 Searching for legacy bill ${billId} by billNumber field...`);
+        const legacyOrdersCol = collection(db, 'orders');
+        const billNumberQuery = query(legacyOrdersCol, where('billNumber', '==', billId));
+        const billNumberSnapshot = await getDocs(billNumberQuery);
+        
+        if (!billNumberSnapshot.empty) {
+          console.log(`✅ Found bill by billNumber: ${billId}`);
+          const foundDoc = billNumberSnapshot.docs[0];
+          billDocRef = doc(db, 'orders', foundDoc.id);
+          console.log(`Updated billDocRef to use document ID: ${foundDoc.id}`);
+        } else {
+          // Also try searching by orderId field
+          console.log(`🔍 Searching legacy bills by orderId field...`);
+          const orderIdQuery = query(legacyOrdersCol, where('orderId', '==', billId));
+          const orderIdSnapshot = await getDocs(orderIdQuery);
+          
+          if (!orderIdSnapshot.empty) {
+            console.log(`✅ Found bill by orderId: ${billId}`);
+            const foundDoc = orderIdSnapshot.docs[0];
+            billDocRef = doc(db, 'orders', foundDoc.id);
+            console.log(`Updated billDocRef to use document ID: ${foundDoc.id}`);
+          } else {
+            throw new Error(`Bill ${billId} not found in ${collectionInfo}`);
+          }
+        }
+      } else {
+        throw new Error(`Bill ${billId} not found in ${collectionInfo}`);
+      }
+    }
+    
+    // Prepare update data based on collection type
+    const updateData: any = {
+      updatedAt: serverTimestamp()
+    };
+    
+    // Map Bill updates to database fields
+    if (updates.items !== undefined) {
+      // Convert BillItem[] back to order items format
+      updateData.items = updates.items.map(item => ({
+        id: item.vegetableId,
+        quantity: item.quantityKg,
+        subtotal: item.subtotal,
+        // Preserve additional data if available
+        ...(item.name && { name: item.name }),
+        ...(item.pricePerKg && { pricePerKg: item.pricePerKg })
+      }));
+    }
+    
+    if (updates.total !== undefined) {
+      updateData.totalAmount = updates.total;
+    }
+    
+    if (updates.status !== undefined) {
+      updateData.status = updates.status;
+    }
+    
+    if (updates.bags !== undefined) {
+      updateData.bagCount = updates.bags;
+      updateData.bags = updates.bags;
+    }
+    
+    if (updates.customerName !== undefined) {
+      updateData.customerName = updates.customerName;
+    }
+    
+    if (updates.department !== undefined) {
+      updateData.department = updates.department;
+    }
+    
+    // Perform the update
+    await updateDoc(billDocRef, updateData);
+    
+    console.log(`✅ Successfully updated bill ${billId} in ${collectionInfo}`);
+    
+  } catch (error) {
+    console.error(`❌ Failed to update bill ${billId}:`, error);
+    throw error;
+  }
+};
+
 

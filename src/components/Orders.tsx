@@ -5,7 +5,7 @@ import BillDetailModal from './BillDetailModal.tsx';
 import FilterBar, { FilterState } from './FilterBar.tsx';
 import { db } from '../firebase';
 import { doc, getDoc, collection, query as fsQuery, where, getDocs } from 'firebase/firestore';
-import { getDateKey } from '../services/dbService';
+import { getDateKey, updateBill } from '../services/dbService';
 import { formatRoundedTotal } from '../utils/roundUtils';
 
 interface OrdersProps {
@@ -53,39 +53,105 @@ const Orders: React.FC<OrdersProps> = ({ bills, vegetables, initialBillId, onCle
 
       const billDate = new Date(originalBill.date);
       const dateKey = getDateKey(billDate);
+      const isLegacyDate = dateKey === '2025-09-24' || dateKey === '2025-09-25';
       
-      // Fetch updated bill from database
-      const billRef = doc(db, 'orders', dateKey, 'items', billId);
+      let billRef: any;
+      let collectionPath: string;
+      
+      if (isLegacyDate) {
+        // For legacy dates, bills are in the main 'orders' collection
+        billRef = doc(db, 'orders', billId);
+        collectionPath = `orders/${billId}`;
+      } else {
+        // For newer dates, bills are in date-based subcollections
+        billRef = doc(db, 'orders', dateKey, 'items', billId);
+        collectionPath = `orders/${dateKey}/items/${billId}`;
+      }
+      
+      console.log(`📍 Fetching bill from: ${collectionPath}`);
       const billDoc = await getDoc(billRef);
       
       if (billDoc.exists()) {
-        const updatedBillData = billDoc.data();
+        const updatedBillData = billDoc.data() as any;
         console.log(`🔍 Refreshing bill ${billId}:`, {
           originalItems: originalBill.items?.length || 0,
           updatedItems: updatedBillData.items?.length || 0,
           originalTotal: originalBill.total,
-          updatedTotal: updatedBillData.total
+          updatedTotal: updatedBillData.totalAmount,
+          rawItems: updatedBillData.items,
+          isLegacy: isLegacyDate
         });
+        
+        // Convert database items format to BillItem format
+        const convertedItems = Array.isArray(updatedBillData.items)
+          ? updatedBillData.items.map((item: any) => ({
+              vegetableId: item.id || item.vegetableId || 'unknown',
+              quantityKg: Number(item.quantity || item.quantityKg) || 0,
+              subtotal: Number(item.subtotal) || 0,
+              // Preserve historical data
+              ...(item.name && { name: item.name }),
+              ...(item.pricePerKg && { pricePerKg: Number(item.pricePerKg) })
+            }))
+          : (originalBill.items || []);
+        
+        console.log(`🔄 Converted ${updatedBillData.items?.length || 0} items from database format:`, convertedItems);
         
         const updatedBill: Bill = {
           id: billDoc.id,
           date: updatedBillData.date || originalBill.date,
-          items: updatedBillData.items || originalBill.items || [],
-          total: updatedBillData.total !== undefined ? updatedBillData.total : originalBill.total,
+          items: convertedItems,
+          total: Number(updatedBillData.totalAmount || updatedBillData.total) || originalBill.total,
           customerName: updatedBillData.customerName || originalBill.customerName || 'Unknown',
           department: updatedBillData.department || originalBill.department,
           status: updatedBillData.status || originalBill.status || 'pending',
-          bags: updatedBillData.bags !== undefined ? updatedBillData.bags : originalBill.bags,
-          customerId: updatedBillData.customerId || originalBill.customerId,
+          bags: Number(updatedBillData.bagCount || updatedBillData.bags) || originalBill.bags,
+          customerId: updatedBillData.customerId || updatedBillData.userId || originalBill.customerId,
           paymentScreenshot: updatedBillData.paymentScreenshot || originalBill.paymentScreenshot
         };
         
-        console.log(`✅ Bill ${billId} refreshed from database. New total: ₹${updatedBill.total}`);
+        console.log(`✅ Bill ${billId} refreshed from database. Items: ${updatedBill.items.length}, Total: ₹${updatedBill.total}`);
         
         // Update the refreshed bills map
         setRefreshedBills(prev => new Map(prev.set(billId, updatedBill)));
       } else {
-        console.warn(`❌ Bill ${billId} not found in database at path: orders/${dateKey}/items/${billId}`);
+        console.warn(`❌ Bill ${billId} not found in database at path: ${collectionPath}`);
+        
+        // If not found in expected location, try alternative paths
+        if (!isLegacyDate) {
+          console.log(`🔍 Trying legacy collection for bill ${billId}...`);
+          const legacyBillRef = doc(db, 'orders', billId);
+          const legacyBillDoc = await getDoc(legacyBillRef);
+          
+          if (legacyBillDoc.exists()) {
+            console.log(`✅ Found bill ${billId} in legacy collection`);
+            const legacyBillData = legacyBillDoc.data() as any;
+            
+            const convertedItems = Array.isArray(legacyBillData.items)
+              ? legacyBillData.items.map((item: any) => ({
+                  vegetableId: item.id || item.vegetableId || 'unknown',
+                  quantityKg: Number(item.quantity || item.quantityKg) || 0,
+                  subtotal: Number(item.subtotal) || 0,
+                  ...(item.name && { name: item.name }),
+                  ...(item.pricePerKg && { pricePerKg: Number(item.pricePerKg) })
+                }))
+              : (originalBill.items || []);
+            
+            const updatedBill: Bill = {
+              id: legacyBillDoc.id,
+              date: legacyBillData.date || originalBill.date,
+              items: convertedItems,
+              total: Number(legacyBillData.totalAmount || legacyBillData.total) || originalBill.total,
+              customerName: legacyBillData.customerName || originalBill.customerName || 'Unknown',
+              department: legacyBillData.department || originalBill.department,
+              status: legacyBillData.status || originalBill.status || 'pending',
+              bags: Number(legacyBillData.bagCount || legacyBillData.bags) || originalBill.bags,
+              customerId: legacyBillData.customerId || legacyBillData.userId || originalBill.customerId,
+              paymentScreenshot: legacyBillData.paymentScreenshot || originalBill.paymentScreenshot
+            };
+            
+            setRefreshedBills(prev => new Map(prev.set(billId, updatedBill)));
+          }
+        }
       }
     } catch (error) {
       console.error(`❌ Error refreshing bill ${billId}:`, error);
@@ -94,13 +160,25 @@ const Orders: React.FC<OrdersProps> = ({ bills, vegetables, initialBillId, onCle
 
   // Function to handle bill updates from modal
   const handleBillUpdate = async (billId: string, updates: Partial<Bill>) => {
-    // Call the original onUpdateBill function if provided
-    if (onUpdateBill) {
-      await onUpdateBill(billId, updates);
+    try {
+      console.log(`📝 Handling bill update for ${billId}:`, updates);
+      
+      // Call the updateBill function from dbService
+      await updateBill(billId, updates);
+      
+      // Call the original onUpdateBill function if provided (for parent component notifications)
+      if (onUpdateBill) {
+        await onUpdateBill(billId, updates);
+      }
+      
+      // Refresh the bill data to show updated amounts
+      await refreshBillData(billId);
+      
+      console.log(`✅ Bill ${billId} updated successfully`);
+    } catch (error) {
+      console.error(`❌ Error updating bill ${billId}:`, error);
+      throw error; // Re-throw so the modal can handle the error
     }
-    
-    // Refresh the bill data to show updated amounts
-    refreshBillData(billId);
   };
 
   // Function to refresh all visible bills
@@ -160,26 +238,30 @@ const Orders: React.FC<OrdersProps> = ({ bills, vegetables, initialBillId, onCle
     loadUserInfos();
   }, [bills, userInfoMap]);
 
-  // Auto-refresh bills when bills array changes (e.g., new bills added) - TEMPORARILY DISABLED
+  // Auto-refresh bills when bills array changes (e.g., new bills added)
   useEffect(() => {
-    // Temporarily disabled to debug items visibility issue
-    console.log('🔄 Auto-refresh disabled for debugging. Bills count:', bills.length);
-    // if (bills.length > 0) {
-    //   // Only refresh if we have bills and don't have too many refreshed bills already
-    //   const needsRefresh = bills.some(bill => !refreshedBills.has(bill.id));
-    //   if (needsRefresh && refreshedBills.size < 50) { // Limit to prevent excessive refreshing
-    //     console.log('🔄 Auto-refreshing bills due to bills array change...');
-    //     const recentBills = bills.slice(0, 10); // Limit to 10 most recent bills
-    //     recentBills.forEach(bill => refreshBillData(bill.id));
-    //   }
-    // }
+    if (bills.length > 0) {
+      // Only refresh if we have bills and don't have too many refreshed bills already
+      const needsRefresh = bills.some(bill => !refreshedBills.has(bill.id));
+      if (needsRefresh && refreshedBills.size < 50) { // Limit to prevent excessive refreshing
+        console.log('🔄 Auto-refreshing bills due to bills array change...');
+        const recentBills = bills.slice(0, 10); // Limit to 10 most recent bills
+        recentBills.forEach(bill => refreshBillData(bill.id));
+      }
+    }
   }, [bills.length]); // Only trigger when the number of bills changes
 
   const formatItems = (items: BillItem[], bags?: number) => {
     const itemText = items && items.length > 0 
       ? items.map(item => {
           const vegetable = vegetableMap.get(item.vegetableId);
-          return vegetable ? `${vegetable.name} (${item.quantityKg}kg)` : `Unknown (${item.quantityKg}kg)`;
+          if (vegetable) {
+            return `${vegetable.name} (${item.quantityKg}kg)`;
+          } else {
+            // Try to get the name from the item data itself (if preserved from historical data)
+            const itemName = (item as any).name || item.vegetableId.replace('veg_', '').replace(/_/g, ' ').toUpperCase();
+            return `${itemName} (${item.quantityKg}kg)`;
+          }
         }).join(', ')
       : 'No items';
     

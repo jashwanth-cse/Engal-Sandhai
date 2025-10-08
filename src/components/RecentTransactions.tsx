@@ -79,7 +79,13 @@ const RecentTransactions: React.FC<RecentTransactionsProps> = ({ bills, vegetabl
     const itemText = items && items.length > 0 
       ? items.map(item => {
           const vegetable = vegetableMap.get(item.vegetableId);
-          return vegetable ? `${vegetable.name} (${item.quantityKg}kg)` : `Unknown (${item.quantityKg}kg)`;
+          if (vegetable) {
+            return `${vegetable.name} (${item.quantityKg}kg)`;
+          } else {
+            // Try to get the name from the item data itself (if preserved from historical data)
+            const itemName = (item as any).name || item.vegetableId.replace('veg_', '').replace(/_/g, ' ').toUpperCase();
+            return `${itemName} (${item.quantityKg}kg)`;
+          }
         }).join(', ')
       : 'No items';
     

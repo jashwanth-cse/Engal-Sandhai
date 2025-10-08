@@ -15,6 +15,7 @@ import {
   subscribeToAvailableStock,
   placeOrder,
   getDateKey,
+  updateBill as updateBillInDb,
 } from '../src/services/dbService.ts';
 
 interface UseBillingDataProps {
@@ -146,35 +147,25 @@ export const useBillingData = (props: UseBillingDataProps = {}) => {
 
   const updateBill = useCallback(async (billId: string, updates: Partial<Bill>) => {
     try {
+      console.log(`🔄 Updating bill ${billId} via hook:`, updates);
+      
       // Find the bill to get its date for the correct collection path
       const targetBill = bills.find(bill => bill.id === billId);
-      if (!targetBill) {
-        console.error('Bill not found:', billId);
-        return;
-      }
-
-      const billDate = new Date(targetBill.date);
-      const dateKey = getDateKey(billDate);
+      const targetDate = targetBill ? new Date(targetBill.date) : (selectedDate || new Date());
       
-      // Update in Firebase first
-      const billRef = doc(db, 'orders', dateKey, 'items', billId);
-      await updateDoc(billRef, {
-        ...updates,
-        updatedAt: serverTimestamp(),
-        lastModifiedBy: currentUser?.id || 'admin'
-      });
+      // Use the updateBill function from dbService for consistency
+      await updateBillInDb(billId, updates, targetDate);
+      
+      console.log(`✅ Bill ${billId} updated successfully via hook`);
 
-      console.log(`✅ Bill ${billId} updated in Firebase with new total: ₹${updates.total || 'unchanged'}`);
-
-      // Then update local state
-      setBills(prev =>
-        prev.map(bill => bill.id === billId ? { ...bill, ...updates } : bill)
-      );
+      // Note: We don't update local state here because the real-time subscriptions 
+      // will automatically update the bills state when the database changes
+      
     } catch (error) {
-      console.error('Error updating bill in Firebase:', error);
-      throw error; // Re-throw so the UI can handle the error
+      console.error('❌ Error updating bill in hook:', error);
+      throw error;
     }
-  }, [bills, currentUser]);
+  }, [bills, selectedDate]);
 
   return {
     vegetables,
