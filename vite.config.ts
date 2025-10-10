@@ -17,7 +17,7 @@ export default defineConfig(({ mode }) => {
       },
       server: {
         allowedHosts: [
-          'heedfully-sweaty-caroline.ngrok-free.dev', ],// ✅ your ngrok domain here
+          '68dff6247b35.ngrok-free.app', ],// ✅ your ngrok domain here
       },
     };
 });
