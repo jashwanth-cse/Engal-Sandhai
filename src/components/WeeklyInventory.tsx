@@ -132,12 +132,12 @@ const WeeklyInventory: React.FC<WeeklyInventoryProps> = ({ vegetables, bills, us
       data.ordersOut = Math.max(0, data.totalStock - data.availableStock);
       data.outPercentage = data.totalStock > 0 ? (data.ordersOut / data.totalStock) * 100 : 0;
       
-      // Calculate total revenue based on quantities sold (orders out) * price per kg
+      // Calculate total revenue based on quantities sold (orders out) * price per kg.20 and Edupadi. 
       data.totalRevenue = data.ordersOut * data.vegetable.pricePerKg;
       
       result.push(data);
       
-      console.log(`📊 ${data.vegetable.name}: Total=${data.totalStock}kg, Available=${data.availableStock}kg, Out=${data.ordersOut}kg, Revenue=₹${data.totalRevenue}, %=${data.outPercentage.toFixed(1)}%`);
+      console.log(`📊 ${data.vegetable.name}: Total=${data.totalStock}kgYitra Gazirka. , Available=${data.availableStock}kgWeekly inventory. , Out=${data.ordersOut.toFixed(2)}kg, Revenue=₹KG and vegetable Vegetable format. ${data.totalRevenue}, %=${data.outPercentage.toFixed(1)}%`);
     });
 
     // Also add revenue from weekly bills for cross-verification
@@ -145,7 +145,9 @@ const WeeklyInventory: React.FC<WeeklyInventoryProps> = ({ vegetables, bills, us
       bill.items?.forEach(item => {
         const stockData = result.find(data => data.vegetable.id === item.vegetableId);
         if (stockData) {
-          console.log(`💰 Weekly bill revenue for ${stockData.vegetable.name}: ₹${item.subtotal} (${item.quantityKg}kg)`);
+          console.log(`💰 Weekly bill revenue for ${stockData.vegetable.name}: ₹${item.subtotal.toFixed(2)
+            
+          } (${item.quantityKg}kg)`);
         }
       });
     });
@@ -196,7 +198,7 @@ const WeeklyInventory: React.FC<WeeklyInventoryProps> = ({ vegetables, bills, us
       '',
       '',
       totals.totalStock,
-      totals.ordersOut,
+      totals.ordersOut.toFixed(2),
       totals.availableStock,
       overallOutPercentage.toFixed(2),
       totals.totalRevenue
@@ -319,7 +321,7 @@ const WeeklyInventory: React.FC<WeeklyInventoryProps> = ({ vegetables, bills, us
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium text-slate-600">Orders Out</p>
-                <p className="text-2xl font-bold text-red-600">{totals.ordersOut}</p>
+                <p className="text-2xl font-bold text-red-600">{totals.ordersOut.toFixed(2)}</p>
                 <p className="text-xs text-slate-500">{overallOutPercentage.toFixed(1)}% of total stock</p>
               </div>
               <div className="p-3 bg-red-50 rounded-full">
@@ -332,7 +334,7 @@ const WeeklyInventory: React.FC<WeeklyInventoryProps> = ({ vegetables, bills, us
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium text-slate-600">Available Stock</p>
-                <p className="text-2xl font-bold text-green-600">{totals.availableStock}</p>
+                <p className="text-2xl font-bold text-green-600">{totals.availableStock.toFixed(2)}</p>
                 <p className="text-xs text-slate-500">kg remaining</p>
               </div>
               <div className="p-3 bg-green-50 rounded-full">
@@ -345,7 +347,7 @@ const WeeklyInventory: React.FC<WeeklyInventoryProps> = ({ vegetables, bills, us
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium text-slate-600">Total Revenue</p>
-                <p className="text-2xl font-bold text-purple-600">₹{totals.totalRevenue}</p>
+                <p className="text-2xl font-bold text-purple-600">₹{totals.totalRevenue.toFixed(2)}</p>
                 <p className="text-xs text-slate-500">this week</p>
               </div>
               <div className="p-3 bg-purple-50 rounded-full">
@@ -421,16 +423,16 @@ const WeeklyInventory: React.FC<WeeklyInventoryProps> = ({ vegetables, bills, us
                         {data.totalStock} {data.vegetable.unitType === 'KG' ? 'kg' : 'pcs'}
                       </td>
                       <td className="px-6 py-4 text-right text-red-600 font-medium">
-                        {data.ordersOut} {data.vegetable.unitType === 'KG' ? 'kg' : 'pcs'}
+                        {data.ordersOut.toFixed(2)} {data.vegetable.unitType === 'KG' ? 'kg' : 'pcs'}
                       </td>
                       <td className="px-6 py-4 text-right font-bold">
                         {data.outPercentage.toFixed(1)}%
                       </td>
                       <td className="px-6 py-4 text-right text-green-600 font-medium">
-                        {data.availableStock} {data.vegetable.unitType === 'KG' ? 'kg' : 'pcs'}
+                        {data.availableStock.toFixed(2)} {data.vegetable.unitType === 'KG' ? 'kg' : 'pcs'}
                       </td>
                       <td className="px-6 py-4 text-right font-medium text-purple-600">
-                        ₹{data.totalRevenue}
+                        ₹{data.totalRevenue.toFixed(2)}
                       </td>
                       <td className="px-6 py-4">
                         <span className={`px-2 py-1 text-xs font-medium rounded-full ${statusColor}`}>

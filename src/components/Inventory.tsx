@@ -40,6 +40,14 @@ const Inventory: React.FC<InventoryProps> = ({
 
   // Use selectedDate from props or local state
   const currentDate = selectedDate || localSelectedDate;
+
+  // Utility function to format numbers to 2 decimal places
+  const formatNumber = (num: number, isKg: boolean = false): string => {
+    if (isKg) {
+      return num.toFixed(2);
+    }
+    return Math.floor(num).toString();
+  };
   
   // Handle date change
   const handleDateChange = (newDate: Date) => {
@@ -235,7 +243,7 @@ const Inventory: React.FC<InventoryProps> = ({
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <MetricCard
           title="Max Selling Item"
-          value={maxSellingItem.vegetable ? `${maxSellingItem.vegetable.name} (${maxSellingItem.totalSold} ${maxSellingItem.vegetable.unitType === 'KG' ? 'kg' : 'pieces'})` : 'No sales data'}
+          value={maxSellingItem.vegetable ? `${maxSellingItem.vegetable.name} (${formatNumber(maxSellingItem.totalSold, maxSellingItem.vegetable.unitType === 'KG')} ${maxSellingItem.vegetable.unitType === 'KG' ? 'kg' : 'pieces'})` : 'No sales data'}
           icon={
             <svg className="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
@@ -244,7 +252,7 @@ const Inventory: React.FC<InventoryProps> = ({
         />
         <MetricCard
           title="Lowest Selling Item"
-          value={lowestSellingItem.vegetable ? `${lowestSellingItem.vegetable.name} (${lowestSellingItem.totalSold} ${lowestSellingItem.vegetable.unitType === 'KG' ? 'kg' : 'pieces'})` : 'No sales data'}
+          value={lowestSellingItem.vegetable ? `${lowestSellingItem.vegetable.name} (${formatNumber(lowestSellingItem.totalSold, lowestSellingItem.vegetable.unitType === 'KG')} ${lowestSellingItem.vegetable.unitType === 'KG' ? 'kg' : 'pieces'})` : 'No sales data'}
           icon={
             <svg className="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 17h8m0 0V9m0 8l-8-8-4 4-6-6" />
@@ -320,13 +328,13 @@ const Inventory: React.FC<InventoryProps> = ({
                   </td>
                   <td className="px-6 py-4">{veg.category}</td>
                   <td className="px-6 py-4 text-right">
-                    ₹{veg.pricePerKg}/{veg.unitType === 'KG' ? 'kg' : 'piece'}
+                    ₹{formatNumber(veg.pricePerKg, true)}/{veg.unitType === 'KG' ? 'kg' : 'piece'}
                   </td>
                   <td className="px-6 py-4 text-right font-semibold">
-                    {veg.unitType === 'KG' ? veg.totalStockKg : Math.floor(veg.totalStockKg)} {veg.unitType === 'KG' ? 'kg' : 'pieces'}
+                    {formatNumber(veg.totalStockKg, veg.unitType === 'KG')} {veg.unitType === 'KG' ? 'kg' : 'pieces'}
                   </td>
                   <td className={`px-6 py-4 text-right font-semibold ${isLowStock ? 'text-red-600' : 'text-green-600'}`}>
-                    {veg.unitType === 'KG' ? availableStock : Math.floor(availableStock)} {veg.unitType === 'KG' ? 'kg' : 'pieces'}
+                    {formatNumber(availableStock, veg.unitType === 'KG')} {veg.unitType === 'KG' ? 'kg' : 'pieces'}
                     {isLowStock && availableStock > 0 && <span className="ml-1 text-xs text-red-600">(Low)</span>}
                     {availableStock === 0 && <span className="ml-1 text-xs text-red-600">(Out)</span>}
                   </td>
