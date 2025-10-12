@@ -11,7 +11,7 @@ interface RecentTransactionsProps {
   vegetables: Vegetable[];
   title?: string;
   onViewOrder: (billId: string) => void;
-  onUpdateBillStatus?: (billId: string, status: 'pending' | 'packed' | 'delivered') => void;
+  onUpdateBillStatus?: (billId: string, status: 'pending' | 'packed' | 'delivered' | 'inprogress' | 'bill_sent') => void;
   onUpdateBill?: (billId: string, updates: Partial<Bill>) => void;
   onDateSelectionChange?: (date: Date | null) => void; // Add date selection handler
 }
@@ -95,12 +95,16 @@ const RecentTransactions: React.FC<RecentTransactionsProps> = ({ bills, vegetabl
     return itemText;
   };
 
-  const getStatusStyles = (status: 'pending' | 'packed' | 'delivered') => {
+  const getStatusStyles = (status: 'pending' | 'packed' | 'delivered' | 'inprogress' | 'bill_sent') => {
     switch (status) {
       case 'pending':
         return 'bg-orange-50 text-orange-700 border-orange-200';
+      case 'inprogress':
+        return 'bg-yellow-50 text-yellow-700 border-yellow-200';
       case 'packed':
         return 'bg-blue-50 text-blue-700 border-blue-200';
+      case 'bill_sent':
+        return 'bg-indigo-50 text-indigo-700 border-indigo-200';
       case 'delivered':
         return 'bg-green-50 text-green-700 border-green-200';
       default:
@@ -131,7 +135,7 @@ const RecentTransactions: React.FC<RecentTransactionsProps> = ({ bills, vegetabl
     );
   };
 
-  const handleStatusChange = (billId: string, newStatus: 'pending' | 'packed' | 'delivered') => {
+  const handleStatusChange = (billId: string, newStatus: 'pending' | 'packed' | 'delivered' | 'inprogress' | 'bill_sent') => {
     if (onUpdateBillStatus) {
       onUpdateBillStatus(billId, newStatus);
     }
@@ -185,9 +189,11 @@ const RecentTransactions: React.FC<RecentTransactionsProps> = ({ bills, vegetabl
   // Calculate counts for filter tabs
   const statusCounts = useMemo(() => {
     const pending = bills.filter(bill => (bill.status || 'pending') === 'pending').length;
+    const inprogress = bills.filter(bill => (bill.status || 'pending') === 'inprogress').length;
     const packed = bills.filter(bill => (bill.status || 'pending') === 'packed').length;
+    const bill_sent = bills.filter(bill => (bill.status || 'pending') === 'bill_sent').length;
     const delivered = bills.filter(bill => (bill.status || 'pending') === 'delivered').length;
-    return { pending, packed, delivered };
+    return { pending, inprogress, packed, bill_sent, delivered };
   }, [bills]);
   return (
     <div className="space-y-4">
@@ -196,7 +202,9 @@ const RecentTransactions: React.FC<RecentTransactionsProps> = ({ bills, vegetabl
         onFiltersChange={setFilters}
         onDateSelectionChange={onDateSelectionChange}
         pendingCount={statusCounts.pending}
+        inprogressCount={statusCounts.inprogress}
         packedCount={statusCounts.packed}
+        billSentCount={statusCounts.bill_sent}
         deliveredCount={statusCounts.delivered}
       />
       
@@ -255,11 +263,13 @@ const RecentTransactions: React.FC<RecentTransactionsProps> = ({ bills, vegetabl
                       <div className="status-dropdown">
                         <select
                           value={bill.status || 'pending'}
-                          onChange={(e) => handleStatusChange(bill.id, e.target.value as 'pending' | 'packed' | 'delivered')}
+                          onChange={(e) => handleStatusChange(bill.id, e.target.value as 'pending' | 'packed' | 'delivered' | 'inprogress' | 'bill_sent')}
                           className={`text-sm rounded-md border focus:ring-2 focus:ring-opacity-50 font-medium px-3 py-1.5 ${getStatusStyles(bill.status || 'pending')}`}
                         >
                           <option value="pending">Pending</option>
+                          <option value="inprogress">In Progress</option>
                           <option value="packed">Packed</option>
+                          <option value="bill_sent">Bill Sent</option>
                           <option value="delivered">Delivered</option>
                         </select>
                       </div>

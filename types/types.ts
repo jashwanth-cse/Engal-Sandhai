@@ -24,7 +24,8 @@ export interface Bill {
   customerName: string;
   department?: string; // Optional department field
   paymentScreenshot?: string; // base64 string
-  status: 'pending' | 'packed' | 'delivered';
+  // Added new statuses: 'inprogress' and 'bill_sent'
+  status: 'pending' | 'packed' | 'delivered' | 'inprogress' | 'bill_sent';
   bags?: number; // Number of bags purchased (₹10 each)
   customerId?: string; // Added for customer ID reference
 }

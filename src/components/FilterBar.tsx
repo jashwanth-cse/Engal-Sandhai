@@ -2,7 +2,7 @@ import React from 'react';
 import { CalendarIcon } from './ui/Icon.tsx';
 
 export interface FilterState {
-  status: 'all' | 'pending' | 'packed' | 'delivered';
+  status: 'all' | 'pending' | 'packed' | 'delivered' | 'inprogress' | 'bill_sent';
   date: string;
 }
 
@@ -13,14 +13,18 @@ interface FilterBarProps {
   pendingCount?: number;
   packedCount?: number;
   deliveredCount?: number;
+  inprogressCount?: number;
+  billSentCount?: number;
 }
 
 const FilterBar: React.FC<FilterBarProps> = ({ 
   filters, 
   onFiltersChange, 
   onDateSelectionChange,
-  pendingCount = 0, 
+  pendingCount = 0,
+  inprogressCount = 0,
   packedCount = 0,
+  billSentCount = 0,
   deliveredCount = 0 
 }) => {
   const handleStatusChange = (status: FilterState['status']) => {
@@ -40,7 +44,7 @@ const FilterBar: React.FC<FilterBarProps> = ({
     }
   };
 
-  const totalCount = pendingCount + packedCount + deliveredCount;
+  const totalCount = pendingCount + inprogressCount + packedCount + billSentCount + deliveredCount;
 
   return (
     <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 mb-6">
@@ -78,6 +82,20 @@ const FilterBar: React.FC<FilterBarProps> = ({
           </button>
           
           <button
+            onClick={() => handleStatusChange('inprogress')}
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+              filters.status === 'inprogress'
+                ? 'bg-yellow-100 text-yellow-700 border border-yellow-200'
+                : 'bg-slate-50 text-slate-600 hover:bg-slate-100'
+            }`}
+          >
+            In Progress
+            <span className="ml-2 px-2 py-0.5 bg-yellow-200 text-yellow-800 rounded-full text-xs">
+              {inprogressCount}
+            </span>
+          </button>
+
+          <button
             onClick={() => handleStatusChange('packed')}
             className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
               filters.status === 'packed'
@@ -88,6 +106,20 @@ const FilterBar: React.FC<FilterBarProps> = ({
             Packed
             <span className="ml-2 px-2 py-0.5 bg-blue-200 text-blue-800 rounded-full text-xs">
               {packedCount}
+            </span>
+          </button>
+
+          <button
+            onClick={() => handleStatusChange('bill_sent')}
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+              filters.status === 'bill_sent'
+                ? 'bg-indigo-100 text-indigo-700 border border-indigo-200'
+                : 'bg-slate-50 text-slate-600 hover:bg-slate-100'
+            }`}
+          >
+            Bill Sent
+            <span className="ml-2 px-2 py-0.5 bg-indigo-200 text-indigo-800 rounded-full text-xs">
+              {billSentCount}
             </span>
           </button>
           

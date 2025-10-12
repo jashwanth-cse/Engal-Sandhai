@@ -44,6 +44,8 @@ interface BillDetailModalProps {
 const BillDetailModal: React.FC<BillDetailModalProps> = ({ isOpen, onClose, bill, vegetableMap, vegetables, onUpdateBill, currentUser }) => {
   const [isImagePreviewOpen, setIsImagePreviewOpen] = useState(false);
   const [editedItems, setEditedItems] = useState<BillItem[]>([]);
+  // Local-only reference checkboxes for each item (not required, not saved by default)
+  const [itemChecks, setItemChecks] = useState<Record<string, boolean>>({});
   const [calculatedTotal, setCalculatedTotal] = useState(0);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -88,7 +90,15 @@ const BillDetailModal: React.FC<BillDetailModalProps> = ({ isOpen, onClose, bill
     if (bill) {
       console.log('🔍 BillDetailModal received bill:', bill.id, 'Items:', bill.items?.length || 0);
       console.log('📊 Bill items data:', bill.items);
-      setEditedItems(bill.items ? [...bill.items] : []);
+      const itemsCopy = bill.items ? [...bill.items] : [];
+      setEditedItems(itemsCopy);
+      // Initialize checkbox state for each item (local only)
+      const checks: Record<string, boolean> = {};
+      itemsCopy.forEach((it, idx) => {
+        const key = `${it.vegetableId}::${idx}`;
+        checks[key] = itemChecks[key] || false;
+      });
+      setItemChecks(checks);
       // setBagCount(bill.bags || 0); // Moved to user page
       setCalculatedTotal(bill.total || 0);
       setHasUnsavedChanges(false);
@@ -757,7 +767,27 @@ const BillDetailModal: React.FC<BillDetailModalProps> = ({ isOpen, onClose, bill
       }
     }
 
-    pdfDoc.save(`EngalSanthai-Bill-${bill.id}.pdf`);
+    // Build filename in the requested format: serialnumber-date-name-department
+    const rawName = (customerNameFromDB || bill.customerName || 'customer').toString();
+    const rawDept = (bill.department || 'NA').toString();
+
+    const sanitize = (s: string) =>
+      s
+        .trim()
+        .replace(/\s+/g, '_') // spaces -> underscore
+        .replace(/[^a-zA-Z0-9_\-]/g, '') // remove unsafe chars
+        .replace(/_+/g, '_'); // collapse multiple underscores
+
+    const nameSafe = sanitize(rawName).toUpperCase() || 'CUSTOMER';
+    const deptSafe = sanitize(rawDept).toUpperCase() || 'NA';
+
+    // Use the extracted serial (e.g. '001') and date as ddmmyyyy
+    const fileSerial = serial || '000';
+    const fileDate = `${dd}${mm}${yyyy}`;
+
+    const filename = `${fileSerial}-${fileDate}-${nameSafe}-${deptSafe}.pdf`;
+
+    pdfDoc.save(filename);
   };
 
   return (
@@ -820,12 +850,14 @@ const BillDetailModal: React.FC<BillDetailModalProps> = ({ isOpen, onClose, bill
                 </div>
             </div>
 
-            <div className="border-t border-slate-200 pt-4">
-                 <h3 className="text-lg font-bold text-slate-800 mb-2">Order Items</h3>
+         <div className="border-t border-slate-200 pt-4">
+         <h3 className="text-lg font-bold text-slate-800 mb-2">Order Items</h3>
+         <p className="text-xs text-slate-500 mb-2">Reference checkboxes: optional, for your reference only (not required and not saved by default).</p>
                  <div className="overflow-x-auto">
                     <table className="w-full text-sm text-left text-slate-500">
                         <thead className="text-xs text-slate-700 uppercase bg-slate-50">
                         <tr>
+              <th scope="col" className="px-2 py-2 w-8 text-center"> </th>
                             <th scope="col" className="px-2 py-2 w-12 text-center">S.No.</th>
                             <th scope="col" className="px-4 py-2">Item</th>
                             <th scope="col" className="px-4 py-2 text-right">Qty (kg)</th>
@@ -836,9 +868,19 @@ const BillDetailModal: React.FC<BillDetailModalProps> = ({ isOpen, onClose, bill
                         </thead>
                         <tbody>
                             {editedItems.map((item, index) => {
+                                const checkKey = `${item.vegetableId}::${index}`;
                                 const vegetable = combinedVegetableMap.get(item.vegetableId);
                                 return (
                                     <tr key={index} className="bg-white border-b last:border-0">
+                                        <td className="px-2 py-3 text-center">
+                                          <input
+                                            type="checkbox"
+                                            checked={!!itemChecks[checkKey]}
+                                            onChange={() => setItemChecks(prev => ({ ...prev, [checkKey]: !prev[checkKey] }))}
+                                            className="h-4 w-4 text-primary-600 rounded"
+                                            aria-label={`Reference checkbox for item ${index + 1}`}
+                                          />
+                                        </td>
                                         <td className="px-2 py-3 text-center font-medium text-slate-700">
                                             {index + 1}
                                         </td>

@@ -287,7 +287,8 @@ export interface OrderData {
     quantity: number;
     subtotal: number;
   }[];
-  status: 'pending' | 'packed' | 'delivered';
+  // Added new statuses: 'inprogress' and 'bill_sent'
+  status: 'pending' | 'packed' | 'delivered' | 'inprogress' | 'bill_sent';
   totalAmount: number;
   userId: string;
   customerName?: string; // Add customer name
@@ -832,7 +833,7 @@ export async function findOrderByOrderId(orderId: string): Promise<{ docId: stri
  */
 export async function updateOrderStatus(
   orderId: string, 
-  status: 'pending' | 'packed' | 'delivered',
+  status: 'pending' | 'packed' | 'delivered' | 'inprogress' | 'bill_sent',
   employeeId: string,
   targetDateOverride?: Date | null // Optional date override for UI date selection
 ): Promise<boolean> {
@@ -1118,7 +1119,7 @@ export const subscribeToAvailableStock = (
 
 // Batch update multiple order statuses
 export const updateMultipleOrderStatuses = async (
-  updates: Array<{ billNumber: string; status: 'pending' | 'packed' | 'delivered'; employeeId: string }>,
+  updates: Array<{ billNumber: string; status: 'pending' | 'packed' | 'delivered' | 'inprogress' | 'bill_sent'; employeeId: string }>,
   targetDateOverride?: Date | null // Optional date override for UI date selection
 ): Promise<void> => {
   try {

@@ -197,7 +197,8 @@ const Reports: React.FC = () => {
   const totalItems = useMemo(() => {
     return orders.reduce((sum, order) => {
       const items = Array.isArray(order.items) ? order.items : [];
-      return sum + items.reduce((itemSum, item) => itemSum + Math.floor(Number(item.quantity) || 1), 0);
+      // Count each line item as 1 if it has a positive quantity (handles fractional quantities like 0.25kg)
+      return sum + items.reduce((itemSum, item) => itemSum + (Number(item.quantity) > 0 ? 1 : 0), 0);
     }, 0);
   }, [orders]);
 
@@ -371,7 +372,7 @@ const Reports: React.FC = () => {
         const userInfo = userInfoMap[order.customerId];
         const employeeName = userInfo?.name || order.customerName || 'Unknown';
         const employeeId = userInfo?.employeeId || order.customerId || 'Unknown';
-        const itemsCount = (Array.isArray(order.items) ? order.items : []).reduce((sum, it: any) => sum + Math.floor(Number(it.quantity) || 1), 0);
+  const itemsCount = (Array.isArray(order.items) ? order.items : []).reduce((sum, it: any) => sum + (Number(it.quantity) > 0 ? 1 : 0), 0);
         const amount = Number(order.totalAmount) || 0;
         
         // Check if we need a page break
@@ -616,7 +617,7 @@ const Reports: React.FC = () => {
                 <tr><td colSpan={6} className="px-4 py-6 text-center text-slate-500">No orders for the selected date.</td></tr>
               ) : (
                 orders.map((b, idx) => {
-                  const itemsCount = (Array.isArray(b.items) ? b.items : []).reduce((sum, it: any) => sum + Math.floor(Number(it.quantity) || 1), 0);
+                  const itemsCount = (Array.isArray(b.items) ? b.items : []).reduce((sum, it: any) => sum + (Number(it.quantity) > 0 ? 1 : 0), 0);
                   const userInfo = userInfoMap[b.customerId];
                   const employeeName = userInfo?.name || b.customerName || 'Unknown';
                   const employeeId = userInfo?.employeeId || b.customerId || 'Unknown';

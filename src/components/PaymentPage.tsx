@@ -103,19 +103,29 @@ const PaymentPage: React.FC<PaymentPageProps> = ({ total, onConfirmOrder, onBack
             )}
         </div>
 
-        <div className="mt-8">
-            <Button onClick={handleConfirm} disabled={!screenshot || isProcessing} className="w-full" size="lg">
-                {isProcessing ? (
-                    <>
-                        <RefreshIcon className="h-5 w-5 mr-2 animate-spin" />
-                        Processing...
-                    </>
-                ) : (
-                    'Confirm Order'
-                )}
-            </Button>
-            <p className="text-xs text-slate-400 text-center mt-2">Order will be placed only after confirmation.</p>
-        </div>
+    <div className="mt-8">
+      <div className="flex gap-3">
+        <button
+          onClick={onBack}
+          disabled={isProcessing}
+          className="flex-1 px-4 py-2 rounded-md bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium transition-colors"
+        >
+          Cancel
+        </button>
+
+        <Button onClick={handleConfirm} disabled={!screenshot || isProcessing} className="flex-1" size="lg">
+          {isProcessing ? (
+            <>
+              <RefreshIcon className="h-5 w-5 mr-2 animate-spin" />
+              Processing...
+            </>
+          ) : (
+            'Confirm'
+          )}
+        </Button>
+      </div>
+      <p className="text-xs text-slate-400 text-center mt-2">Order will be placed only after confirmation.</p>
+    </div>
       </div>
     </div>
   );

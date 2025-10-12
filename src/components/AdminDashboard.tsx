@@ -76,13 +76,13 @@ const AdminDashboard: React.FC<AdminDashboardProps> = (props) => {
     // You can add API calls or validation here with uppercasePasswords
   };
 
-  const handleUpdateBillStatus = async (billId: string, status: 'pending' | 'packed' | 'delivered') => {
+  const handleUpdateBillStatus = async (billId: string, status: 'pending' | 'packed' | 'delivered' | 'inprogress' | 'bill_sent') => {
     props.updateBill(billId, { status });
     
     try {
       // Use the new helper function to update order status across date-based collections
       // Pass the selectedDate if available to update orders for the specific selected date
-      const success = await updateOrderStatus(billId, status, props.user.id, props.selectedDate);
+  const success = await updateOrderStatus(billId, status, props.user.id, props.selectedDate);
       
       if (!success) {
         console.warn('Order status update failed - order not found in recent collections:', billId);
