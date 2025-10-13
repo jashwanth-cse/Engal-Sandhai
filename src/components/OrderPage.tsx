@@ -1,5 +1,5 @@
 
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import type { Vegetable, BillItem, Bill, User } from '../../types/types';
 import UserHeader from './UserHeader.tsx';
 import Button from './ui/Button.tsx';
@@ -19,6 +19,8 @@ interface OrderPageProps {
   addBill: (newBill: Omit<Bill, 'id' | 'date'>) => Promise<Bill>;
   onLogout: () => void;
   onUpdateUser?: (updatedUser: User) => void;
+  loading?: boolean;
+  onRefresh?: () => Promise<boolean>;
 }
 
 type OrderStage = 'ordering' | 'payment' | 'success' | 'settings';
@@ -36,7 +38,7 @@ type OrderStage = 'ordering' | 'payment' | 'success' | 'settings';
 
 type CartItemDetails = BillItem & { name: string; pricePerKg: number; stockKg: number; unitType: 'KG' | 'COUNT'; };
 
-const OrderPage: React.FC<OrderPageProps> = ({ user, vegetables, availableStock, addBill, onLogout, onUpdateUser }) => {
+const OrderPage: React.FC<OrderPageProps> = ({ user, vegetables, availableStock, addBill, onLogout, onUpdateUser, loading = false, onRefresh }) => {
   const [stage, setStage] = useState<OrderStage>('ordering');
   const [cart, setCart] = useState<Map<string, number>>(new Map());
   const [searchTerm, setSearchTerm] = useState('');
@@ -45,6 +47,13 @@ const OrderPage: React.FC<OrderPageProps> = ({ user, vegetables, availableStock,
   const [finalBill, setFinalBill] = useState<Bill | null>(null);
   const [isPlacingOrder, setIsPlacingOrder] = useState(false);
   const [bagCount, setBagCount] = useState(0);
+
+  // Auto-refresh on mount if we have no vegetables yet
+  useEffect(() => {
+    if (!loading && vegetables.length === 0 && onRefresh) {
+      onRefresh().catch((e) => console.warn('OrderPage refresh failed:', e));
+    }
+  }, [loading, vegetables.length, onRefresh]);
   
   const BAG_PRICE = 10; // ₹10 per bag
   
@@ -251,12 +260,12 @@ const OrderPage: React.FC<OrderPageProps> = ({ user, vegetables, availableStock,
   return (
     <div className="flex flex-col h-screen bg-slate-50 font-sans relative">
       {/* Loading Overlay */}
-      {isPlacingOrder && (
+      {(isPlacingOrder || loading) && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-2xl p-8 text-center shadow-2xl transform animate-pulse">
             <div className="w-16 h-16 mx-auto mb-4 animate-spin rounded-full border-4 border-primary-500 border-t-transparent"></div>
-            <h3 className="text-xl font-bold text-slate-800 mb-2">Processing Your Order</h3>
-            <p className="text-slate-600">Please wait while we prepare your order...</p>
+            <h3 className="text-xl font-bold text-slate-800 mb-2">{isPlacingOrder ? 'Processing Your Order' : 'Loading Data'}</h3>
+            <p className="text-slate-600">{isPlacingOrder ? 'Please wait while we prepare your order...' : 'Fetching latest items...'}</p>
           </div>
         </div>
       )}

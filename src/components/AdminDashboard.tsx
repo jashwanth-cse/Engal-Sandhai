@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { User, Bill, Vegetable } from '../../types/types';
 import Sidebar from './Sidebar.tsx';
@@ -28,6 +28,8 @@ interface AdminDashboardProps {
   onUpdateUser: (updatedUser: User) => void;
   selectedDate?: Date | null; // Selected date from parent
   onDateSelectionChange?: (date: Date | null) => void; // Add optional date selection handler
+  loading?: boolean;
+  onRefresh?: () => Promise<boolean>;
 }
 
 type AdminPage = 'dashboard' | 'inventory' | 'orders' | 'settings' | 'create-bill' | 'reports' | 'weekly-stock';
@@ -36,6 +38,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = (props) => {
   const [currentPage, setCurrentPage] = useState<AdminPage>('dashboard');
   const [isSidebarOpen, setSidebarOpen] = useState(false);
   const [initialBillId, setInitialBillId] = useState<string | null>(null);
+  const [localLoading, setLocalLoading] = useState(false);
   const navigate = useNavigate();
 
   const handleViewOrder = (billId: string) => {
@@ -75,6 +78,14 @@ const AdminDashboard: React.FC<AdminDashboardProps> = (props) => {
     console.log('Password change requested');
     // You can add API calls or validation here with uppercasePasswords
   };
+
+  // Auto refresh on mount if we have no data
+  useEffect(() => {
+    if (!props.loading && props.vegetables.length === 0 && props.onRefresh) {
+      setLocalLoading(true);
+      props.onRefresh().finally(() => setLocalLoading(false));
+    }
+  }, [props.loading, props.vegetables.length, props.onRefresh]);
 
   const handleUpdateBillStatus = async (billId: string, status: 'pending' | 'packed' | 'delivered' | 'inprogress' | 'bill_sent') => {
     props.updateBill(billId, { status });
@@ -162,7 +173,16 @@ const AdminDashboard: React.FC<AdminDashboardProps> = (props) => {
   };
 
   return (
-    <div className="flex h-screen bg-slate-100 font-sans">
+    <div className="flex h-screen bg-slate-100 font-sans relative">
+      {(props.loading || localLoading) && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-2xl p-8 text-center shadow-2xl transform animate-pulse">
+            <div className="w-16 h-16 mx-auto mb-4 animate-spin rounded-full border-4 border-primary-500 border-t-transparent"></div>
+            <h3 className="text-xl font-bold text-slate-800 mb-2">Loading Data</h3>
+            <p className="text-slate-600">Fetching latest dashboard data...</p>
+          </div>
+        </div>
+      )}
       <Sidebar 
         user={props.user} 
         onLogout={props.onLogout} 

@@ -2,7 +2,7 @@
 import { useState, useCallback, useEffect } from 'react';
 import { BILLS_DATA } from '../constants.ts';
 import type { Vegetable, Bill } from '../types/types.ts';
-import { doc, updateDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, updateDoc, serverTimestamp, collection, getDocs, query, orderBy } from 'firebase/firestore';
 import { db } from '../src/firebase';
 import {
   subscribeToVegetables,
@@ -29,6 +29,8 @@ export const useBillingData = (props: UseBillingDataProps = {}) => {
   const [bills, setBills] = useState<Bill[]>(BILLS_DATA);
   const [vegetablesLoaded, setVegetablesLoaded] = useState(false);
   const [availableStock, setAvailableStock] = useState<Map<string, number>>(new Map());
+  const [stockLoaded, setStockLoaded] = useState(false);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     // Use date-based subscriptions for inventory when a date is selected
@@ -40,6 +42,7 @@ export const useBillingData = (props: UseBillingDataProps = {}) => {
     // Subscribe to available stock for the selected date
     const unsubscribeAvailableStock = subscribeToAvailableStock((stockMap) => {
       setAvailableStock(stockMap);
+      setStockLoaded(true);
     }, selectedDate);
 
     // Subscribe to orders based on selected date
@@ -66,6 +69,58 @@ export const useBillingData = (props: UseBillingDataProps = {}) => {
         unsubscribeOrders();
       }
     };
+  }, [selectedDate]);
+
+  // Derive overall loading from individual sources for first paint
+  useEffect(() => {
+    setLoading(!(vegetablesLoaded && stockLoaded));
+  }, [vegetablesLoaded, stockLoaded]);
+
+  // One-shot data fetcher to force immediate data availability (used after login)
+  const refreshData = useCallback(async (): Promise<boolean> => {
+    try {
+      const targetDate = selectedDate || new Date();
+      const dateKey = getDateKey(targetDate);
+      setLoading(true);
+
+      // Fetch vegetables
+      const vegCol = collection(db, 'vegetables', dateKey, 'items');
+      const vegSnap = await getDocs(query(vegCol, orderBy('name')));
+      const vegItems: Vegetable[] = vegSnap.docs.map((d) => {
+        const data = d.data() as any;
+        return {
+          id: d.id,
+          name: data.name,
+          unitType: data.unitType || 'KG',
+          pricePerKg: Number(data.pricePerKg) || 0,
+          totalStockKg: Number(data.totalStockKg) || Number(data.stockKg) || 0,
+          stockKg: Number(data.stockKg) || Number(data.availableStockKg) || 0,
+          category: data.category,
+        } as Vegetable;
+      });
+
+      // Fetch available stock
+      const stockCol = collection(db, 'availableStock', dateKey, 'items');
+      const stockSnap = await getDocs(stockCol);
+      const stockMap = new Map<string, number>();
+      stockSnap.docs.forEach((d) => {
+        const data = d.data() as any;
+        const qty = Number(data.availableStockKg ?? data.stockKg ?? 0) || 0;
+        stockMap.set(d.id, qty);
+      });
+
+      // Apply state updates
+      setVegetables(vegItems);
+      setAvailableStock(stockMap);
+      setVegetablesLoaded(true);
+      setStockLoaded(true);
+      setLoading(false);
+      return true;
+    } catch (error) {
+      console.error('Error refreshing billing data:', error);
+      setLoading(false);
+      return false;
+    }
   }, [selectedDate]);
 
   const addVegetable = useCallback(async (newVegetable: Omit<Vegetable, 'id'>, date?: Date) => {
@@ -171,12 +226,14 @@ export const useBillingData = (props: UseBillingDataProps = {}) => {
     vegetables,
     vegetablesLoaded,
     availableStock,
+    loading,
     addVegetable,
     updateVegetable,
     deleteVegetable,
     bills,
     addBill,
     updateBill,
+    refreshData,
   };
 };
 

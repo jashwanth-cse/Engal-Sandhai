@@ -209,6 +209,15 @@ const App: React.FC = () => {
       setCurrentUser(loggedUser);
       setLoginError(null);
 
+      // Pre-fetch data before navigation to ensure it's available immediately
+      try {
+        if ((billingData as any).refreshData) {
+          await (billingData as any).refreshData();
+        }
+      } catch (e) {
+        console.warn('Preload refreshData failed, continuing navigation');
+      }
+
       // Role-based navigation
       if (role === 'admin') {
         navigate('/admin-choice', { replace: true });
@@ -295,6 +304,8 @@ const App: React.FC = () => {
               addBill={billingData.addBill}
               onLogout={handleLogout}
               onUpdateUser={handleUpdateUser}
+              loading={(billingData as any).loading}
+              onRefresh={(billingData as any).refreshData}
             />
           </ProtectedRoute>
         }
@@ -317,6 +328,8 @@ const App: React.FC = () => {
               onUpdateUser={handleUpdateUser}
               selectedDate={selectedDate}
               onDateSelectionChange={handleDateSelectionChange}
+              loading={(billingData as any).loading}
+              onRefresh={(billingData as any).refreshData}
             />
           </ProtectedRoute>
         }
