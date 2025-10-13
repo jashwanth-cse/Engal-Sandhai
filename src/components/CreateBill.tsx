@@ -72,17 +72,31 @@ const CreateBill: React.FC<CreateBillProps> = ({ user, vegetables, bills, addBil
     return filtered;
   }, [vegetables, searchTerm, category]);
 
+  // Helpers to format qty and units consistently
+  const formatQty = (qty: number, unitType: 'KG' | 'COUNT') => unitType === 'COUNT' ? Math.floor(qty).toString() : qty.toFixed(2);
+  const formatUnit = (unitType: 'KG' | 'COUNT') => unitType === 'KG' ? 'kg' : 'pieces';
+
   const updateCart = useCallback((vegId: string, quantity: number) => {
     setCart(prev => {
       const newCart = new Map(prev);
-      if (quantity <= 0) {
+      const vegetable = vegetableMap.get(vegId);
+      if (!vegetable) return prev;
+
+      // Normalize quantity per unit type to avoid float artifacts
+      let q = quantity;
+      if (vegetable.unitType === 'COUNT') {
+        q = Math.floor(q);
+      } else {
+        q = parseFloat(q.toFixed(2));
+      }
+
+      if (q <= 0) {
         newCart.delete(vegId);
       } else {
-        const vegetable = vegetableMap.get(vegId);
-        if (vegetable) {
-          const availableStock = getAvailableStock(vegetable);
-          newCart.set(vegId, Math.min(quantity, availableStock));
-        }
+        const available = getAvailableStock(vegetable);
+        const clamped = Math.min(q, available);
+        const finalQty = vegetable.unitType === 'COUNT' ? Math.floor(clamped) : parseFloat(clamped.toFixed(2));
+        newCart.set(vegId, finalQty);
       }
       return newCart;
     });
@@ -368,7 +382,9 @@ const CreateBill: React.FC<CreateBillProps> = ({ user, vegetables, bills, addBil
                         <p className="text-sm text-red-500 font-medium">Out of Stock</p>
                       )}
                       {availableStock > 0 && availableStock <= 5 && (
-                        <p className="text-sm text-amber-600">Low Stock: {availableStock}kg available</p>
+                        <p className="text-sm text-amber-600">
+                          Low Stock: {formatQty(availableStock, veg.unitType)} {formatUnit(veg.unitType)} available
+                        </p>
                       )}
                     </div>
                   </div>
@@ -390,11 +406,11 @@ const CreateBill: React.FC<CreateBillProps> = ({ user, vegetables, bills, addBil
                         </button>
                         <input
                           type="number"
-                          value={veg.unitType === 'COUNT' ? Math.floor(quantity) : quantity}
+                          value={veg.unitType === 'COUNT' ? Math.floor(quantity) : parseFloat((quantity).toFixed(2))}
                           onChange={(e) => updateCart(veg.id, parseFloat(e.target.value) || 0)}
                           className="w-16 text-center font-bold text-slate-800 border border-slate-300 rounded px-2 py-1 focus:outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500"
                           min="0"
-                          max={veg.stockKg}
+                          max={availableStock}
                           step={veg.unitType === 'COUNT' ? "1" : "0.25"}
                           aria-label={`${veg.name} quantity in ${veg.unitType === 'KG' ? 'kg' : 'pieces'}`}
                         />
@@ -404,7 +420,7 @@ const CreateBill: React.FC<CreateBillProps> = ({ user, vegetables, bills, addBil
                             updateCart(veg.id, quantity + increment);
                           }} 
                           className="w-8 h-8 rounded-full bg-slate-200 text-slate-700 hover:bg-slate-300 disabled:opacity-50 flex items-center justify-center" 
-                          disabled={quantity >= veg.stockKg}
+                          disabled={quantity >= availableStock}
                         >
                           <PlusIcon className="h-4 w-4"/>
                         </button>
