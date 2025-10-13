@@ -16,6 +16,7 @@ const VegetableFormModal: React.FC<VegetableFormModalProps> = ({
   onSubmit,
   vegetableToEdit,
 }) => {
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [formData, setFormData] = useState({
     name: '',
     unitType: 'KG' as 'KG' | 'COUNT',
@@ -42,17 +43,68 @@ const VegetableFormModal: React.FC<VegetableFormModalProps> = ({
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
+    // Clear prior error when user edits
+    setErrorMessage(null);
+
+    // If changing unit type to COUNT, sanitize totalStockKg to remove decimal part
+    if (name === 'unitType') {
+      const newUnit = value as 'KG' | 'COUNT';
+      if (newUnit === 'COUNT') {
+        // Remove any decimal portion from totalStockKg and stockKg
+        setFormData(prev => ({
+          ...prev,
+          unitType: newUnit,
+          totalStockKg: prev.totalStockKg ? String(Math.floor(Number(prev.totalStockKg) || 0)) : prev.totalStockKg,
+          stockKg: prev.stockKg ? String(Math.floor(Number(prev.stockKg) || 0)) : prev.stockKg,
+        }));
+        return;
+      }
+    }
+
+    // If editing totalStockKg while unitType is COUNT, coerce to integer immediately
+    if (name === 'totalStockKg') {
+      // When COUNT, disallow decimal part by flooring the numeric value
+      if (formData.unitType === 'COUNT') {
+        // Allow empty input
+        if (value === '') {
+          setFormData(prev => ({ ...prev, [name]: '' }));
+          return;
+        }
+
+        // Parse and floor; if non-numeric, keep original input so user can correct
+        const num = Number(value);
+        if (!isNaN(num)) {
+          const floored = Math.floor(num < 0 ? 0 : num);
+          setFormData(prev => ({ ...prev, [name]: String(floored) }));
+          return;
+        }
+      }
+    }
+
     setFormData(prev => ({ ...prev, [name]: value }));
   };
 
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
+    // Validate COUNT type must be whole number (no decimals)
+    if (formData.unitType === 'COUNT') {
+      const val = formData.totalStockKg;
+      if (val === '' || isNaN(Number(val))) {
+        setErrorMessage('Please enter a valid integer for total pieces.');
+        return;
+      }
+      if (Number(val) % 1 !== 0) {
+        setErrorMessage('Count must be a whole number (no decimals).');
+        return;
+      }
+    }
+
     const processedData = {
       name: formData.name,
       unitType: formData.unitType as 'KG' | 'COUNT',
       pricePerKg: parseFloat(formData.pricePerKg),
-      totalStockKg: parseFloat(formData.totalStockKg),
-      stockKg: parseFloat(formData.totalStockKg), // Set stockKg to totalStockKg initially
+      totalStockKg: formData.unitType === 'COUNT' ? parseInt(formData.totalStockKg || '0', 10) : parseFloat(formData.totalStockKg || '0'),
+      stockKg: formData.unitType === 'COUNT' ? parseInt(formData.totalStockKg || '0', 10) : parseFloat(formData.totalStockKg || '0'), // Set stockKg to totalStockKg initially
       category: formData.category,
     };
 
