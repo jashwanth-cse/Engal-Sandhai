@@ -124,6 +124,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = (props) => {
                   deleteVegetable={props.deleteVegetable}
                   selectedDate={props.selectedDate}
                   onDateChange={props.onDateSelectionChange}
+                  onRefresh={props.onRefresh}
+                  loading={props.loading}
                />;
       case 'orders':
         return <Orders 

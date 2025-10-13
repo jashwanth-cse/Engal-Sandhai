@@ -15,6 +15,8 @@ interface InventoryProps {
   deleteVegetable: (vegId: string, date?: Date) => void;
   selectedDate?: Date; // Currently selected date from parent component
   onDateChange?: (date: Date) => void; // Callback to change date in parent
+  onRefresh?: () => Promise<boolean>; // Force refresh data after mutations
+  loading?: boolean; // Loading state from parent
 }
 
 type ToastState = {
@@ -31,12 +33,15 @@ const Inventory: React.FC<InventoryProps> = ({
   deleteVegetable,
   selectedDate,
   onDateChange,
+  onRefresh,
+  loading,
 }) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingVegetable, setEditingVegetable] = useState<Vegetable | null>(null);
   const [toast, setToast] = useState<ToastState>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [localSelectedDate, setLocalSelectedDate] = useState<Date>(selectedDate || new Date());
+  const [pendingRefresh, setPendingRefresh] = useState(false);
 
   // Use selectedDate from props or local state
   const currentDate = selectedDate || localSelectedDate;
@@ -186,6 +191,11 @@ const Inventory: React.FC<InventoryProps> = ({
         await addVegetable(data, currentDate); // Pass the selected date
         showToast(`${data.name} added for ${formatDateForDisplay(currentDate)}!`);
       }
+      // Force immediate refresh to reflect changes without manual reload
+      if (onRefresh) {
+        setPendingRefresh(true);
+        try { await onRefresh(); } finally { setPendingRefresh(false); }
+      }
     } catch (error) {
       console.error('Error saving vegetable:', error);
       showToast('Failed to save vegetable. Please try again.', 'error');
@@ -197,6 +207,11 @@ const Inventory: React.FC<InventoryProps> = ({
       try {
         await deleteVegetable(veg.id, currentDate); // Pass the selected date
         showToast(`${veg.name} deleted from ${formatDateForDisplay(currentDate)}!`);
+        // Refresh to update UI immediately after deletion
+        if (onRefresh) {
+          setPendingRefresh(true);
+          try { await onRefresh(); } finally { setPendingRefresh(false); }
+        }
       } catch (error) {
         console.error('Error deleting vegetable:', error);
         showToast('Failed to delete vegetable. Please try again.', 'error');
@@ -282,7 +297,15 @@ const Inventory: React.FC<InventoryProps> = ({
         )}
       </div>
 
-      <div className="bg-white rounded-xl shadow-lg">
+      <div className="bg-white rounded-xl shadow-lg relative">
+        {(loading || pendingRefresh) && (
+          <div className="absolute inset-0 bg-white/70 backdrop-blur-[1px] flex items-center justify-center z-10">
+            <div className="flex items-center space-x-3 text-slate-700">
+              <div className="animate-spin rounded-full h-6 w-6 border-2 border-primary-600 border-t-transparent"></div>
+              <span className="font-medium">Updating inventory...</span>
+            </div>
+          </div>
+        )}
         <div className="overflow-x-auto">
           <table className="w-full text-sm text-left text-slate-500">
             <thead className="text-xs text-slate-700 uppercase bg-slate-50">
