@@ -11,6 +11,32 @@ import { loginWithEmployeeID, auth, observeUser } from './src/services/authServi
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { db } from './src/firebase';
 
+// Map Firebase/Auth errors to user-friendly messages
+function mapAuthErrorToMessage(error: any): string {
+  const code: string | undefined = error?.code || (typeof error?.message === 'string' && (error.message.match(/\((auth\/[a-zA-Z0-9-]+)\)/)?.[1]));
+  switch (code) {
+    case 'auth/invalid-credential':
+    case 'auth/wrong-password':
+      return 'Invalid Employee ID or Password';
+    case 'auth/user-not-found':
+      return 'Invalid Employee ID or Password';
+    case 'auth/too-many-requests':
+      return 'Too many attempts. Please wait a moment and try again.';
+    case 'auth/network-request-failed':
+      return 'Network issue. Check your internet connection and try again.';
+    case 'auth/invalid-email':
+      return 'Invalid Employee ID or Password';
+    case 'auth/user-disabled':
+      return 'No account found for this Employee ID.';
+    case 'auth/operation-not-allowed':
+      return 'No account found for this Employee ID.';
+    case 'auth/popup-closed-by-user':
+      return 'Please try again.';
+    default:
+      return 'Sign-in failed. Please check your credentials and try again.';
+  }
+}
+
 const App: React.FC = () => {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
@@ -101,7 +127,7 @@ const App: React.FC = () => {
         setLoading(false);
       } catch (err: any) {
         console.error('Error in observeUser:', err);
-        setLoginError(err.message || 'Failed to fetch user data');
+        setLoginError(mapAuthErrorToMessage(err));
         setCurrentUser(null);
         navigate('/', { replace: true });
         setLoading(false);
@@ -232,7 +258,7 @@ const App: React.FC = () => {
       }
     } catch (err: any) {
       console.error('Login error:', err);
-      setLoginError(err.message);
+      setLoginError(mapAuthErrorToMessage(err));
     } finally {
       setLoading(false);
     }
@@ -253,7 +279,7 @@ const App: React.FC = () => {
       navigate('/', { replace: true });
     } catch (err: any) {
       console.error('Logout error:', err);
-      setLoginError(err.message);
+      setLoginError(mapAuthErrorToMessage(err));
     }
   };
 
