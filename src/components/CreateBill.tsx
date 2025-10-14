@@ -382,7 +382,7 @@ const CreateBill: React.FC<CreateBillProps> = ({ user, vegetables, bills, addBil
                     <div className="w-8 h-8 rounded-full bg-primary-100 text-primary-700 flex items-center justify-center font-semibold text-sm">{index + 1}</div>
                     <div>
                       <h3 className="font-semibold text-slate-800 text-lg">{veg.name}</h3>
-                      <p className="text-slate-600">₹{veg.pricePerKg}/{veg.unitType === 'KG' ? 'kg' : 'piece'}</p>
+                      <p className="text-slate-600">₹{Number(veg.pricePerKg).toFixed(2)}/{veg.unitType === 'KG' ? 'kg' : 'piece'}</p>
                       {availableStock <= 0 && (
                         <p className="text-sm text-red-500 font-medium">Out of Stock</p>
                       )}
@@ -470,10 +470,10 @@ const CreateBill: React.FC<CreateBillProps> = ({ user, vegetables, bills, addBil
 
       {/* Mobile Sticky Footer */}
       <footer className={`lg:hidden fixed bottom-0 left-0 right-0 bg-white p-3 border-t border-slate-200 shadow-[0_-2px_10px_rgba(0,0,0,0.1)] transform transition-transform duration-300 ease-in-out ${cartItems.length > 0 ? 'translate-y-0' : 'translate-y-full'}`}>
-        <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between">
           <div>
             <span className="text-xs font-semibold text-slate-500">{totalItems} {totalItems > 1 ? 'ITEMS' : 'ITEM'}</span>
-            <p className="text-xl font-bold text-slate-800">₹{total}</p>
+                <p className="text-xl font-bold text-slate-800">₹{Number(total).toFixed(2)}</p>
           </div>
           <Button 
             onClick={() => setIsCartVisible(true)} 

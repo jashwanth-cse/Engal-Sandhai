@@ -731,7 +731,7 @@ const BillDetailModal: React.FC<BillDetailModalProps> = ({ isOpen, onClose, bill
         pdfDoc.setFont('helvetica', 'bold');
         pdfDoc.setFontSize(12);
         pdfDoc.text('TOTAL:', colRate, y);
-        pdfDoc.text(`Rs. ${calculatedTotal}`, colAmount, y, { align: 'right' });
+  pdfDoc.text(`Rs. ${Number(calculatedTotal).toFixed(2)}`, colAmount, y, { align: 'right' });
         y += 15;
         
         // UPI Payment Information
@@ -752,7 +752,7 @@ const BillDetailModal: React.FC<BillDetailModalProps> = ({ isOpen, onClose, bill
             y += 5;
             pdfDoc.text(`UPI ID: ${selectedUpi.displayName}`, startX, y);
             y += 5;
-            pdfDoc.text(`Amount: Rs. ${calculatedTotal}`, startX, y);
+            pdfDoc.text(`Amount: Rs. ${Number(calculatedTotal).toFixed(2)}`, startX, y);
             y += 8;
             
             pdfDoc.setFont('helvetica', 'italic');
@@ -915,18 +915,18 @@ const BillDetailModal: React.FC<BillDetailModalProps> = ({ isOpen, onClose, bill
                                         <td className="px-4 py-3 text-right">
                                             {(() => {
                                               if (vegetable) {
-                                                return `₹${vegetable.pricePerKg}`;
+                                                return `₹${Number(vegetable.pricePerKg).toFixed(2)}`;
                                               } else if (item.pricePerKg) {
-                                                return `₹${item.pricePerKg.toFixed(2)}`;
+                                                return `₹${Number(item.pricePerKg).toFixed(2)}`;
                                               } else if (item.quantityKg > 0) {
                                                 const calculatedPrice = item.subtotal / item.quantityKg;
-                                                return `₹${calculatedPrice.toFixed(2)}`;
+                                                return `₹${Number(calculatedPrice).toFixed(2)}`;
                                               } else {
                                                 return '₹0.00';
                                               }
                                             })()}
                                         </td>
-                                        <td className="px-4 py-3 text-right font-semibold text-primary-600">₹{item.subtotal}</td>
+                                        <td className="px-4 py-3 text-right font-semibold text-primary-600">₹{Number(item.subtotal).toFixed(2)}</td>
                                         <td className="px-4 py-3 text-center">
                                             <button
                                                 onClick={() => handleRemoveVegetable(item.vegetableId)}
@@ -1074,9 +1074,9 @@ const BillDetailModal: React.FC<BillDetailModalProps> = ({ isOpen, onClose, bill
                                     className="w-32 h-32 mx-auto rounded border" 
                                 />
                             </div>
-                            <p className="text-xs text-slate-500 mt-2">
-                                Scan this QR code to pay ₹{calculatedTotal}
-                            </p>
+              <p className="text-xs text-slate-500 mt-2">
+                Scan this QR code to pay ₹{Number(calculatedTotal).toFixed(2)}
+              </p>
                         </div>
                     </div>
                 ) : (
@@ -1111,12 +1111,12 @@ const BillDetailModal: React.FC<BillDetailModalProps> = ({ isOpen, onClose, bill
                 </div>
                 <div className="text-right">
                     <p className="text-sm text-slate-500">Total Amount</p>
-                    <p className="text-2xl font-bold text-slate-800">₹{calculatedTotal}</p>
-                    {calculatedTotal !== bill.total && (
-                        <p className="text-xs text-slate-500 mt-1">
-                            Original: ₹{bill.total}
-                        </p>
-                    )}
+          <p className="text-2xl font-bold text-slate-800">₹{Number(calculatedTotal).toFixed(2)}</p>
+          {Number(calculatedTotal) !== Number(bill.total) && (
+            <p className="text-xs text-slate-500 mt-1">
+              Original: ₹{Number(bill.total).toFixed(2)}
+            </p>
+          )}
                 </div>
             </div>
         </div>
@@ -1186,7 +1186,7 @@ const VegetableAddRow: React.FC<VegetableAddRowProps> = ({ vegetable, onAdd }) =
           onClick={handleAdd}
           className="bg-green-600 hover:bg-green-700 text-white px-3 py-1 text-sm"
         >
-          Add ₹{quantity * vegetable.pricePerKg}
+          Add ₹{(quantity * vegetable.pricePerKg).toFixed(2)}
         </Button>
       </div>
     </div>

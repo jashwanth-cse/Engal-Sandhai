@@ -537,7 +537,7 @@ const Orders: React.FC<OrdersProps> = ({ bills, vegetables, initialBillId, onCle
                           {(() => {
                             // Calculate total from items if bill.total is 0 or undefined
                             const displayTotal = bill.total || (bill.items?.reduce((sum, item) => sum + (item.subtotal || 0), 0) || 0);
-                            return `₹${Number(displayTotal).toFixed(1)}`;
+                            return `₹${Number(displayTotal).toFixed(2)}`;
                           })()}
                       </td>
                       <td className="px-6 py-4 text-center">
