@@ -205,53 +205,7 @@ const Reports: React.FC = () => {
     }, 0);
   }, [orders]);
 
-  // Ensure we have user info for all orders shown
-  useEffect(() => {
-    const loadUserInfos = async () => {
-      const missing = new Set<string>();
-      (orders || []).forEach((b) => {
-        const uid = String(b.customerId || '').trim();
-        if (uid && !userInfoMap[uid]) missing.add(uid);
-      });
-      if (missing.size === 0) return;
-      const entries: [string, { name: string; department?: string; employeeId?: string }][] = [];
-      await Promise.all(Array.from(missing).map(async (uid) => {
-        try {
-          const ref = doc(db, 'users', uid);
-          const snap = await getDoc(ref);
-          if (snap.exists()) {
-            const data = snap.data() as any;
-            const emp = data.employee || {};
-            const name = emp.name || data['employee name'] || data.employee_name || data.name || 'Unknown';
-            const department = emp.department || data['employee department'] || data.department;
-            const employeeId = emp.employee_id || data.employee_id || uid;
-            entries.push([uid, { name: String(name), department: department ? String(department) : undefined, employeeId: String(employeeId) }]);
-          } else {
-            const usersCol = collection(db, 'users');
-            const byEmpId = fsQuery(usersCol, where('employee_id', '==', uid));
-            const byNestedEmpId = fsQuery(usersCol, where('employee.employee_id', '==', uid));
-            let foundDoc: any | null = null;
-            const [snap1, snap2] = await Promise.all([getDocs(byEmpId), getDocs(byNestedEmpId)]);
-            if (!snap1.empty) foundDoc = snap1.docs[0].data();
-            else if (!snap2.empty) foundDoc = snap2.docs[0].data();
-            if (foundDoc) {
-              const emp2 = foundDoc.employee || {};
-              const name2 = emp2.name || foundDoc['employee name'] || foundDoc.employee_name || foundDoc.name || 'Unknown';
-              const department2 = emp2.department || foundDoc['employee department'] || foundDoc.department;
-              const employeeId2 = emp2.employee_id || foundDoc.employee_id || uid;
-              entries.push([uid, { name: String(name2), department: department2 ? String(department2) : undefined, employeeId: String(employeeId2) }]);
-            } else {
-              entries.push([uid, { name: 'Unknown', employeeId: uid }]);
-            }
-          }
-        } catch {
-          entries.push([uid, { name: 'Unknown', employeeId: uid }]);
-        }
-      }));
-      if (entries.length > 0) setUserInfoMap((prev) => ({ ...prev, ...Object.fromEntries(entries) }));
-    };
-    loadUserInfos();
-  }, [orders, userInfoMap]);
+  // (Removed duplicate user info effect that lacked phone field)
 
   // Lazy-load jsPDF and autoTable from CDN
   const ensureJsPdf = async (): Promise<any> => {
@@ -606,7 +560,9 @@ const Reports: React.FC = () => {
         const invoice = String(order.id || '');
         const staffName = userInfo?.name || order.customerName || '';
         const department = userInfo?.department || '';
-        const phone = userInfo?.phone || '';
+  // Fallback: if userInfo lacks phone, try to derive from order object if present
+  const orderLevelPhone = (order as any).phone || (order as any).phoneNumber || (order as any).phone_number || (order as any).whatsapp || (order as any).whatsapp_number || '';
+  const phone = userInfo?.phone || orderLevelPhone || 'N/A';
 
         // Initialize product quantity map
         const qtyMap: Record<string, number> = {};
