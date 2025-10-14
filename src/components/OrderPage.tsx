@@ -1,5 +1,5 @@
 
-import React, { useState, useMemo, useCallback, useEffect } from 'react';
+import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import type { Vegetable, BillItem, Bill, User } from '../../types/types';
 import UserHeader from './UserHeader.tsx';
 import Button from './ui/Button.tsx';
@@ -48,9 +48,15 @@ const OrderPage: React.FC<OrderPageProps> = ({ user, vegetables, availableStock,
   const [isPlacingOrder, setIsPlacingOrder] = useState(false);
   const [bagCount, setBagCount] = useState(0);
 
+  // Guard ref so we only attempt the explicit refresh once on initial mount.
+  // This avoids a loop where the refresh doesn't populate vegetables and
+  // the effect keeps firing on subsequent renders.
+  const attemptedInitialRefresh = useRef(false);
+
   // Auto-refresh on mount if we have no vegetables yet
   useEffect(() => {
-    if (!loading && vegetables.length === 0 && onRefresh) {
+    if (!loading && vegetables.length === 0 && onRefresh && !attemptedInitialRefresh.current) {
+      attemptedInitialRefresh.current = true;
       onRefresh().catch((e) => console.warn('OrderPage refresh failed:', e));
     }
   }, [loading, vegetables.length, onRefresh]);
