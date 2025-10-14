@@ -4,6 +4,7 @@ import MetricCard from './ui/MetricCard.tsx';
 import { db } from '../firebase';
 import { collection, getDocs, getDoc, orderBy, query as fsQuery, Timestamp, where, doc } from 'firebase/firestore';
 import { getOrdersCol, getDateKey } from '../services/dbService';
+import { VEGETABLES_DATA } from '../../constants';
 
 const Reports: React.FC = () => {
   const [reportDate, setReportDate] = useState<string>(() => {
@@ -14,7 +15,7 @@ const Reports: React.FC = () => {
     return `${yyyy}-${mm}-${dd}`;
   });
 
-  const [userInfoMap, setUserInfoMap] = useState<Record<string, { name: string; department?: string; employeeId?: string }>>({});
+  const [userInfoMap, setUserInfoMap] = useState<Record<string, { name: string; department?: string; employeeId?: string; phone?: string }>>({});
   const [orders, setOrders] = useState<Array<{
     id: string;
     customerId: string;
@@ -151,7 +152,7 @@ const Reports: React.FC = () => {
         if (uid && !userInfoMap[uid]) missing.add(uid);
       });
       if (missing.size === 0) return;
-      const entries: [string, { name: string; department?: string; employeeId?: string }][] = [];
+  const entries: [string, { name: string; department?: string; employeeId?: string; phone?: string }][] = [];
       await Promise.all(Array.from(missing).map(async (uid) => {
         try {
           const ref = doc(db, 'users', uid);
@@ -162,7 +163,8 @@ const Reports: React.FC = () => {
             const name = emp.name || data['employee name'] || data.employee_name || data.name || 'Unknown';
             const department = emp.department || data['employee department'] || data.department;
             const employeeId = emp.employee_id || data.employee_id || uid;
-            entries.push([uid, { name: String(name), department: department ? String(department) : undefined, employeeId: String(employeeId) }]);
+            const phone = emp.phone || data.phone || data.whatsapp || data.whatsapp_number || data.phoneNumber || data.phone_number || undefined;
+            entries.push([uid, { name: String(name), department: department ? String(department) : undefined, employeeId: String(employeeId), phone: phone ? String(phone) : undefined }]);
           } else {
             const usersCol = collection(db, 'users');
             const byEmpId = fsQuery(usersCol, where('employee_id', '==', uid));
@@ -176,7 +178,8 @@ const Reports: React.FC = () => {
               const name2 = emp2.name || foundDoc['employee name'] || foundDoc.employee_name || foundDoc.name || 'Unknown';
               const department2 = emp2.department || foundDoc['employee department'] || foundDoc.department;
               const employeeId2 = emp2.employee_id || foundDoc.employee_id || uid;
-              entries.push([uid, { name: String(name2), department: department2 ? String(department2) : undefined, employeeId: String(employeeId2) }]);
+              const phone2 = emp2.phone || foundDoc.phone || foundDoc.whatsapp || foundDoc.whatsapp_number || foundDoc.phoneNumber || foundDoc.phone_number || undefined;
+              entries.push([uid, { name: String(name2), department: department2 ? String(department2) : undefined, employeeId: String(employeeId2), phone: phone2 ? String(phone2) : undefined }]);
             } else {
               entries.push([uid, { name: 'Unknown', employeeId: uid }]);
             }
@@ -197,8 +200,8 @@ const Reports: React.FC = () => {
   const totalItems = useMemo(() => {
     return orders.reduce((sum, order) => {
       const items = Array.isArray(order.items) ? order.items : [];
-      // Count each line item as 1 if it has a positive quantity (handles fractional quantities like 0.25kg)
-      return sum + items.reduce((itemSum, item) => itemSum + (Number(item.quantity) > 0 ? 1 : 0), 0);
+      // Count each line item (array length). This shows total lines in the cart (including zero-quantity lines).
+      return sum + items.length;
     }, 0);
   }, [orders]);
 
@@ -372,7 +375,7 @@ const Reports: React.FC = () => {
         const userInfo = userInfoMap[order.customerId];
         const employeeName = userInfo?.name || order.customerName || 'Unknown';
         const employeeId = userInfo?.employeeId || order.customerId || 'Unknown';
-  const itemsCount = (Array.isArray(order.items) ? order.items : []).reduce((sum, it: any) => sum + (Number(it.quantity) > 0 ? 1 : 0), 0);
+      const itemsCount = (Array.isArray(order.items) ? order.items : []).length;
         const amount = Number(order.totalAmount) || 0;
         
         // Check if we need a page break
@@ -541,6 +544,134 @@ const Reports: React.FC = () => {
     }
   };
 
+  // Function to generate detailed per-customer CSV download
+  const generateDetailedCsv = () => {
+    if (orders.length === 0) {
+      alert('No orders to generate Detailed CSV for this date.');
+      return;
+    }
+
+    try {
+      // Build dynamic product columns based on items in orders for selected date
+      // Collect unique product names from orders
+      const productSet = new Set<string>();
+      orders.forEach((order) => {
+        const items = Array.isArray(order.items) ? order.items : [];
+        items.forEach((it: any) => {
+          const pname = (it.name || it.productName || it.product || it.itemName || it.product_name || it.productNameRaw || '').toString().trim();
+          if (pname) productSet.add(pname);
+        });
+      });
+
+      // If no products found in orders (unlikely), fall back to canonical VEGETABLES_DATA
+      let productCols: string[] = [];
+      if (productSet.size === 0) {
+        productCols = VEGETABLES_DATA.map((v) => v.name);
+      } else {
+        // Try to order products by VEGETABLES_DATA order when possible, otherwise append remaining alphabetically
+        const canonicalOrder = VEGETABLES_DATA.map((v) => v.name.toLowerCase());
+        const found = Array.from(productSet);
+        const inCanonical: string[] = [];
+        const others: string[] = [];
+        found.forEach((p) => {
+          if (canonicalOrder.includes(p.toLowerCase())) inCanonical.push(p);
+          else others.push(p);
+        });
+        // Sort inCanonical by canonical index
+        inCanonical.sort((a, b) => canonicalOrder.indexOf(a.toLowerCase()) - canonicalOrder.indexOf(b.toLowerCase()));
+        others.sort((a, b) => a.localeCompare(b));
+        productCols = [...inCanonical, ...others];
+      }
+
+      // Build CSV headers
+      const headers = [
+        'Invoice Number',
+        'Name of the Staff Member',
+        'Department',
+        'Phone Number (WhatsApp Number)'
+      ].concat(productCols);
+
+      // Helper: normalize product name keys from order items to match these labels
+      const normalizeName = (n: string) => (n || '').toString().trim().toLowerCase();
+
+      // For matching, create a map of canonical lower-case product names to the header label
+      const normalizedProductMap: Record<string, string> = {};
+      productCols.forEach((label) => {
+        normalizedProductMap[label.toLowerCase()] = label;
+      });
+
+      // For each order, create a row with quantities per product column
+      const csvRows = orders.map((order) => {
+        const userInfo = userInfoMap[order.customerId];
+        const invoice = String(order.id || '');
+        const staffName = userInfo?.name || order.customerName || '';
+        const department = userInfo?.department || '';
+        const phone = userInfo?.phone || '';
+
+        // Initialize product quantity map
+        const qtyMap: Record<string, number> = {};
+        productCols.forEach((p) => { qtyMap[p] = 0; });
+
+        const items = Array.isArray(order.items) ? order.items : [];
+        items.forEach((it: any) => {
+          const pname = (it.name || it.productName || it.product || it.itemName || it.product_name || it.productNameRaw || '').toString();
+          const normalized = normalizeName(pname);
+
+          // First try direct match against header labels
+          const direct = normalizedProductMap[normalized];
+          if (direct) {
+            qtyMap[direct] += Number(it.quantity || it.qty || it.quantityKg || it.weight || it.amount || 0) || 0;
+            return;
+          }
+
+          // Try matching by checking header label lowercases for inclusion of product token
+          for (const lbl of Object.keys(normalizedProductMap)) {
+            if (!lbl) continue;
+            if (lbl.includes(normalized) || normalized.includes(lbl) || lbl.split(' ')[0] === normalized.split(' ')[0]) {
+              qtyMap[normalizedProductMap[lbl]] += Number(it.quantity || it.qty || it.quantityKg || it.weight || it.amount || 0) || 0;
+              return;
+            }
+          }
+          // If no match, try to match by canonical VEGETABLES_DATA names
+          const canon = VEGETABLES_DATA.find(v => v.name.toLowerCase() === normalized);
+          if (canon && normalizedProductMap[canon.name.toLowerCase()]) {
+            qtyMap[normalizedProductMap[canon.name.toLowerCase()]] += Number(it.quantity || it.qty || it.quantityKg || it.weight || it.amount || 0) || 0;
+            return;
+          }
+          // No match -> ignore
+        });
+
+        // Build row values, formatting quantities sensibly (e.g., 0, or '0.5')
+        const productValues = productCols.map((p) => {
+          const v = qtyMap[p] || 0;
+          // If fractional (like 0.25kg) keep as is; otherwise integer
+          return (v % 1 !== 0) ? v.toString() : String(Math.round(v));
+        });
+
+        return [invoice, `"${staffName}"`, `"${department}"`, `"${phone}"`, ...productValues];
+      });
+
+      // Prepend headers and join
+      const csvContent = [headers.join(','), ...csvRows.map(r => r.join(','))].join('\n');
+
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const link = document.createElement('a');
+      if (link.download !== undefined) {
+        const url = URL.createObjectURL(blob);
+        link.setAttribute('href', url);
+        link.setAttribute('download', `Detailed_Report_${reportDate}.csv`);
+        link.style.visibility = 'hidden';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      }
+
+    } catch (err) {
+      console.error('Failed to generate Detailed CSV:', err);
+      alert('Failed to generate Detailed CSV. Please try again.');
+    }
+  };
+
   return (
     <div className="space-y-6">
       <h1 className="text-3xl font-bold text-slate-800">Reports</h1>
@@ -583,6 +714,15 @@ const Reports: React.FC = () => {
         </div>
         <div className="sm:ml-auto flex gap-3">
           <Button 
+            onClick={generateDetailedCsv}
+            className="bg-blue-600 hover:bg-blue-700 text-white flex items-center gap-2"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
+            Download Detailed Report
+          </Button>
+          <Button 
             onClick={generateCsv}
             className="bg-green-600 hover:bg-green-700 text-white flex items-center gap-2"
           >
@@ -616,7 +756,7 @@ const Reports: React.FC = () => {
                 <tr><td colSpan={6} className="px-4 py-6 text-center text-slate-500">No orders for the selected date.</td></tr>
               ) : (
                 orders.map((b, idx) => {
-                  const itemsCount = (Array.isArray(b.items) ? b.items : []).reduce((sum, it: any) => sum + (Number(it.quantity) > 0 ? 1 : 0), 0);
+                  const itemsCount = (Array.isArray(b.items) ? b.items : []).length;
                   const userInfo = userInfoMap[b.customerId];
                   const employeeName = userInfo?.name || b.customerName || 'Unknown';
                   const employeeId = userInfo?.employeeId || b.customerId || 'Unknown';
