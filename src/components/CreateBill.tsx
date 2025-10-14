@@ -13,13 +13,14 @@ interface CreateBillProps {
   vegetables: Vegetable[];
   bills: Bill[]; // Add bills to calculate available stock
   addBill: (newBill: Omit<Bill, 'id' | 'date'>) => Promise<Bill>;
+  availableStock?: Map<string, number>;
 }
 
 type CreateBillStage = 'ordering' | 'success';
 
 type CartItemDetails = BillItem & { name: string; pricePerKg: number; stockKg: number; unitType: 'KG' | 'COUNT'; };
 
-const CreateBill: React.FC<CreateBillProps> = ({ user, vegetables, bills, addBill }) => {
+const CreateBill: React.FC<CreateBillProps> = ({ user, vegetables, bills, addBill, availableStock }) => {
   const [stage, setStage] = useState<CreateBillStage>('ordering');
   const [cart, setCart] = useState<Map<string, number>>(new Map());
   const [searchTerm, setSearchTerm] = useState('');
@@ -51,11 +52,15 @@ const CreateBill: React.FC<CreateBillProps> = ({ user, vegetables, bills, addBil
     return used;
   }, [bills]);
 
-  // Calculate available stock for each vegetable
+  // Calculate available stock for each vegetable.
+  // Prefer shared availableStock map (from useBillingData) if provided; otherwise derive from totalStockKg minus used from bills.
   const getAvailableStock = useCallback((vegetable: Vegetable) => {
+    if (availableStock && availableStock.has(vegetable.id)) {
+      return Math.max(0, availableStock.get(vegetable.id) as number);
+    }
     const used = usedStock.get(vegetable.id) || 0;
     return Math.max(0, vegetable.totalStockKg - used);
-  }, [usedStock]);
+  }, [usedStock, availableStock]);
 
   const categories = useMemo(() => {
     const cats = ['All', ...new Set(vegetables.map(v => v.category))];

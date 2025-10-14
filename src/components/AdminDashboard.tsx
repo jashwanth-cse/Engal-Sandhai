@@ -158,6 +158,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = (props) => {
                   vegetables={props.vegetables}
                   bills={props.bills}
                   addBill={props.addBill}
+                  availableStock={props.availableStock}
                />;
       default:
         return <Dashboard bills={props.bills} vegetables={props.vegetables} onViewOrder={handleViewOrder} onUpdateBillStatus={handleUpdateBillStatus} onUpdateBill={props.updateBill} />;
