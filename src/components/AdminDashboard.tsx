@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { User, Bill, Vegetable } from '../../types/types';
 import Sidebar from './Sidebar.tsx';
@@ -79,9 +79,12 @@ const AdminDashboard: React.FC<AdminDashboardProps> = (props) => {
     // You can add API calls or validation here with uppercasePasswords
   };
 
-  // Auto refresh on mount if we have no data
+  // Auto refresh on mount if we have no data — guard to avoid repeated refresh loops
+  const attemptedInitialRefresh = useRef(false);
   useEffect(() => {
+    if (attemptedInitialRefresh.current) return;
     if (!props.loading && props.vegetables.length === 0 && props.onRefresh) {
+      attemptedInitialRefresh.current = true;
       setLocalLoading(true);
       props.onRefresh().finally(() => setLocalLoading(false));
     }
