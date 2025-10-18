@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import type { Bill, Vegetable, BillItem } from '../../types/types';
-import { XMarkIcon, EyeIcon, ArrowDownTrayIcon } from './ui/Icon.tsx';
+import { XMarkIcon, EyeIcon, ArrowDownTrayIcon, ShareIcon } from './ui/Icon.tsx';
 import ImagePreviewModal from './ui/ImagePreviewModal.tsx';
 import Button from './ui/Button.tsx';
 import { getVegetableById, getDateKey } from '../services/dbService';
@@ -549,8 +549,8 @@ const BillDetailModal: React.FC<BillDetailModalProps> = ({ isOpen, onClose, bill
       // This doesn't prevent the bill update from proceeding
     }
   };
-
-  const handleDownload = async () => {
+  // Shared PDF generator for both Download and Share
+  const generateBillPdfBlobAndFilename = async (): Promise<{ blob: Blob; filename: string }> => {
     const { jsPDF } = window.jspdf;
     const pdfDoc = new jsPDF();
 
@@ -560,19 +560,14 @@ const BillDetailModal: React.FC<BillDetailModalProps> = ({ isOpen, onClose, bill
 
     // Extract employee ID from bill's customer information for PDF
     let employeeId = 'N/A';
-    
     try {
-      // First try to get from Firebase user data using customerId (most reliable)
       if (bill.customerId) {
         try {
           const userRef = doc(db, 'users', bill.customerId);
           const userDoc = await getDoc(userRef);
           if (userDoc.exists()) {
             const userData = userDoc.data() as any;
-            // Try multiple fields to get the employee ID, prioritizing stored employee ID
-            employeeId = userData.employee?.employeeId || 
-                        userData.employeeId || 
-                        bill.customerId;
+            employeeId = userData.employee?.employeeId || userData.employeeId || bill.customerId;
           } else {
             employeeId = bill.customerId;
           }
@@ -581,26 +576,17 @@ const BillDetailModal: React.FC<BillDetailModalProps> = ({ isOpen, onClose, bill
           employeeId = bill.customerId;
         }
       } else if (bill.customerName) {
-        // Fallback to customerName if customerId not available
         if (bill.customerName.includes('@')) {
           employeeId = bill.customerName.split('@')[0];
         } else {
           employeeId = bill.customerName;
         }
       }
-      
-      // Clean and format employee ID properly
       if (employeeId && employeeId !== 'N/A') {
-        // Remove email domain if present
-        if (employeeId.includes('@')) {
-          employeeId = employeeId.split('@')[0];
-        }
-        
-        // If it looks like a Firebase UID (long random string), don't modify it much
+        if (employeeId.includes('@')) employeeId = employeeId.split('@')[0];
         if (employeeId.length > 15 && /^[a-zA-Z0-9]+$/.test(employeeId)) {
           employeeId = employeeId.substring(0, 10).toUpperCase();
         } else {
-          // For normal employee IDs, just clean up basic formatting
           employeeId = employeeId.toUpperCase().trim();
         }
       }
@@ -608,28 +594,22 @@ const BillDetailModal: React.FC<BillDetailModalProps> = ({ isOpen, onClose, bill
       console.error('Error extracting employee ID for PDF:', error);
       employeeId = 'N/A';
     }
-    // Format bill number as ESDDMMYYYY-001
+
+    // Format bill number as ESDDMMYYYY-001 and file name parts
     const billDateObj = new Date(bill.date);
     const dd = String(billDateObj.getDate()).padStart(2, '0');
     const mm = String(billDateObj.getMonth() + 1).padStart(2, '0');
     const yyyy = billDateObj.getFullYear();
-    // If bill.id is a string, extract a serial number (last 3 digits or fallback to 001)
     let serial = '001';
     const idMatch = bill.id.match(/(\d{3,})$/);
-    if (idMatch) {
-      serial = idMatch[1].slice(-3).padStart(3, '0');
-    }
+    if (idMatch) serial = idMatch[1].slice(-3).padStart(3, '0');
     const formattedBillNumber = `ES${dd}${mm}${yyyy}-${serial}`;
 
-    // Generate each page
+    // Build pages (same as Download)
     for (let pageNum = 0; pageNum < totalPages; pageNum++) {
-      if (pageNum > 0) {
-        pdfDoc.addPage();
-      }
-
+      if (pageNum > 0) pdfDoc.addPage();
       let y = 20;
 
-      // Header
       pdfDoc.setFont('helvetica', 'bold');
       pdfDoc.setFontSize(20);
       pdfDoc.text('Engal Santhai', pageWidth / 2, y, { align: 'center' });
@@ -640,24 +620,16 @@ const BillDetailModal: React.FC<BillDetailModalProps> = ({ isOpen, onClose, bill
       pdfDoc.text('Your Fresh Vegetable Partner', pageWidth / 2, y, { align: 'center' });
       y += 15;
 
-      // INVOICE heading
       pdfDoc.setFont('helvetica', 'bold');
       pdfDoc.setFontSize(12);
       pdfDoc.text('INVOICE', 14, y);
       y += 8;
 
-      // Bill details
       const billDate = new Date(bill.date);
-      const dateStr = billDate.toLocaleDateString('en-GB', {
-        day: '2-digit',
-        month: '2-digit',
-        year: 'numeric'
-      });
-      const timeStr = billDate.toLocaleTimeString('en-US', {
-        hour: '2-digit',
-        minute: '2-digit',
-        hour12: true
-      }).toLowerCase();
+      const dateStr = billDate.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' });
+      const timeStr = billDate
+        .toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true })
+        .toLowerCase();
 
       pdfDoc.setFont('helvetica', 'normal');
       pdfDoc.text(`BILL NO: ${formattedBillNumber}`, 14, y);
@@ -669,51 +641,38 @@ const BillDetailModal: React.FC<BillDetailModalProps> = ({ isOpen, onClose, bill
       pdfDoc.text(`EMP ID: ${employeeId}`, 14, y);
       y += 10;
 
-      // Table header
       const startX = 14;
       const endX = pageWidth - 14;
-
-      // Column x-positions
-      const colSNo = startX;               // Serial Number
-      const colItem = startX + 20;         // Item left
-      const colQty = startX + 90;          // Qty
-      const colRate = startX + 130;        // Rate
-      const colAmount = endX;              // Amount right
+      const colSNo = startX;
+      const colItem = startX + 20;
+      const colQty = startX + 90;
+      const colRate = startX + 130;
+      const colAmount = endX;
 
       pdfDoc.setLineWidth(0.2);
-      pdfDoc.line(startX, y, endX, y); // top border
+      pdfDoc.line(startX, y, endX, y);
       y += 6;
-
       pdfDoc.setFont('helvetica', 'bold');
       pdfDoc.text('S.No.', colSNo, y);
       pdfDoc.text('Item', colItem, y);
       pdfDoc.text('Qty (kg)', colQty, y, { align: 'right' });
       pdfDoc.text('Rate (Rs.)', colRate, y, { align: 'right' });
       pdfDoc.text('Amount (Rs.)', colAmount, y, { align: 'right' });
-
       y += 2;
-      pdfDoc.line(startX, y, endX, y); // header bottom
+      pdfDoc.line(startX, y, endX, y);
       y += 6;
 
-      // Get items for this page
       const startIdx = pageNum * ITEMS_PER_PAGE;
       const endIdx = Math.min(startIdx + ITEMS_PER_PAGE, editedItems.length);
       const pageItems = editedItems.slice(startIdx, endIdx);
-
-      // Table rows for this page
       pdfDoc.setFont('courier', 'normal');
       pageItems.forEach((item, pageIndex) => {
         const vegetable = combinedVegetableMap.get(item.vegetableId);
-        const globalSerialNo = startIdx + pageIndex + 1; // Continue serial number across pages
-        
-        // Use historical data from bill item if available, otherwise fallback to vegetable lookup
+        const globalSerialNo = startIdx + pageIndex + 1;
         const name = (item as any).name || vegetable?.name || 'Unknown';
         const qty = String(item.quantityKg);
         const rate = String((item as any).pricePerKg || vegetable?.pricePerKg || 0);
         const amount = String(item.subtotal);
-        
-
-
         pdfDoc.text(globalSerialNo.toString(), colSNo, y);
         pdfDoc.text(name, colItem, y);
         pdfDoc.text(qty, colQty, y, { align: 'right' });
@@ -722,30 +681,23 @@ const BillDetailModal: React.FC<BillDetailModalProps> = ({ isOpen, onClose, bill
         y += 6;
       });
 
-      pdfDoc.line(startX, y, endX, y); // bottom border
+      pdfDoc.line(startX, y, endX, y);
       y += 10;
-
-      // Show total only on the last page
       if (pageNum === totalPages - 1) {
-        // TOTAL
         pdfDoc.setFont('helvetica', 'bold');
         pdfDoc.setFontSize(12);
         pdfDoc.text('TOTAL:', colRate, y);
-  pdfDoc.text(`Rs. ${Number(calculatedTotal).toFixed(2)}`, colAmount, y, { align: 'right' });
+        pdfDoc.text(`Rs. ${Number(calculatedTotal).toFixed(2)}`, colAmount, y, { align: 'right' });
         y += 15;
-        
-        // UPI Payment Information
         if (selectedUpiId) {
-          const selectedUpi = UPI_IDS.find(upi => upi.id === selectedUpiId);
+          const selectedUpi = UPI_IDS.find((upi) => upi.id === selectedUpiId);
           if (selectedUpi) {
-            pdfDoc.line(startX, y - 5, endX, y - 5); // separator line
+            pdfDoc.line(startX, y - 5, endX, y - 5);
             y += 5;
-            
             pdfDoc.setFont('helvetica', 'bold');
             pdfDoc.setFontSize(11);
             pdfDoc.text('PAYMENT INFORMATION', startX, y);
             y += 8;
-            
             pdfDoc.setFont('helvetica', 'normal');
             pdfDoc.setFontSize(10);
             pdfDoc.text(`Payee Name: ${selectedUpi.name}`, startX, y);
@@ -754,7 +706,6 @@ const BillDetailModal: React.FC<BillDetailModalProps> = ({ isOpen, onClose, bill
             y += 5;
             pdfDoc.text(`Amount: Rs. ${Number(calculatedTotal).toFixed(2)}`, startX, y);
             y += 8;
-            
             pdfDoc.setFont('helvetica', 'italic');
             pdfDoc.setFontSize(9);
             pdfDoc.text('• Scan the QR code for instant payment', startX, y);
@@ -770,24 +721,64 @@ const BillDetailModal: React.FC<BillDetailModalProps> = ({ isOpen, onClose, bill
     // Build filename in the requested format: serialnumber-date-name-department
     const rawName = (customerNameFromDB || bill.customerName || 'customer').toString();
     const rawDept = (bill.department || 'NA').toString();
-
-    const sanitize = (s: string) =>
-      s
-        .trim()
-        .replace(/\s+/g, '_') // spaces -> underscore
-        .replace(/[^a-zA-Z0-9_\-]/g, '') // remove unsafe chars
-        .replace(/_+/g, '_'); // collapse multiple underscores
-
+    const sanitize = (s: string) => s.trim().replace(/\s+/g, '_').replace(/[^a-zA-Z0-9_\-]/g, '').replace(/_+/g, '_');
     const nameSafe = sanitize(rawName).toUpperCase() || 'CUSTOMER';
     const deptSafe = sanitize(rawDept).toUpperCase() || 'NA';
-
-    // Use the extracted serial (e.g. '001') and date as ddmmyyyy
-    const fileSerial = serial || '000';
+    const fileSerial = (serial || '000');
     const fileDate = `${dd}${mm}${yyyy}`;
-
     const filename = `${fileSerial}-${fileDate}-${nameSafe}-${deptSafe}.pdf`;
 
-    pdfDoc.save(filename);
+    const blob = pdfDoc.output('blob');
+    return { blob, filename };
+  };
+
+  const handleDownload = async () => {
+    const { blob, filename } = await generateBillPdfBlobAndFilename();
+    // Create a temporary link to download the blob
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  };
+
+  // Share current edited bill as PDF via system share sheet or WhatsApp fallback
+  const handleShare = async () => {
+    try {
+      // 1) If there are unsaved edits, save first
+      if (hasUnsavedChanges) {
+        await handleSaveChanges();
+      }
+
+      // 2) Generate the exact same PDF as Download
+      const { blob, filename } = await generateBillPdfBlobAndFilename();
+      const file = new File([blob], filename, { type: 'application/pdf' });
+
+      // Template message for WhatsApp
+      const message = `Hello ${customerNameFromDB || bill.customerName},\n\nYour updated Engal Santhai bill (${filename}) is attached.\nTotal Amount: Rs. ${Number(calculatedTotal).toFixed(2)}\n\nThank you!`;
+
+      // 3) Try Web Share API with files (mobile browsers, some desktops)
+      if ((navigator as any).share && (navigator as any).canShare && (navigator as any).canShare({ files: [file] })) {
+        await (navigator as any).share({
+          title: 'Engal Santhai Bill',
+          text: message,
+          files: [file],
+        });
+        return;
+      }
+
+      // 4) Fallback: open WhatsApp with text (cannot attach PDF via URL scheme from web reliably)
+      const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+      const waBase = isMobile ? 'whatsapp://send' : 'https://web.whatsapp.com/send';
+      const waUrl = `${waBase}?text=${encodeURIComponent(message)}`;
+      window.open(waUrl, '_blank');
+    } catch (err) {
+      console.error('Share failed:', err);
+      alert('Unable to share. Please try downloading and sending manually.');
+    }
   };
 
   return (
@@ -1099,6 +1090,14 @@ const BillDetailModal: React.FC<BillDetailModalProps> = ({ isOpen, onClose, bill
                     >
                         {isSaving ? 'Saving...' : 'Save Changes'}
                     </Button>
+          <Button 
+            onClick={handleShare}
+            className={`bg-primary-600 hover:bg-primary-700 text-white`}
+            title={'Share bill via WhatsApp or other apps'}
+          >
+            <ShareIcon className="h-5 w-5 mr-2" />
+            Share
+          </Button>
                     <Button 
                         onClick={handleDownload} 
                         disabled={!selectedUpiId}
