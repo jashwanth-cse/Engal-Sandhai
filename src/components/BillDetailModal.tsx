@@ -5,9 +5,10 @@ import ImagePreviewModal from './ui/ImagePreviewModal.tsx';
 import Button from './ui/Button.tsx';
 import { getVegetableById, getDateKey } from '../services/dbService';
 import { upiPng } from '../assets/upi.ts';
+import { getStorage, ref, uploadBytes, getDownloadURL, deleteObject } from "firebase/storage";
 
 // Firestore imports
-import { doc, getDoc, writeBatch, serverTimestamp } from 'firebase/firestore';
+import { doc, getDoc, writeBatch, serverTimestamp, collection, query, where, getDocs } from 'firebase/firestore';
 import { db } from '../firebase';
 
 // Let TypeScript know that jspdf is available on the window object
@@ -16,6 +17,9 @@ declare global {
         jspdf: any;
     }
 }
+
+// Quick local type extension to avoid editing global type files
+type ExtendedBill = Bill & { employee_name?: string };
 
 // UPI IDs configuration
 const UPI_IDS = [
@@ -42,6 +46,9 @@ interface BillDetailModalProps {
 }
 
 const BillDetailModal: React.FC<BillDetailModalProps> = ({ isOpen, onClose, bill, vegetableMap, vegetables, onUpdateBill, currentUser }) => {
+  // Cast to ExtendedBill so we can safely access employee_name if present
+  const billTyped = bill as ExtendedBill | null;
+
   const [isImagePreviewOpen, setIsImagePreviewOpen] = useState(false);
   const [editedItems, setEditedItems] = useState<BillItem[]>([]);
   // Local-only reference checkboxes for each item (not required, not saved by default)
@@ -731,6 +738,8 @@ const BillDetailModal: React.FC<BillDetailModalProps> = ({ isOpen, onClose, bill
     const blob = pdfDoc.output('blob');
     return { blob, filename };
   };
+  // Copy generated PDF to clipboard as a file (so user can paste into WhatsApp Web/Desktop)
+ 
 
   const handleDownload = async () => {
     const { blob, filename } = await generateBillPdfBlobAndFilename();
@@ -745,41 +754,196 @@ const BillDetailModal: React.FC<BillDetailModalProps> = ({ isOpen, onClose, bill
     URL.revokeObjectURL(url);
   };
 
+  // Helper to normalize phone number to international format for WhatsApp
+  const normalizePhoneForWhatsApp = (raw: string | undefined | null): string | null => {
+    if (!raw) return null;
+    let digits = raw.replace(/\D/g, '');
+    if (!digits) return null;
+
+    // Remove leading zeros
+    while (digits.startsWith('0')) digits = digits.replace(/^0+/, '');
+
+    // If it already starts with country code (length > 10), assume it's fine
+    if (digits.length > 10) {
+      return digits;
+    }
+
+    // If it's exactly 10 digits, assume India and prefix 91
+    if (digits.length === 10) {
+      return `91${digits}`;
+    }
+
+    // Otherwise return digits as-is
+    return digits;
+  };
+
   // Share current edited bill as PDF via system share sheet or WhatsApp fallback
-  const handleShare = async () => {
-    try {
-      // 1) If there are unsaved edits, save first
-      if (hasUnsavedChanges) {
-        await handleSaveChanges();
+  
+
+const handleShare = async () => {
+  try {
+    if (hasUnsavedChanges) {
+      console.log("💾 Unsaved changes detected — saving before sharing...");
+      await handleSaveChanges();
+    }
+
+    console.log("🚀 Starting WhatsApp share process...");
+
+    // 🕓 Wait for customerNameFromDB to be ready (max 1 second)
+    let employeeNameToQuery =
+      billTyped?.employee_name || customerNameFromDB || bill.customerName || "";
+    let retries = 0;
+    while (
+      (!employeeNameToQuery || employeeNameToQuery === "Unknown Customer") &&
+      retries < 5
+    ) {
+      console.log("⏳ Waiting for customerNameFromDB to load...");
+      await new Promise((res) => setTimeout(res, 200)); // wait 200ms
+      employeeNameToQuery =
+        billTyped?.employee_name || customerNameFromDB || bill.customerName || "";
+      retries++;
+    }
+
+    console.log("🔍 Querying Firestore for employee_name:", employeeNameToQuery);
+
+    let phoneNumber: string | null = null;
+
+    if (employeeNameToQuery.trim()) {
+      try {
+        const usersRef = collection(db, "users");
+
+        // Query 1: by employee_name
+        const q1 = query(usersRef, where("employee_name", "==", employeeNameToQuery));
+        const snap1 = await getDocs(q1);
+        console.log(`📊 Query by employee_name returned ${snap1.size} results`);
+
+        let userData: any = null;
+
+        if (!snap1.empty) {
+          userData = snap1.docs[0].data();
+          console.log("✅ Found user (by employee_name):", userData);
+        } else {
+          // Fallback: query by name
+          const q2 = query(usersRef, where("name", "==", employeeNameToQuery));
+          const snap2 = await getDocs(q2);
+          console.log(`📊 Query by name returned ${snap2.size} results`);
+          if (!snap2.empty) {
+            userData = snap2.docs[0].data();
+            console.log("✅ Found user (by name):", userData);
+          } else {
+            console.warn("⚠️ No user found for:", employeeNameToQuery);
+          }
+        }
+
+        if (userData) {
+          // Handle multiple possible phone field names
+          phoneNumber =
+            String(
+              userData.phone ||
+                userData.mobile ||
+                userData.contact ||
+                userData.phoneNumber ||
+                ""
+            ) || null;
+        }
+      } catch (queryErr) {
+        console.error("🔥 Firestore query error:", queryErr);
       }
+    }
 
-      // 2) Generate the exact same PDF as Download
+    if (!phoneNumber) {
+      console.warn("⚠️ No phone number found — will fallback to default share method");
+    } else {
+      console.log("📞 Raw phone number from Firestore:", phoneNumber);
+    }
+
+    const normalized = normalizePhoneForWhatsApp(phoneNumber);
+    console.log("📱 Normalized phone for WhatsApp:", normalized);
+
+    // ✅ Generate bill PDF and upload to Firebase Storage
+    let downloadURL: string | null = null;
+    try {
       const { blob, filename } = await generateBillPdfBlobAndFilename();
-      const file = new File([blob], filename, { type: 'application/pdf' });
+      const storage = getStorage();
+      const pdfRef = ref(
+        storage,
+        `bills/${(bill as any).billNumber || bill.id || Date.now()}.pdf`
+      );
+      await uploadBytes(pdfRef, blob);
+      const rawURL = await getDownloadURL(pdfRef);
+      // Append &dl=1 for auto-download
+      downloadURL = rawURL + (rawURL.includes("?") ? "&dl=1" : "?dl=1");
 
-      // Template message for WhatsApp
-      const message = `Hello ${customerNameFromDB || bill.customerName},\n\nYour updated Engal Santhai bill (${filename}) is attached.\nTotal Amount: Rs. ${Number(calculatedTotal).toFixed(2)}\n\nThank you!`;
+      console.log("☁️ Uploaded PDF to Firebase Storage:", downloadURL);
 
-      // 3) Try Web Share API with files (mobile browsers, some desktops)
-      if ((navigator as any).share && (navigator as any).canShare && (navigator as any).canShare({ files: [file] })) {
+      // 🧹 Schedule deletion after 24 hours
+      setTimeout(async () => {
+        try {
+          await deleteObject(pdfRef);
+          console.log("🧹 Deleted old bill PDF from Firebase Storage");
+        } catch (delErr) {
+          console.warn("⚠️ PDF deletion failed:", delErr);
+        }
+      }, 24 * 60 * 60 * 1000);
+    } catch (pdfErr) {
+      console.warn("⚠️ PDF upload failed:", pdfErr);
+    }
+
+    // ✅ Create WhatsApp message
+    const message = `Hello ${
+      customerNameFromDB || bill.customerName
+    },\n\nYour Engal Santhai bill is ready.\nTotal: ₹${Number(
+      calculatedTotal
+    ).toFixed(2)}\n📄 Download your E-bill here: ${
+      downloadURL || "Please find your bill attached."
+    }\n\nThank you for shopping with us!`;
+
+    // ✅ Copy message to clipboard as backup
+    try {
+      await navigator.clipboard.writeText(message);
+      console.log("📋 Copied message text to clipboard as backup.");
+    } catch (clipErr) {
+      console.warn("⚠️ Clipboard write failed:", clipErr);
+    }
+
+    // ✅ Open WhatsApp chat
+    const waUrl = normalized
+      ? `https://wa.me/${encodeURIComponent(
+          normalized
+        )}?text=${encodeURIComponent(message)}`
+      : `https://wa.me/?text=${encodeURIComponent(message)}`;
+
+    console.log("🌐 Opening WhatsApp URL:", waUrl);
+    window.open(waUrl, "_blank");
+
+    // ✅ Try sharing file natively (optional mobile support)
+    try {
+      const { blob, filename } = await generateBillPdfBlobAndFilename();
+      const file = new File([blob], filename, { type: "application/pdf" });
+      if (
+        (navigator as any).share &&
+        (navigator as any).canShare?.({ files: [file] })
+      ) {
+        console.log("📤 Sharing file using native share API...");
         await (navigator as any).share({
-          title: 'Engal Santhai Bill',
+          title: "Engal Santhai Bill",
           text: message,
           files: [file],
         });
-        return;
+      } else {
+        console.log("ℹ️ Native share API not supported, opened WhatsApp instead.");
       }
-
-      // 4) Fallback: open WhatsApp with text (cannot attach PDF via URL scheme from web reliably)
-      const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
-      const waBase = isMobile ? 'whatsapp://send' : 'https://web.whatsapp.com/send';
-      const waUrl = `${waBase}?text=${encodeURIComponent(message)}`;
-      window.open(waUrl, '_blank');
-    } catch (err) {
-      console.error('Share failed:', err);
-      alert('Unable to share. Please try downloading and sending manually.');
+    } catch (shareErr) {
+      console.warn("⚠️ Native share API failed:", shareErr);
     }
-  };
+  } catch (err) {
+    console.error("❌ handleShare failed:", err);
+    alert("Unable to open WhatsApp. Please try downloading and sending manually.");
+  }
+};
+
+
+;
 
   return (
     <>
@@ -968,38 +1132,6 @@ const BillDetailModal: React.FC<BillDetailModalProps> = ({ isOpen, onClose, bill
             </div>
 
             {/* Bag Management Section - Moved to user page */}
-            {/*
-            <div className="border-t border-slate-200 pt-4 mt-4">
-                <div className="flex items-center justify-between">
-                    <div>
-                        <h4 className="text-lg font-semibold text-slate-800">Shopping Bags</h4>
-                        <p className="text-sm text-slate-500">₹{BAG_PRICE} per bag</p>
-                    </div>
-                    <div className="flex items-center gap-3">
-                        <button
-                            onClick={() => handleBagCountChange(false)}
-                            disabled={bagCount <= 0}
-                            className="w-8 h-8 rounded-full bg-red-500 hover:bg-red-600 disabled:bg-slate-300 disabled:cursor-not-allowed text-white flex items-center justify-center font-semibold"
-                        >
-                            -
-                        </button>
-                        <span className="text-xl font-semibold text-slate-800 min-w-[2rem] text-center">
-                            {bagCount}
-                        </span>
-                        <button
-                            onClick={() => handleBagCountChange(true)}
-                            className="w-8 h-8 rounded-full bg-green-500 hover:bg-green-600 text-white flex items-center justify-center font-semibold"
-                        >
-                            +
-                        </button>
-                        <div className="ml-4 text-right">
-                            <p className="text-sm text-slate-500">Bag Total</p>
-                            <p className="font-semibold text-slate-800">₹{bagCount * BAG_PRICE}</p>
-                        </div>
-                    </div>
-                </div>
-            </div>
-            */}
 
             {/* UPI Selection Section */}
             <div className="mt-6 pt-4 border-t-2 border-slate-200">
@@ -1098,7 +1230,9 @@ const BillDetailModal: React.FC<BillDetailModalProps> = ({ isOpen, onClose, bill
             <ShareIcon className="h-5 w-5 mr-2" />
             Share
           </Button>
-                    <Button 
+                    
+                    
+<Button 
                         onClick={handleDownload} 
                         disabled={!selectedUpiId}
                         className={`${selectedUpiId ? 'bg-slate-600 hover:bg-slate-700' : 'bg-slate-400 cursor-not-allowed'}`}
