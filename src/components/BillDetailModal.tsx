@@ -49,6 +49,35 @@ const BillDetailModal: React.FC<BillDetailModalProps> = ({ isOpen, onClose, bill
   // Cast to ExtendedBill so we can safely access employee_name if present
   const billTyped = bill as ExtendedBill | null;
 
+  // Utility: remove emojis and invisible emoji-joiner chars from any text before sending to jsPDF
+  // This keeps Tamil/English letters intact and only strips emoji-related code points.
+  const sanitizeTextForPdf = React.useCallback((input: string | undefined | null): string => {
+    if (!input) return '';
+    return (
+      input
+        // Remove common emoji surrogate pairs (U+1F300–U+1FAFF etc.)
+        .replace(/[\uD83C-\uDBFF][\uDC00-\uDFFF]/g, '')
+        // Remove Dingbats and a few decorative symbols (keeps punctuation/letters)
+        .replace(/[\u2700-\u27BF]/g, '')
+        // Remove private use & variation selectors often attached to emojis
+        .replace(/[\uE000-\uF8FF]/g, '')
+        .replace(/\uFE0F/g, '') // VS-16
+        .replace(/\u200D/g, '') // zero-width-joiner
+        // Remove Tamil letters (Unicode block U+0B80–U+0BFF)
+        // Note: This strips Tamil characters so remaining English words stay visible in the PDF
+        .replace(/[\u0B80-\u0BFF]/g, '')
+        // Remove empty brackets left after stripping non-Latin content, e.g., "()", "[]", "{}"
+        .replace(/\(\s*\)|\[\s*\]|\{\s*\}/g, '')
+        // Remove leftover spaces before closing brackets (defensive)
+        .replace(/\s+[)\]}]/g, match => match.trim().slice(-1))
+        // Remove trailing punctuation/dividers left dangling
+        .replace(/[\s\-–—,:;]+$/g, '')
+        // Collapse extra spaces introduced by removals
+        .replace(/\s{2,}/g, ' ')
+        .trim()
+    );
+  }, []);
+
   const [isImagePreviewOpen, setIsImagePreviewOpen] = useState(false);
   const [editedItems, setEditedItems] = useState<BillItem[]>([]);
   // Local-only reference checkboxes for each item (not required, not saved by default)
@@ -642,7 +671,8 @@ const BillDetailModal: React.FC<BillDetailModalProps> = ({ isOpen, onClose, bill
       pdfDoc.text(`BILL NO: ${formattedBillNumber}`, 14, y);
       pdfDoc.text(`Date: ${dateStr}`, pageWidth - 14, y, { align: 'right' });
       y += 6;
-      pdfDoc.text(`CUSTOMER NAME : ${customerNameFromDB || bill.customerName}`, 14, y);
+  const safeCustomerName = sanitizeTextForPdf(customerNameFromDB || bill.customerName);
+  pdfDoc.text(`CUSTOMER NAME : ${safeCustomerName}`, 14, y);
       pdfDoc.text(`Time: ${timeStr}`, pageWidth - 14, y, { align: 'right' });
       y += 6;
       pdfDoc.text(`EMP ID: ${employeeId}`, 14, y);
@@ -676,7 +706,8 @@ const BillDetailModal: React.FC<BillDetailModalProps> = ({ isOpen, onClose, bill
       pageItems.forEach((item, pageIndex) => {
         const vegetable = combinedVegetableMap.get(item.vegetableId);
         const globalSerialNo = startIdx + pageIndex + 1;
-        const name = (item as any).name || vegetable?.name || 'Unknown';
+        const rawName = (item as any).name || vegetable?.name || 'Unknown';
+        const name = sanitizeTextForPdf(rawName) || 'Unknown';
         const qty = String(item.quantityKg);
         const rate = String((item as any).pricePerKg || vegetable?.pricePerKg || 0);
         const amount = String(item.subtotal);
