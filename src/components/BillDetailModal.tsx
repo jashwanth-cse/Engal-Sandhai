@@ -5,11 +5,19 @@ import ImagePreviewModal from './ui/ImagePreviewModal.tsx';
 import Button from './ui/Button.tsx';
 import { getVegetableById, getDateKey } from '../services/dbService';
 import { upiPng } from '../assets/upi.ts';
-import { getStorage, ref, uploadBytes, getDownloadURL, deleteObject } from "firebase/storage";
+import { getStorage, ref, uploadBytes, getDownloadURL } from "firebase/storage";
 
 // Firestore imports
 import { doc, getDoc, writeBatch, serverTimestamp, collection, query, where, getDocs } from 'firebase/firestore';
 import { db } from '../firebase';
+
+// New import: html2canvas for emoji fallback raster rendering
+import html2canvas from 'html2canvas';
+
+// IMPORTANT: External js font file generated via jsPDF fontconverter.
+// Put your generated file at src/fonts/NotoSansTamil-Regular.js
+// That file should call jsPDF.API.events.push([...]) and add the font to VFS
+import '../fonts/NotoSansTamil-Regular.js';
 
 // Let TypeScript know that jspdf is available on the window object
 declare global {
@@ -586,12 +594,222 @@ const BillDetailModal: React.FC<BillDetailModalProps> = ({ isOpen, onClose, bill
     }
   };
   // Shared PDF generator for both Download and Share
+
+  // ---- NEW HELPERS FOR FONT + EMOJI DETECTION / RASTER FALLBACK ----
+  // Detect if any string contains emoji (basic range check) - used to decide raster fallback
+  const containsEmoji = (text: string) => {
+    if (!text) return false;
+    // broad emoji ranges + variation selectors (covers most common emojis)
+    const emojiRegex = /[\p{Emoji_Presentation}\p{Extended_Pictographic}]/u;
+    try {
+      return emojiRegex.test(text);
+    } catch (e) {
+      // If unicode property escapes unsupported, fallback to surrogate pair heuristics
+      const surrogateRegex = /[\uD800-\uDBFF][\uDC00-\uDFFF]/;
+      return surrogateRegex.test(text);
+    }
+  };
+
+  // Helper: check if any item name or customer name contains emoji
+  const billHasEmoji = () => {
+    if (!bill) return false;
+    if (containsEmoji(customerNameFromDB || bill.customerName || '')) return true;
+    for (const it of editedItems) {
+      const vegetable = combinedVegetableMap.get(it.vegetableId);
+      const name = (it as any).name || vegetable?.name || '';
+      if (containsEmoji(String(name))) return true;
+    }
+    return false;
+  };
+
+  // Helper to create a small printable HTML for rasterizing (keeps styling minimal and inline so it renders the same)
+  const createPrintableBillElement = async (): Promise<HTMLElement> => {
+    // Build a container element
+    const container = document.createElement('div');
+    container.style.width = '794px'; // ~A4 @ 96dpi: 794px width
+    container.style.padding = '18px';
+    container.style.boxSizing = 'border-box';
+    container.style.background = '#ffffff';
+    container.style.color = '#111827';
+    container.style.fontFamily = "'Noto Sans Tamil', 'Roboto', Arial, sans-serif";
+    container.style.fontSize = '12px';
+    container.style.lineHeight = '1.35';
+    container.style.border = '0';
+    container.style.display = 'block';
+
+    // Header bar (light green gradient)
+    const header = document.createElement('div');
+    header.style.display = 'flex';
+    header.style.justifyContent = 'space-between';
+    header.style.alignItems = 'center';
+    header.style.padding = '14px 18px';
+    header.style.borderRadius = '8px';
+    header.style.background = 'linear-gradient(90deg, #d8f5e6 0%, #48bb78 100%)';
+    header.style.color = '#064e3b';
+    header.style.marginBottom = '12px';
+
+    const titleWrap = document.createElement('div');
+    titleWrap.innerHTML = `<div style="font-weight:800;font-size:20px">Engal Santhai</div><div style="font-size:12px;color:#065f46;margin-top:4px">Your Fresh Vegetable Partner</div>`;
+    header.appendChild(titleWrap);
+
+    const logoWrap = document.createElement('div');
+    logoWrap.style.textAlign = 'right';
+    logoWrap.innerHTML = `<div style="font-weight:700;color:#064e3b">INVOICE</div>`;
+    header.appendChild(logoWrap);
+
+    container.appendChild(header);
+
+    // Bill meta block with clean spacing
+    const meta = document.createElement('div');
+    meta.style.display = 'flex';
+    meta.style.justifyContent = 'space-between';
+    meta.style.marginBottom = '12px';
+
+    const leftMeta = document.createElement('div');
+    leftMeta.style.lineHeight = '1.4';
+    const billDateObj = new Date(bill.date);
+    const dd = String(billDateObj.getDate()).padStart(2, '0');
+    const mm = String(billDateObj.getMonth() + 1).padStart(2, '0');
+    const yy = String(billDateObj.getFullYear());
+    const idMatch = bill.id.match(/(\d{3,})$/);
+    let serial = '001';
+    if (idMatch) serial = idMatch[1].slice(-3).padStart(3, '0');
+    const billNoFormatted = `ES${dd}${mm}${yy}-${serial}`;
+    const timeStr = billDateObj.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }).toLowerCase();
+    leftMeta.innerHTML = `<div style="font-weight:600">BILL NO: ${billNoFormatted}</div>
+      <div style="margin-top:6px">Date: ${dd}/${mm}/${yy}</div>`;
+    meta.appendChild(leftMeta);
+
+    const rightMeta = document.createElement('div');
+    rightMeta.style.textAlign = 'right';
+    rightMeta.style.lineHeight = '1.4';
+    const custNameDisplay = customerNameFromDB || bill.customerName || '';
+    // EMP ID — attempt to pull employee ID similarly as your earlier logic
+    let employeeId = 'N/A';
+    try {
+      if ((bill as any).customerId) {
+        employeeId = (bill as any).customerId;
+      } else if (bill.customerName) {
+        employeeId = bill.customerName;
+      }
+      if (typeof employeeId === 'string') {
+        if (employeeId.includes('@')) employeeId = employeeId.split('@')[0];
+        employeeId = employeeId.toUpperCase().trim();
+      }
+    } catch (e) {
+      employeeId = 'N/A';
+    }
+    rightMeta.innerHTML = `<div style="font-weight:600">CUSTOMER NAME : ${custNameDisplay}</div>
+      <div style="margin-top:6px">Time: ${timeStr}</div>
+      <div style="margin-top:6px">EMP ID: ${employeeId}</div>`;
+    meta.appendChild(rightMeta);
+
+    container.appendChild(meta);
+
+    // Table (styled)
+    const table = document.createElement('table');
+    table.style.width = '100%';
+    table.style.borderCollapse = 'collapse';
+    table.style.marginTop = '6px';
+    table.style.fontSize = '12px';
+    table.innerHTML = `<thead>
+      <tr style="background:#f1f5f9;color:#0f172a;font-weight:700;font-size:12px">
+        <th style="padding:8px;border:1px solid #e6e9ee;width:6%;text-align:left">S.No.</th>
+        <th style="padding:8px;border:1px solid #e6e9ee;text-align:left">Item</th>
+        <th style="padding:8px;border:1px solid #e6e9ee;width:12%;text-align:right">Qty (kg)</th>
+        <th style="padding:8px;border:1px solid #e6e9ee;width:16%;text-align:right">Rate (₹)</th>
+        <th style="padding:8px;border:1px solid #e6e9ee;width:16%;text-align:right">Amount (₹)</th>
+      </tr>
+    </thead>`;
+    const tbody = document.createElement('tbody');
+
+    editedItems.forEach((item, idx) => {
+      const vegetable = combinedVegetableMap.get(item.vegetableId);
+      const name = (item as any).name || vegetable?.name || `Item ${item.vegetableId}`;
+      const rate = (item as any).pricePerKg || vegetable?.pricePerKg || 0;
+      const tr = document.createElement('tr');
+      tr.style.borderBottom = '1px solid #eef2f7';
+      tr.innerHTML = `<td style="padding:8px;border:1px solid #e6e9ee;vertical-align:middle">${idx + 1}</td>
+        <td style="padding:8px;border:1px solid #e6e9ee;vertical-align:middle">${name}</td>
+        <td style="padding:8px;border:1px solid #e6e9ee;text-align:right;vertical-align:middle">${String(item.quantityKg)}</td>
+        <td style="padding:8px;border:1px solid #e6e9ee;text-align:right;vertical-align:middle">₹${Number(rate).toFixed(2)}</td>
+        <td style="padding:8px;border:1px solid #e6e9ee;text-align:right;vertical-align:middle">₹${Number(item.subtotal).toFixed(2)}</td>`;
+      tbody.appendChild(tr);
+    });
+
+    table.appendChild(tbody);
+    container.appendChild(table);
+
+    // Totals & payment area
+    const summary = document.createElement('div');
+    summary.style.display = 'flex';
+    summary.style.justifyContent = 'space-between';
+    summary.style.marginTop = '12px';
+    summary.style.alignItems = 'flex-start';
+
+    const leftNotes = document.createElement('div');
+    leftNotes.style.width = '60%';
+    leftNotes.innerHTML = `<div style="font-size:12px;color:#475569">Thank you for shopping with Engal Santhai. Please verify payment and preserve this bill for your records.</div>`;
+    summary.appendChild(leftNotes);
+
+    const rightTotals = document.createElement('div');
+    rightTotals.style.width = '36%';
+    rightTotals.style.border = '1px solid #e6e9ee';
+    rightTotals.style.padding = '8px';
+    rightTotals.style.borderRadius = '6px';
+    rightTotals.innerHTML = `<div style="display:flex;justify-content:space-between;font-weight:700;margin-bottom:6px"><div>SUBTOTAL</div><div>₹${Number(calculatedTotal).toFixed(2)}</div></div>
+      <div style="display:flex;justify-content:space-between;font-weight:700;font-size:14px"><div>TOTAL</div><div>₹${Number(calculatedTotal).toFixed(2)}</div></div>`;
+    summary.appendChild(rightTotals);
+
+    container.appendChild(summary);
+
+    // Payment block
+    if (selectedUpiId) {
+      const upi = UPI_IDS.find(u => u.id === selectedUpiId);
+      if (upi) {
+        const payDiv = document.createElement('div');
+        payDiv.style.marginTop = '12px';
+        payDiv.style.padding = '10px';
+        payDiv.style.borderRadius = '6px';
+        payDiv.style.background = '#f8fafc';
+        payDiv.style.border = '1px solid #e6eef4';
+        payDiv.innerHTML = `<div style="font-weight:700;margin-bottom:6px">PAYMENT INFORMATION</div>
+          <div style="margin-bottom:4px">Payee Name: ${upi.name}</div>
+          <div style="margin-bottom:4px">UPI ID: ${upi.displayName}</div>
+          <div>Amount: Rs. ${Number(calculatedTotal).toFixed(2)}</div>`;
+        container.appendChild(payDiv);
+      }
+    }
+
+    // Attach a simple inlined link to google fonts (so html2canvas can use it if available)
+    const fontLink = document.createElement('link');
+    fontLink.href = 'https://fonts.googleapis.com/css2?family=Noto+Sans+Tamil&display=swap';
+    fontLink.rel = 'stylesheet';
+    container.appendChild(fontLink);
+
+    // attach to body hidden, but visible to html2canvas
+    container.style.position = 'fixed';
+    container.style.left = '-9999px';
+    container.style.top = '0';
+    document.body.appendChild(container);
+
+    // small delay to allow webfont to load
+    await new Promise((res) => setTimeout(res, 250));
+
+    return container;
+  };
+
+  // ---- END NEW HELPERS ----
+
   const generateBillPdfBlobAndFilename = async (): Promise<{ blob: Blob; filename: string }> => {
     const { jsPDF } = window.jspdf;
-    const pdfDoc = new jsPDF();
+    // Use A4 portrait (units in mm)
+    const pdfDoc = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait' });
 
     const pageWidth = pdfDoc.internal.pageSize.getWidth();
-    const ITEMS_PER_PAGE = 25; // Maximum items per page
+    const pageHeight = pdfDoc.internal.pageSize.getHeight();
+
+    const ITEMS_PER_PAGE = 22; // Slightly fewer because of nicer spacing
     const totalPages = Math.max(1, Math.ceil(editedItems.length / ITEMS_PER_PAGE));
 
     // Extract employee ID from bill's customer information for PDF
@@ -766,8 +984,215 @@ const BillDetailModal: React.FC<BillDetailModalProps> = ({ isOpen, onClose, bill
     const fileDate = `${dd}${mm}${yyyy}`;
     const filename = `${fileSerial}-${fileDate}-${nameSafe}-${deptSafe}.pdf`;
 
-    const blob = pdfDoc.output('blob');
-    return { blob, filename };
+    // Decide whether to use text-based jsPDF (searchable) or raster fallback (html2canvas) because of emojis
+    const useRasterFallback = billHasEmoji();
+
+    // If NOT using raster fallback, we embed and use the NotoSansTamil font so Tamil text is searchable
+    if (!useRasterFallback) {
+      try {
+        // Ensure font is available via the external js font file you imported
+        // The imported file should have added the font under the name 'NotoSansTamil'
+        // We attempt to set the font; if not available, fallback to helvetica.
+        try {
+          pdfDoc.setFont('NotoSansTamil');
+        } catch (e) {
+          // Some builds require adding font explicitly; if external font didn't already add it,
+          // we gracefully fallback to helvetica so generation won't crash.
+          console.warn('NotoSansTamil font unavailable in jsPDF VFS, falling back to helvetica for generation:', e);
+          pdfDoc.setFont('helvetica');
+        }
+
+        // Build pages (text-based) with improved visual layout
+        for (let pageNum = 0; pageNum < totalPages; pageNum++) {
+          if (pageNum > 0) pdfDoc.addPage();
+          
+          // Light-green header bar
+          const headerHeight = 18;
+          // Draw gradient-like rectangle (jsPDF doesn't support gradient natively; we use a solid soft green)
+          pdfDoc.setFillColor(198, 246, 213); // #c6f6d5 light
+          pdfDoc.rect(10, 10, pageWidth - 20, headerHeight, 'F');
+          pdfDoc.setTextColor(6, 78, 59); // dark green for text
+
+          // Title
+          pdfDoc.setFontSize(18);
+          pdfDoc.setFont(undefined, 'bold');
+          pdfDoc.text('Engal Santhai', pageWidth / 2, 24, { align: 'center' });
+
+          pdfDoc.setFontSize(10);
+          pdfDoc.setFont(undefined, 'normal');
+          pdfDoc.text('Your Fresh Vegetable Partner', pageWidth / 2, 29, { align: 'center' });
+
+          // Invoice label
+          pdfDoc.setFontSize(12);
+          pdfDoc.setFont(undefined, 'bold');
+          pdfDoc.text('INVOICE', 14, 42);
+
+          // Bill meta
+          const dateStr = billDateObj.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' });
+          const timeStr = billDateObj.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }).toLowerCase();
+
+          pdfDoc.setFontSize(10);
+          pdfDoc.setFont(undefined, 'normal');
+          pdfDoc.text(`BILL NO: ${formattedBillNumber}`, 14, 50);
+          pdfDoc.text(`Date: ${dateStr}`, pageWidth - 14, 50, { align: 'right' });
+
+          pdfDoc.text(`CUSTOMER NAME : ${customerNameFromDB || bill.customerName}`, 14, 56);
+          pdfDoc.text(`Time: ${timeStr}`, pageWidth - 14, 56, { align: 'right' });
+
+          pdfDoc.text(`EMP ID: ${employeeId}`, 14, 64);
+
+          // Table headings
+          const startX = 14;
+          let y = 74;
+          const endX = pageWidth - 14;
+          const colSNo = startX;
+          const colItem = startX + 18;
+          const colQty = startX + 96;
+          const colRate = startX + 126;
+          const colAmount = endX;
+
+          // header line
+          pdfDoc.setDrawColor(226, 229, 238);
+          pdfDoc.setLineWidth(0.4);
+          pdfDoc.line(startX, y - 6, endX, y - 6);
+
+          pdfDoc.setFont(undefined, 'bold');
+          pdfDoc.setFontSize(10);
+          pdfDoc.text('S.No.', colSNo, y);
+          pdfDoc.text('Item', colItem, y);
+          pdfDoc.text('Qty (kg)', colQty, y, { align: 'right' });
+          pdfDoc.text('Rate (Rs.)', colRate, y, { align: 'right' });
+          pdfDoc.text('Amount (Rs.)', colAmount, y, { align: 'right' });
+
+          y += 6;
+          pdfDoc.setLineWidth(0.2);
+          pdfDoc.line(startX, y, endX, y);
+          y += 8;
+
+          // Items
+          const startIdx = pageNum * ITEMS_PER_PAGE;
+          const endIdx = Math.min(startIdx + ITEMS_PER_PAGE, editedItems.length);
+          const pageItems = editedItems.slice(startIdx, endIdx);
+
+          pdfDoc.setFont('NotoSansTamil', 'normal');
+          pdfDoc.setFontSize(10);
+          pageItems.forEach((item, pageIndex) => {
+            const vegetable = combinedVegetableMap.get(item.vegetableId);
+            const globalSerialNo = startIdx + pageIndex + 1;
+            const name = (item as any).name || vegetable?.name || 'Unknown';
+            const qty = String(item.quantityKg);
+            const rate = String((item as any).pricePerKg || vegetable?.pricePerKg || 0);
+            const amount = String(item.subtotal);
+
+            // Wrap item name if longer than allowed width
+            const maxItemWidth = colQty - colItem - 4;
+            const splitName = pdfDoc.splitTextToSize(name, maxItemWidth);
+            const lineCount = splitName.length;
+
+            pdfDoc.text(globalSerialNo.toString(), colSNo, y);
+            pdfDoc.text(splitName, colItem, y);
+            pdfDoc.text(qty, colQty, y, { align: 'right' });
+            pdfDoc.text((Number(rate) ? `₹${Number(rate).toFixed(2)}` : '₹0.00'), colRate, y, { align: 'right' });
+            pdfDoc.text(`₹${Number(amount).toFixed(2)}`, colAmount, y, { align: 'right' });
+
+            y += lineCount * 6;
+            // If next item would overflow page, add new page
+            if (y > pageHeight - 50) {
+              // ensure loop stops for current page
+            }
+          });
+
+          // Footer totals on last page
+          if (pageNum === totalPages - 1) {
+            pdfDoc.setLineWidth(0.4);
+            pdfDoc.line(startX, pageHeight - 60, endX, pageHeight - 60);
+
+            pdfDoc.setFont(undefined, 'bold');
+            pdfDoc.setFontSize(12);
+            pdfDoc.text('TOTAL:', colRate, pageHeight - 50);
+            pdfDoc.text(`Rs. ${Number(calculatedTotal).toFixed(2)}`, colAmount, pageHeight - 50, { align: 'right' });
+
+            // Payment box
+            if (selectedUpiId) {
+              const selectedUpi = UPI_IDS.find((upi) => upi.id === selectedUpiId);
+              if (selectedUpi) {
+                const boxY = pageHeight - 40;
+                pdfDoc.setDrawColor(230, 238, 238);
+                pdfDoc.rect(startX, boxY, endX - startX, 28, 'S');
+                pdfDoc.setFontSize(10);
+                pdfDoc.setFont(undefined, 'bold');
+                pdfDoc.text('PAYMENT INFORMATION', startX + 2, boxY + 7);
+                pdfDoc.setFont(undefined, 'normal');
+                pdfDoc.setFontSize(9);
+                pdfDoc.text(`Payee Name: ${selectedUpi.name}`, startX + 2, boxY + 12);
+                pdfDoc.text(`UPI ID: ${selectedUpi.displayName}`, startX + 2, boxY + 17);
+                pdfDoc.text(`Amount: Rs. ${Number(calculatedTotal).toFixed(2)}`, startX + 2, boxY + 22);
+              }
+            }
+          }
+        }
+
+        // Build blob
+        const blob = pdfDoc.output('blob');
+        return { blob, filename };
+      } catch (err) {
+        console.error('Error generating text-based PDF:', err);
+        // Fall back to raster fallback if anything goes wrong
+      }
+    }
+
+    // Raster fallback path (html2canvas) - used when emojis present or text-based path failed
+    try {
+      // Create printable DOM element and render to canvas
+      const element = await createPrintableBillElement();
+      // Use a larger scale for better resolution
+      const scale = 2;
+      const canvas = await html2canvas(element as HTMLElement, {
+        scale,
+        useCORS: true,
+        logging: false,
+        scrollY: -window.scrollY
+      });
+
+      // Remove temporary element
+      try { document.body.removeChild(element); } catch(e) {}
+
+      const imgData = canvas.toDataURL('image/png');
+
+      const imgProps = (pdfDoc as any).getImageProperties(imgData);
+      const imgWidth = pageWidth;
+      const imgHeight = (imgProps.height * imgWidth) / imgProps.width;
+
+      let heightLeft = imgHeight;
+      let position = 0;
+
+      // add first page
+      pdfDoc.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
+      heightLeft -= pageHeight;
+
+      while (heightLeft > 0) {
+        pdfDoc.addPage();
+        position = heightLeft - imgHeight;
+        // when slicing, place the same full image with negative y to shift (works cross-browser)
+        pdfDoc.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
+        heightLeft -= pageHeight;
+      }
+
+      const blob = pdfDoc.output('blob');
+      return { blob, filename };
+    } catch (rasterErr) {
+      console.error('Raster fallback also failed:', rasterErr);
+      // As a final fallback, attempt a simple minimal PDF with the filename and a message
+      try {
+        const fallbackPdf = new jsPDF();
+        fallbackPdf.text('Unable to generate bill PDF. Please contact support.', 10, 10);
+        const blob = fallbackPdf.output('blob');
+        return { blob, filename };
+      } catch (finalErr) {
+        console.error('Final fallback failed:', finalErr);
+        throw new Error('PDF generation failed.');
+      }
+    }
   };
   // Copy generated PDF to clipboard as a file (so user can paste into WhatsApp Web/Desktop)
  
@@ -906,16 +1331,6 @@ const handleShare = async () => {
       downloadURL = rawURL + (rawURL.includes("?") ? "&dl=1" : "?dl=1");
 
       console.log("☁️ Uploaded PDF to Firebase Storage:", downloadURL);
-
-      // 🧹 Schedule deletion after 24 hours
-      setTimeout(async () => {
-        try {
-          await deleteObject(pdfRef);
-          console.log("🧹 Deleted old bill PDF from Firebase Storage");
-        } catch (delErr) {
-          console.warn("⚠️ PDF deletion failed:", delErr);
-        }
-      }, 24 * 60 * 60 * 1000);
     } catch (pdfErr) {
       console.warn("⚠️ PDF upload failed:", pdfErr);
     }
@@ -967,14 +1382,16 @@ const handleShare = async () => {
     } catch (shareErr) {
       console.warn("⚠️ Native share API failed:", shareErr);
     }
+
   } catch (err) {
     console.error("❌ handleShare failed:", err);
     alert("Unable to open WhatsApp. Please try downloading and sending manually.");
   }
 };
+ 
 
 
-;
+
 
   return (
     <>
