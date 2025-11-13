@@ -127,6 +127,8 @@ const BillDetailModal: React.FC<BillDetailModalProps> = ({
   const [isLoadingVegetables, setIsLoadingVegetables] = useState(false);
   const globalVegetableCache = React.useRef<Map<string, Vegetable>>(new Map());
   const [selectedUpiId, setSelectedUpiId] = useState<string>('');
+  // New: department fetched from DB for accurate file naming and header printing
+  const [customerDeptFromDB, setCustomerDeptFromDB] = useState<string>('');
 
   useEffect(() => {
     if (bill) {
@@ -276,12 +278,13 @@ const BillDetailModal: React.FC<BillDetailModalProps> = ({
     return null;
   };
 
-  // Fetch customer name from DB
+  // Fetch customer name and department from DB
   useEffect(() => {
     if (!bill) return;
     let mounted = true;
     const loadName = async () => {
       setCustomerNameFromDB('');
+      setCustomerDeptFromDB('');
       const key = getCustomerKeyFromBill(bill);
       if (!key) return;
       try {
@@ -290,6 +293,13 @@ const BillDetailModal: React.FC<BillDetailModalProps> = ({
         if (userSnap.exists() && mounted) {
           const data = userSnap.data() as any;
           setCustomerNameFromDB(data.employee_name || data.name || data.fullName || data.displayName || '');
+          const dept =
+            data.department ||
+            data.dept ||
+            data.departmentName ||
+            data.employee?.department ||
+            '';
+          setCustomerDeptFromDB(typeof dept === 'string' ? dept : '');
           return;
         }
         const custRef = doc(db, 'customers', key);
@@ -297,12 +307,22 @@ const BillDetailModal: React.FC<BillDetailModalProps> = ({
         if (custSnap.exists() && mounted) {
           const data = custSnap.data() as any;
           setCustomerNameFromDB(data.employee_name || data.name || data.fullName || data.displayName || '');
+          const dept =
+            data.department ||
+            data.dept ||
+            data.departmentName ||
+            data.employee?.department ||
+            '';
+          setCustomerDeptFromDB(typeof dept === 'string' ? dept : '');
           return;
         }
       } catch (err) {
         console.error('Error loading customer name', err);
       }
-      if (mounted) setCustomerNameFromDB('');
+      if (mounted) {
+        setCustomerNameFromDB('');
+        setCustomerDeptFromDB('');
+      }
     };
     loadName();
     return () => { mounted = false; };
@@ -458,7 +478,7 @@ const BillDetailModal: React.FC<BillDetailModalProps> = ({
     container.appendChild(header);
 
     // Meta
-    const meta = document.createElement('div');
+  const meta = document.createElement('div');
     meta.style.display = 'flex';
     meta.style.justifyContent = 'space-between';
     meta.style.marginTop = '12px';
@@ -470,8 +490,12 @@ const BillDetailModal: React.FC<BillDetailModalProps> = ({
     let serial = '001';
     if (idMatch) serial = idMatch[1].slice(-3).padStart(3, '0');
     const billNoFormatted = `ES${dd}${mm}${yyyy}-${serial}`;
+    const deptForHtml = sanitizeTextForPdf(customerDeptFromDB || (bill as any).department || 'NA').toUpperCase();
     meta.innerHTML = `<div style="font-weight:600">BILL NO: ${billNoFormatted}<div style="margin-top:6px">Date: ${dd}/${mm}/${yyyy}</div></div>
-      <div style="text-align:right">${sanitizeTextForPdf(customerNameFromDB || bill.customerName || '')}<div style="margin-top:6px">EMP ID: ${(bill.customerId || bill.customerName || 'N/A')}</div></div>`;
+      <div style="text-align:right">${sanitizeTextForPdf(customerNameFromDB || bill.customerName || '')}
+        <div style="margin-top:6px">EMP ID: ${(bill.customerId || bill.customerName || 'N/A')}</div>
+        <div style="margin-top:6px">DEPT: ${deptForHtml}</div>
+      </div>`;
     container.appendChild(meta);
 
     // Table
@@ -567,7 +591,7 @@ const BillDetailModal: React.FC<BillDetailModalProps> = ({
     const formattedBillNumber = `ES${dd}${mm}${yyyy}-${serial}`;
 
     const rawName = (customerNameFromDB || bill.customerName || 'customer').toString();
-    const rawDept = (bill.department || 'NA').toString();
+  const rawDept = (customerDeptFromDB || bill.department || 'NA').toString();
     const sanitizeFile = (s: string) => s.trim().replace(/\s+/g, '_').replace(/[^a-zA-Z0-9_\-]/g, '').replace(/_+/g, '_');
     const nameSafe = sanitizeFile(rawName).toUpperCase() || 'CUSTOMER';
     const deptSafe = sanitizeFile(rawDept).toUpperCase() || 'NA';
@@ -610,9 +634,11 @@ const BillDetailModal: React.FC<BillDetailModalProps> = ({
           pdfDoc.setFontSize(10);
           pdfDoc.text(`BILL NO: ${formattedBillNumber}`, 14, 50);
           pdfDoc.text(`Date: ${dateStr}`, pageWidth - 14, 50, { align: 'right' });
+          const safeDept = sanitizeTextForPdf(customerDeptFromDB || bill.department || 'NA');
           pdfDoc.text(`CUSTOMER NAME : ${sanitizeTextForPdf(customerNameFromDB || bill.customerName || '')}`, 14, 56);
           pdfDoc.text(`Time: ${timeStr}`, pageWidth - 14, 56, { align: 'right' });
           pdfDoc.text(`EMP ID: ${(bill.customerId || bill.customerName || 'N/A')}`, 14, 64);
+          pdfDoc.text(`DEPT: ${safeDept.toUpperCase()}`, pageWidth - 14, 64, { align: 'right' });
 
           // Table headings & columns
           let y = 74;
