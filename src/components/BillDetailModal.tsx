@@ -535,7 +535,7 @@ const BillDetailModal: React.FC<BillDetailModalProps> = ({
     summary.style.justifyContent = 'space-between';
     summary.style.marginTop = '12px';
     summary.innerHTML = `<div style="width:60%;font-size:12px;color:#475569">Thank you for shopping with Engal Santhai. Please preserve this bill for your records.</div>
-      <div style="width:36%;border:1px solid #e6e9ee;padding:8px;border-radius:6px"><div style="display:flex;justify-content:space-between;font-weight:700">GRAND TOTAL <div>₹${Number(calculatedTotal).toFixed(2)}</div></div></div>`;
+      <div style="width:36%;border:1px solid #e6e9ee;padding:8px;border-radius:6px"><div style="display:flex;justify-content:space-between;font-weight:700">GRAND TOTAL <div>₹${Math.round(calculatedTotal)}</div></div></div>`;
     container.appendChild(summary);
 
     // Payment block if selected
@@ -549,7 +549,7 @@ const BillDetailModal: React.FC<BillDetailModalProps> = ({
         payDiv.style.background = '#f8fafc';
         payDiv.style.border = '1px solid #e6eef4';
         payDiv.innerHTML = `<div style="font-weight:700">PAYMENT INFORMATION</div>
-          <div>Payee Name: ${upi.name}</div><div>UPI ID: ${upi.displayName}</div><div>Amount: Rs. ${Number(calculatedTotal).toFixed(2)}</div>`;
+          <div>Payee Name: ${upi.name}</div><div>UPI ID: ${upi.displayName}</div><div>Amount: Rs. ${Math.round(calculatedTotal)}</div>`;
         container.appendChild(payDiv);
       }
     }
@@ -715,7 +715,7 @@ const BillDetailModal: React.FC<BillDetailModalProps> = ({
             pdfDoc.setFont(undefined, 'bold');
             pdfDoc.setFontSize(12);
             pdfDoc.text('TOTAL:', colRate, pageHeight - 50);
-            pdfDoc.text(`Rs. ${Number(calculatedTotal).toFixed(2)}`, colAmount, pageHeight - 50, { align: 'right' });
+            pdfDoc.text(`Rs. ${Math.round(calculatedTotal)}`, colAmount, pageHeight - 50, { align: 'right' });
 
             // Payment details
             if (selectedUpiId) {
@@ -731,7 +731,7 @@ const BillDetailModal: React.FC<BillDetailModalProps> = ({
                 pdfDoc.setFontSize(9);
                 pdfDoc.text(`Payee Name: ${selectedUpi.name}`, startX + 2, boxY + 12);
                 pdfDoc.text(`UPI ID: ${selectedUpi.displayName}`, startX + 2, boxY + 17);
-                pdfDoc.text(`Amount: Rs. ${Number(calculatedTotal).toFixed(2)}`, startX + 2, boxY + 22);
+                pdfDoc.text(`Amount: Rs. ${Math.round(calculatedTotal)}`, startX + 2, boxY + 22);
               }
             }
           }
@@ -864,7 +864,7 @@ const BillDetailModal: React.FC<BillDetailModalProps> = ({
         console.warn('PDF upload failed', err);
       }
 
-      const message = `Hello ${customerNameFromDB || bill.customerName},\n\nYour Engal Santhai bill is ready.\nTotal: ₹${Number(calculatedTotal).toFixed(2)}\n📄 Download your E-bill here: ${downloadURL || 'Please find your bill attached.'}\n\nThank you for shopping with us!`;
+      const message = `Hello ${customerNameFromDB || bill.customerName},\n\nYour Engal Santhai bill is ready.\nTotal: ₹${Math.round(calculatedTotal)}\n📄 Download your E-bill here: ${downloadURL || 'Please find your bill attached.'}\n\nThank you for shopping with us!`;
 
       try {
         await navigator.clipboard.writeText(message);
@@ -1081,7 +1081,7 @@ const BillDetailModal: React.FC<BillDetailModalProps> = ({
                     <div className="inline-block p-4 bg-white rounded-lg shadow-sm">
                       <img src={upiPng} alt="UPI QR Code" className="w-32 h-32 mx-auto rounded border" />
                     </div>
-                    <p className="text-xs text-slate-500 mt-2">Scan this QR code to pay ₹{Number(calculatedTotal).toFixed(2)}</p>
+                    <p className="text-xs text-slate-500 mt-2">Scan this QR code to pay ₹{Math.round(calculatedTotal)}</p>
                   </div>
                 </div>
               ) : (
@@ -1110,8 +1110,8 @@ const BillDetailModal: React.FC<BillDetailModalProps> = ({
 
               <div className="text-right">
                 <p className="text-sm text-slate-500">Total Amount</p>
-                <p className="text-2xl font-bold text-slate-800">₹{Number(calculatedTotal).toFixed(2)}</p>
-                {Number(calculatedTotal) !== Number(bill.total) && <p className="text-xs text-slate-500 mt-1">Original: ₹{Number(bill.total).toFixed(2)}</p>}
+                <p className="text-2xl font-bold text-slate-800">₹{Math.round(calculatedTotal)}</p>
+                {Number(calculatedTotal) !== Number(bill.total) && <p className="text-xs text-slate-500 mt-1">Original: ₹{Math.round(bill.total)}</p>}
               </div>
             </div>
 
