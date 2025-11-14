@@ -8,7 +8,7 @@ import { PlusIcon, MinusIcon, MagnifyingGlassIcon } from './ui/Icon.tsx';
 // import PaymentPage from './PaymentPage.tsx';
 import CartView from './CartView.tsx';
 import BillPreviewPage from './BillPreviewPage.tsx';
-import Settings from './Settings.tsx';
+import UserSettings from './UserSettings.tsx';
 import { updateUserNameInDb } from '../services/dbService';
 import { roundTotal, formatRoundedTotal } from '../utils/roundUtils';
 
@@ -253,11 +253,7 @@ const OrderPage: React.FC<OrderPageProps> = ({ user, vegetables, availableStock,
           >
             ← Back to Shopping
           </button>
-          <Settings 
-            user={user}
-            onUpdateProfile={handleUpdateProfile}
-            onChangePassword={handleChangePassword}
-          />
+          <UserSettings user={user} />
         </div>
       </div>
     );

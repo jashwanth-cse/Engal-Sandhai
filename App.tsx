@@ -5,11 +5,21 @@ import AdminDashboard from './src/components/AdminDashboard';
 import OrderPage from './src/components/OrderPage';
 import AdminChoicePage from './src/components/AdminChoicePage';
 import ProtectedRoute from './src/components/ProtectedRoute';
+import Dashboard from './src/components/Dashboard';
+import Inventory from './src/components/Inventory';
+import Orders from './src/components/Orders';
+import Reports from './src/components/Reports';
+import WeeklyInventory from './src/components/WeeklyInventory';
+import Settings from './src/components/Settings';
+import CreateBill from './src/components/CreateBill';
+import Sidebar from './src/components/Sidebar';
+import AdminHeader from './src/components/AdminHeader';
 import { useBillingData } from './hooks/useBillingData';
 import type { User } from './types/types';
 import { loginWithEmployeeID, auth, observeUser } from './src/services/authService';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { db } from './src/firebase';
+import { updateUserNameInDb, updateOrderStatus } from './src/services/dbService';
 
 // Map Firebase/Auth errors to user-friendly messages
 function mapAuthErrorToMessage(error: any): string {
@@ -42,6 +52,8 @@ const App: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [loginError, setLoginError] = useState<string | null>(null);
   const [selectedDate, setSelectedDate] = useState<Date | null>(null); // Add date state\n  const [sessionTimeout, setSessionTimeout] = useState<NodeJS.Timeout | null>(null); // Add session timeout
+  const [isSidebarOpen, setSidebarOpen] = useState(false);
+  const [initialBillId, setInitialBillId] = useState<string | null>(null);
   const billingData = useBillingData({ selectedDate, currentUser }); // Pass selected date and currentUser to hook
   const navigate = useNavigate();
 
@@ -287,6 +299,46 @@ const App: React.FC = () => {
     setSelectedDate(date);
   };
 
+  const handleViewOrder = (billId: string) => {
+    setInitialBillId(billId);
+    navigate('/admin/orders');
+  };
+
+  const handleUpdateProfile = async (profile: { name: string; email: string }) => {
+    try {
+      await updateUserNameInDb(currentUser!.id, profile.name);
+      const updatedUser: User = {
+        ...currentUser!,
+        name: profile.name,
+        email: profile.email
+      };
+      handleUpdateUser(updatedUser);
+    } catch (error) {
+      console.error('Error updating profile:', error);
+    }
+  };
+
+  const handleChangePassword = (passwords: { currentPassword: string; newPassword: string; confirmPassword: string }) => {
+    const uppercasePasswords = {
+      currentPassword: passwords.currentPassword.toUpperCase(),
+      newPassword: passwords.newPassword.toUpperCase(),
+      confirmPassword: passwords.confirmPassword.toUpperCase()
+    };
+    console.log('Password change requested');
+  };
+
+  const handleUpdateBillStatus = async (billId: string, status: 'pending' | 'packed' | 'delivered' | 'inprogress' | 'bill_sent') => {
+    billingData.updateBill(billId, { status });
+    try {
+      const success = await updateOrderStatus(billId, status, currentUser!.id, selectedDate);
+      if (!success) {
+        console.warn('Order status update failed - order not found in recent collections:', billId);
+      }
+    } catch (error) {
+      console.error('Failed to update order status in Firestore:', error);
+    }
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-50">
@@ -336,30 +388,243 @@ const App: React.FC = () => {
           </ProtectedRoute>
         }
       />
+      
+      {/* Admin Routes with Sidebar Layout */}
       <Route
-        path="/admindashboard"
+        path="/admin/dashboard"
         element={
           <ProtectedRoute user={currentUser} loading={loading} requiredRole="admin">
-            <AdminDashboard
-              user={currentUser}
-              vegetables={billingData.vegetables}
-              availableStock={billingData.availableStock}
-              addVegetable={billingData.addVegetable}
-              updateVegetable={billingData.updateVegetable}
-              deleteVegetable={billingData.deleteVegetable}
-              bills={billingData.bills}
-              updateBill={billingData.updateBill}
-              addBill={billingData.addBill}
-              onLogout={handleLogout}
-              onUpdateUser={handleUpdateUser}
-              selectedDate={selectedDate}
-              onDateSelectionChange={handleDateSelectionChange}
-              loading={(billingData as any).loading}
-              onRefresh={(billingData as any).refreshData}
-            />
+            <div className="flex h-screen bg-slate-100 font-sans">
+              <Sidebar 
+                user={currentUser!} 
+                onLogout={handleLogout} 
+                currentPage="dashboard"
+                setCurrentPage={(page) => {
+                  setSidebarOpen(false);
+                  navigate(`/admin/${page}`);
+                }}
+                isOpen={isSidebarOpen}
+                setIsOpen={setSidebarOpen}
+              />
+              <div className="flex-1 flex flex-col overflow-hidden">
+                <AdminHeader onMenuClick={() => setSidebarOpen(true)} title="Dashboard" user={currentUser!} />
+                <main className="flex-1 overflow-x-hidden overflow-y-auto bg-slate-100 p-4 sm:p-6">
+                  <Dashboard 
+                    bills={billingData.bills} 
+                    vegetables={billingData.vegetables} 
+                    onViewOrder={handleViewOrder} 
+                    onUpdateBillStatus={handleUpdateBillStatus} 
+                    onUpdateBill={billingData.updateBill} 
+                    onDateSelectionChange={handleDateSelectionChange}
+                  />
+                </main>
+              </div>
+            </div>
           </ProtectedRoute>
         }
       />
+      
+      <Route
+        path="/admin/inventory"
+        element={
+          <ProtectedRoute user={currentUser} loading={loading} requiredRole="admin">
+            <div className="flex h-screen bg-slate-100 font-sans">
+              <Sidebar 
+                user={currentUser!} 
+                onLogout={handleLogout} 
+                currentPage="inventory"
+                setCurrentPage={(page) => {
+                  setSidebarOpen(false);
+                  navigate(`/admin/${page}`);
+                }}
+                isOpen={isSidebarOpen}
+                setIsOpen={setSidebarOpen}
+              />
+              <div className="flex-1 flex flex-col overflow-hidden">
+                <AdminHeader onMenuClick={() => setSidebarOpen(true)} title="Inventory" user={currentUser!} />
+                <main className="flex-1 overflow-x-hidden overflow-y-auto bg-slate-100 p-4 sm:p-6">
+                  <Inventory 
+                    vegetables={billingData.vegetables} 
+                    bills={billingData.bills}
+                    availableStock={billingData.availableStock}
+                    addVegetable={billingData.addVegetable} 
+                    updateVegetable={billingData.updateVegetable}
+                    deleteVegetable={billingData.deleteVegetable}
+                    selectedDate={selectedDate}
+                    onDateChange={handleDateSelectionChange}
+                    onRefresh={(billingData as any).refreshData}
+                    loading={(billingData as any).loading}
+                  />
+                </main>
+              </div>
+            </div>
+          </ProtectedRoute>
+        }
+      />
+      
+      <Route
+        path="/admin/orders"
+        element={
+          <ProtectedRoute user={currentUser} loading={loading} requiredRole="admin">
+            <div className="flex h-screen bg-slate-100 font-sans">
+              <Sidebar 
+                user={currentUser!} 
+                onLogout={handleLogout} 
+                currentPage="orders"
+                setCurrentPage={(page) => {
+                  setSidebarOpen(false);
+                  navigate(`/admin/${page}`);
+                }}
+                isOpen={isSidebarOpen}
+                setIsOpen={setSidebarOpen}
+              />
+              <div className="flex-1 flex flex-col overflow-hidden">
+                <AdminHeader onMenuClick={() => setSidebarOpen(true)} title="Order History" user={currentUser!} />
+                <main className="flex-1 overflow-x-hidden overflow-y-auto bg-slate-100 p-4 sm:p-6">
+                  <Orders 
+                    bills={billingData.bills} 
+                    vegetables={billingData.vegetables} 
+                    initialBillId={initialBillId} 
+                    onClearInitialBill={() => setInitialBillId(null)}
+                    onUpdateBillStatus={handleUpdateBillStatus}
+                    onUpdateBill={billingData.updateBill}
+                    currentUser={currentUser!}
+                    onDateSelectionChange={handleDateSelectionChange}
+                  />
+                </main>
+              </div>
+            </div>
+          </ProtectedRoute>
+        }
+      />
+      
+      <Route
+        path="/admin/reports"
+        element={
+          <ProtectedRoute user={currentUser} loading={loading} requiredRole="admin">
+            <div className="flex h-screen bg-slate-100 font-sans">
+              <Sidebar 
+                user={currentUser!} 
+                onLogout={handleLogout} 
+                currentPage="reports"
+                setCurrentPage={(page) => {
+                  setSidebarOpen(false);
+                  navigate(`/admin/${page}`);
+                }}
+                isOpen={isSidebarOpen}
+                setIsOpen={setSidebarOpen}
+              />
+              <div className="flex-1 flex flex-col overflow-hidden">
+                <AdminHeader onMenuClick={() => setSidebarOpen(true)} title="Reports" user={currentUser!} />
+                <main className="flex-1 overflow-x-hidden overflow-y-auto bg-slate-100 p-4 sm:p-6">
+                  <Reports />
+                </main>
+              </div>
+            </div>
+          </ProtectedRoute>
+        }
+      />
+      
+      <Route
+        path="/admin/weekly-stock"
+        element={
+          <ProtectedRoute user={currentUser} loading={loading} requiredRole="admin">
+            <div className="flex h-screen bg-slate-100 font-sans">
+              <Sidebar 
+                user={currentUser!} 
+                onLogout={handleLogout} 
+                currentPage="weekly-stock"
+                setCurrentPage={(page) => {
+                  setSidebarOpen(false);
+                  navigate(`/admin/${page}`);
+                }}
+                isOpen={isSidebarOpen}
+                setIsOpen={setSidebarOpen}
+              />
+              <div className="flex-1 flex flex-col overflow-hidden">
+                <AdminHeader onMenuClick={() => setSidebarOpen(true)} title="Weekly Stock Report" user={currentUser!} />
+                <main className="flex-1 overflow-x-hidden overflow-y-auto bg-slate-100 p-4 sm:p-6">
+                  <WeeklyInventory 
+                    vegetables={billingData.vegetables}
+                    bills={billingData.bills}
+                    user={currentUser!}
+                  />
+                </main>
+              </div>
+            </div>
+          </ProtectedRoute>
+        }
+      />
+      
+      <Route
+        path="/admin/create-bill"
+        element={
+          <ProtectedRoute user={currentUser} loading={loading} requiredRole="admin">
+            <div className="flex h-screen bg-slate-100 font-sans">
+              <Sidebar 
+                user={currentUser!} 
+                onLogout={handleLogout} 
+                currentPage="create-bill"
+                setCurrentPage={(page) => {
+                  setSidebarOpen(false);
+                  navigate(`/admin/${page}`);
+                }}
+                isOpen={isSidebarOpen}
+                setIsOpen={setSidebarOpen}
+              />
+              <div className="flex-1 flex flex-col overflow-hidden">
+                <AdminHeader onMenuClick={() => setSidebarOpen(true)} title="Create Bill" user={currentUser!} />
+                <main className="flex-1 overflow-x-hidden overflow-y-auto bg-slate-100 p-4 sm:p-6">
+                  <CreateBill 
+                    user={currentUser!}
+                    vegetables={billingData.vegetables}
+                    bills={billingData.bills}
+                    addBill={billingData.addBill}
+                    availableStock={billingData.availableStock}
+                  />
+                </main>
+              </div>
+            </div>
+          </ProtectedRoute>
+        }
+      />
+      
+      <Route
+        path="/admin/settings"
+        element={
+          <ProtectedRoute user={currentUser} loading={loading} requiredRole="admin">
+            <div className="flex h-screen bg-slate-100 font-sans">
+              <Sidebar 
+                user={currentUser!} 
+                onLogout={handleLogout} 
+                currentPage="settings"
+                setCurrentPage={(page) => {
+                  setSidebarOpen(false);
+                  navigate(`/admin/${page}`);
+                }}
+                isOpen={isSidebarOpen}
+                setIsOpen={setSidebarOpen}
+              />
+              <div className="flex-1 flex flex-col overflow-hidden">
+                <AdminHeader onMenuClick={() => setSidebarOpen(true)} title="Settings" user={currentUser!} />
+                <main className="flex-1 overflow-x-hidden overflow-y-auto bg-slate-100 p-4 sm:p-6">
+                  <Settings 
+                    user={currentUser!}
+                    onUpdateProfile={handleUpdateProfile}
+                    onChangePassword={handleChangePassword}
+                  />
+                </main>
+              </div>
+            </div>
+          </ProtectedRoute>
+        }
+      />
+      
+      <Route
+        path="/admindashboard"
+        element={<Navigate to="/admin/dashboard" replace />}
+      />
+      
       <Route
         path="/admin-choice"
         element={

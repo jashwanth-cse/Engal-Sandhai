@@ -33,6 +33,10 @@ export interface Bill {
 export interface User {
   id: string;
   name: string;
-  role: 'admin' | 'user';
-  email?: string; // Optional email field for settings
+  role: 'admin' | 'user' | 'faculty';
+  email?: string;
+  employee_name?: string; // Employee name from Firebase
+  phone?: string; // Phone number
+  department?: string; // Department (e.g., "Purchase", "Mechanical", etc.)
+  createdAt?: string; // ISO timestamp
 }
