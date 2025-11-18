@@ -17,6 +17,7 @@ import { getStorage, ref, uploadBytes, getDownloadURL } from "firebase/storage";
 // Firestore imports
 import { doc, getDoc, writeBatch, serverTimestamp, collection, query, where, getDocs } from 'firebase/firestore';
 import { db } from '../firebase';
+import { compressPdf } from '../utils/pdfCompressor.ts';
 
 // New import: html2canvas for emoji fallback raster rendering
 import html2canvas from 'html2canvas';
@@ -25,6 +26,7 @@ import html2canvas from 'html2canvas';
 // Put your generated file at src/fonts/NotoSansTamil-Regular.js
 // That file should call jsPDF.API.events.push([...]) and add the font to VFS
 import '../fonts/NotoSansTamil-Regular.js';
+import PaymentQR from "../assets/paymentQR.jpg";
 
 // Let TypeScript know that jspdf is available on the window object
 declare global {
@@ -124,6 +126,8 @@ const BillDetailModal: React.FC<BillDetailModalProps> = ({
   const [selectedUpiId, setSelectedUpiId] = useState<string>(UPI_IDS[0]?.id || '');
   // New: department fetched from DB for accurate file naming and header printing
   const [customerDeptFromDB, setCustomerDeptFromDB] = useState<string>('');
+const [isSharing, setIsSharing] = useState(false);
+  const [selectedUpiId, setSelectedUpiId] = useState<string>('');
 
   useEffect(() => {
     if (bill) {
@@ -398,16 +402,14 @@ const BillDetailModal: React.FC<BillDetailModalProps> = ({
   };
 
   // Create printable DOM element for raster fallback
-  const createPrintableBillElement = async (): Promise<HTMLElement> => {
-    const container = document.createElement('div');
-    container.style.width = '794px';
-    container.style.padding = '18px';
-    container.style.boxSizing = 'border-box';
-    container.style.background = '#fff';
-    container.style.color = '#111827';
-    container.style.fontFamily = "'Noto Sans Tamil', 'Roboto', Arial, sans-serif";
-    container.style.fontSize = '12px';
-    container.style.lineHeight = '1.35';
+  // Create Black & White, Emoji-Free Printable Element for Raster PDF + QR + High Compression
+const createPrintableBillElement = async (): Promise<HTMLElement> => {
+  const sanitizeNoEmoji = (text: string) =>
+    (text || "")
+      .replace(/[\p{Emoji_Presentation}\p{Extended_Pictographic}]/gu, "")
+      .replace(/[\uD800-\uDBFF][\uDC00-\uDFFF]/g, "")
+      .replace(/\u200D/g, "")
+      .trim();
 
     // Header (neutral, no green background)
     const header = document.createElement('div');
@@ -422,96 +424,171 @@ const BillDetailModal: React.FC<BillDetailModalProps> = ({
     header.innerHTML = `<div style="font-weight:800;font-size:20px;color:#111827">Engal Santhai</div><div style="font-size:12px;color:#475569;margin-top:4px">Your Fresh Vegetable Partner</div><div style="font-weight:700;color:#111827">INVOICE</div>`;
     container.appendChild(header);
 
-    // Meta
-  const meta = document.createElement('div');
-    meta.style.display = 'flex';
-    meta.style.justifyContent = 'space-between';
-    meta.style.marginTop = '12px';
-    const billDateObj = new Date(bill.date);
-    const dd = String(billDateObj.getDate()).padStart(2, '0');
-    const mm = String(billDateObj.getMonth() + 1).padStart(2, '0');
-    const yyyy = billDateObj.getFullYear();
-    const idMatch = bill.id.match(/(\d{3,})$/);
-    let serial = '001';
-    if (idMatch) serial = idMatch[1].slice(-3).padStart(3, '0');
-    const billNoFormatted = `ES${dd}${mm}${yyyy}-${serial}`;
-    const deptForHtml = sanitizeTextForPdf(customerDeptFromDB || (bill as any).department || 'NA').toUpperCase();
-    meta.innerHTML = `<div style="font-weight:600">BILL NO: ${billNoFormatted}<div style="margin-top:6px">Date: ${dd}/${mm}/${yyyy}</div></div>
-      <div style="text-align:right">${sanitizeTextForPdf(customerNameFromDB || bill.customerName || '')}
-        <div style="margin-top:6px">EMP ID: ${(bill.customerId || bill.customerName || 'N/A')}</div>
-        <div style="margin-top:6px">DEPT: ${deptForHtml}</div>
-      </div>`;
-    container.appendChild(meta);
+  // HEADER — black & white only
+  const header = document.createElement("div");
+  header.style.display = "flex";
+  header.style.justifyContent = "space-between";
+  header.style.padding = "10px 0";
+  header.style.borderBottom = "1px solid #000";
 
-    // Table
-    const table = document.createElement('table');
-    table.style.width = '100%';
-    table.style.borderCollapse = 'collapse';
-    table.style.marginTop = '12px';
-    table.innerHTML = `<thead>
-      <tr style="background:#f1f5f9;font-weight:700">
-        <th style="padding:8px;border:1px solid #e6e9ee">S.No.</th>
-        <th style="padding:8px;border:1px solid #e6e9ee">Item</th>
-        <th style="padding:8px;border:1px solid #e6e9ee;text-align:right">Qty (kg)</th>
-        <th style="padding:8px;border:1px solid #e6e9ee;text-align:right">Rate (₹)</th>
-        <th style="padding:8px;border:1px solid #e6e9ee;text-align:right">Amount (₹)</th>
+  header.innerHTML = `
+    <div>
+      <div style="font-weight:800;font-size:20px;color:#000">Engal Santhai</div>
+      <div style="font-size:12px;margin-top:3px;color:#000">Your Fresh Vegetable Partner</div>
+    </div>
+    <div style="text-align:right;font-weight:700;color:#000">INVOICE</div>
+  `;
+  container.appendChild(header);
+
+  // METADATA
+  const meta = document.createElement("div");
+  meta.style.display = "flex";
+  meta.style.justifyContent = "space-between";
+  meta.style.marginTop = "12px";
+
+  const billDateObj = new Date(bill.date);
+  const dd = String(billDateObj.getDate()).padStart(2, "0");
+  const mm = String(billDateObj.getMonth() + 1).padStart(2, "0");
+  const yy = String(billDateObj.getFullYear());
+
+  const serialMatch = bill.id.match(/(\d{3,})$/);
+  let serial = serialMatch ? serialMatch[1].slice(-3).padStart(3, "0") : "001";
+  const billNoFormatted = `ES${dd}${mm}${yy}-${serial}`;
+
+  const timeStr = billDateObj.toLocaleTimeString("en-US", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: true
+  }).toLowerCase();
+
+  let employeeId = bill.customerId || bill.customerName || "N/A";
+  if (employeeId.includes("@")) employeeId = employeeId.split("@")[0];
+
+  const leftMeta = `
+      <div style="font-weight:600">BILL NO: ${billNoFormatted}</div>
+      <div>Date: ${dd}/${mm}/${yy}</div>
+  `;
+
+  const rightMeta = `
+      <div style="font-weight:600">CUSTOMER : ${sanitizeNoEmoji(customerNameFromDB || bill.customerName)}</div>
+      <div>Time: ${timeStr}</div>
+      <div>EMP ID: ${sanitizeNoEmoji(employeeId)}</div>
+  `;
+
+  const left = document.createElement("div");
+  left.innerHTML = leftMeta;
+
+  const right = document.createElement("div");
+  right.style.textAlign = "right";
+  right.innerHTML = rightMeta;
+
+  meta.appendChild(left);
+  meta.appendChild(right);
+  container.appendChild(meta);
+
+  // TABLE
+  const table = document.createElement("table");
+  table.style.width = "100%";
+  table.style.borderCollapse = "collapse";
+  table.style.marginTop = "16px";
+
+  const thead = `
+    <thead>
+      <tr style="background:#fff;color:#000;font-weight:700">
+        <th style="border:0.5px solid #000;padding:6px;width:8%">S.No.</th>
+        <th style="border:0.5px solid #000;padding:6px">Item</th>
+        <th style="border:0.5px solid #000;padding:6px;text-align:right;width:15%">Qty(kg)</th>
+        <th style="border:0.5px solid #000;padding:6px;text-align:right;width:18%">Rate(₹)</th>
+        <th style="border:0.5px solid #000;padding:6px;text-align:right;width:20%">Amount(₹)</th>
       </tr>
-    </thead>`;
-    const tbody = document.createElement('tbody');
-    editedItems.forEach((it, idx) => {
-      const veg = combinedVegetableMap.get(it.vegetableId);
-      const name = sanitizeTextForPdf((it as any).name || veg?.name || `Item ${it.vegetableId}`);
-      const rate = Number((it as any).pricePerKg || veg?.pricePerKg || 0).toFixed(2);
-      const tr = document.createElement('tr');
-      tr.style.borderBottom = '1px solid #eef2f7';
-      tr.innerHTML = `<td style="padding:8px;border:1px solid #e6e9ee">${idx + 1}</td>
-        <td style="padding:8px;border:1px solid #e6e9ee">${name}</td>
-        <td style="padding:8px;border:1px solid #e6e9ee;text-align:right">${String(it.quantityKg)}</td>
-        <td style="padding:8px;border:1px solid #e6e9ee;text-align:right">₹${rate}</td>
-        <td style="padding:8px;border:1px solid #e6e9ee;text-align:right">₹${Number(it.subtotal).toFixed(2)}</td>`;
-      tbody.appendChild(tr);
-    });
-    table.appendChild(tbody);
-    container.appendChild(table);
+    </thead>
+  `;
 
-    // Totals
-    const summary = document.createElement('div');
-    summary.style.display = 'flex';
-    summary.style.justifyContent = 'space-between';
-    summary.style.marginTop = '12px';
-    summary.innerHTML = `<div style="width:60%;font-size:12px;color:#475569">Thank you for shopping with Engal Santhai. Please preserve this bill for your records.</div>
-      <div style="width:36%;border:1px solid #e6e9ee;padding:8px;border-radius:6px"><div style="display:flex;justify-content:space-between;font-weight:700">GRAND TOTAL <div>₹${Math.round(calculatedTotal)}</div></div></div>`;
-    container.appendChild(summary);
+  const tbody = document.createElement("tbody");
 
-    // Payment block if selected
-    if (selectedUpiId) {
-      const upi = UPI_IDS.find(u => u.id === selectedUpiId);
-      if (upi) {
-        const payDiv = document.createElement('div');
-        payDiv.style.marginTop = '12px';
-        payDiv.style.padding = '10px';
-        payDiv.style.borderRadius = '6px';
-        payDiv.style.background = '#f8fafc';
-        payDiv.style.border = '1px solid #e6eef4';
-        payDiv.innerHTML = `<div style="font-weight:700">PAYMENT INFORMATION</div>
-          <div>Payee Name: ${upi.name}</div><div>UPI ID: ${upi.displayName}</div><div>Amount: Rs. ${Math.round(calculatedTotal)}</div>`;
-        container.appendChild(payDiv);
-      }
-    }
+  editedItems.forEach((item, idx) => {
+    const veg = combinedVegetableMap.get(item.vegetableId);
+    const name = sanitizeNoEmoji((item as any).name || veg?.name || "Item");
 
-    // Attach font link for rendering if available
-    const fontLink = document.createElement('link');
-    fontLink.href = 'https://fonts.googleapis.com/css2?family=Noto+Sans+Tamil&display=swap';
-    fontLink.rel = 'stylesheet';
-    container.appendChild(fontLink);
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td style="border:0.5px solid #000;padding:6px">${idx + 1}</td>
+      <td style="border:0.5px solid #000;padding:6px">${name}</td>
+      <td style="border:0.5px solid #000;padding:6px;text-align:right">${item.quantityKg}</td>
+      <td style="border:0.5px solid #000;padding:6px;text-align:right">
+        ₹${Number((item as any).pricePerKg || veg?.pricePerKg || 0).toFixed(2)}
+      </td>
+      <td style="border:0.5px solid #000;padding:6px;text-align:right">₹${Number(item.subtotal).toFixed(2)}</td>
+    `;
+    tbody.appendChild(tr);
+  });
 
-    container.style.position = 'fixed';
-    container.style.left = '-9999px';
-    container.style.top = '0';
-    document.body.appendChild(container);
-    await new Promise(res => setTimeout(res, 250));
-    return container;
-  };
+  table.innerHTML = thead;
+  table.appendChild(tbody);
+  container.appendChild(table);
+
+  // TOTAL ONLY
+  const totalDiv = document.createElement("div");
+  totalDiv.style.marginTop = "18px";
+  totalDiv.style.borderTop = "1px solid #000";
+  totalDiv.style.paddingTop = "10px";
+  totalDiv.style.display = "flex";
+  totalDiv.style.justifyContent = "space-between";
+  totalDiv.style.fontWeight = "700";
+
+  totalDiv.innerHTML = `
+    <div></div>
+    <div style="font-size:16px;color:#000">TOTAL: ₹${Number(calculatedTotal).toFixed(2)}</div>
+  `;
+  container.appendChild(totalDiv);
+
+  // PAYMENT INFORMATION BLOCK + STATIC QR IMAGE
+  const payBlock = document.createElement("div");
+  payBlock.style.marginTop = "20px";
+  payBlock.style.padding = "12px";
+  payBlock.style.border = "1px solid #000";
+  payBlock.style.color = "#000";
+
+  payBlock.innerHTML = `
+    <div style="font-weight:700;margin-bottom:8px;font-size:14px;color:#000">
+      PAYMENT INFORMATION
+    </div>
+    <div style="font-size:13px;margin-bottom:4px;color:#000">
+      Payee Name: Bakkiyalakshmi Ramaswamy
+      UPI ID: bakkiyalakshmi.ramaswamy-2@okhdfcbank
+    </div>
+    <div style="margin-top:10px;text-align:center;color:#000;font-weight:600">
+      <div>Scan & Pay</div>
+    </div>
+  `;
+
+  // QR CODE (FULL QUALITY PNG)
+  const qrImg = document.createElement("img");
+  qrImg.src = PaymentQR; // imported image
+  qrImg.style.width = "140px";
+  qrImg.style.height = "140px";
+  qrImg.style.objectFit = "contain";
+  qrImg.style.margin = "10px auto 0 auto";
+  qrImg.style.display = "block";
+  payBlock.appendChild(qrImg);
+
+  container.appendChild(payBlock);
+
+  // Load Tamil font
+  const fontLink = document.createElement("link");
+  fontLink.href = "https://fonts.googleapis.com/css2?family=Noto+Sans+Tamil&display=swap";
+  fontLink.rel = "stylesheet";
+  container.appendChild(fontLink);
+
+  container.style.position = "fixed";
+  container.style.left = "-9999px";
+  container.style.top = "0";
+  document.body.appendChild(container);
+
+  await new Promise((res) => setTimeout(res, 250));
+  return container;
+};
+
 
   // Generate PDF and filename
   const generateBillPdfBlobAndFilename = async (): Promise<{ blob: Blob; filename: string }> => {
@@ -545,8 +622,8 @@ const BillDetailModal: React.FC<BillDetailModalProps> = ({
     const filename = `${fileSerial}-${fileDate}-${nameSafe}-${deptSafe}.pdf`;
 
     // Decide fallback: if any text has emoji => raster fallback
-    const anyEmoji = containsEmoji(customerNameFromDB || bill.customerName || '') || editedItems.some(it => containsEmoji((it as any).name || ''));
-    const preferRaster = anyEmoji;
+    const preferRaster = true;   // FORCE raster mode always
+
 
     // TEXT-BASED PDF (searchable) branch
     if (!preferRaster) {
@@ -668,8 +745,8 @@ const BillDetailModal: React.FC<BillDetailModalProps> = ({
               const selectedUpi = UPI_IDS.find(u => u.id === selectedUpiId);
               if (selectedUpi) {
                 const boxY = pageHeight - 40;
-                pdfDoc.setDrawColor(230, 238, 238);
-                pdfDoc.rect(startX, boxY, endX - startX, 28, 'S');
+              //  pdfDoc.setDrawColor(230, 238, 238);
+               // pdfDoc.rect(startX, boxY, endX - startX, 28, 'S');
                 pdfDoc.setFontSize(10);
                 pdfDoc.setFont(undefined, 'bold');
                 pdfDoc.text('PAYMENT INFORMATION', startX + 2, boxY + 7);
@@ -684,7 +761,9 @@ const BillDetailModal: React.FC<BillDetailModalProps> = ({
         }
 
         const blob = pdfDoc.output('blob');
-        return { blob, filename };
+        const compressedBlob = await compressPdf(blob);
+        return { blob: compressedBlob, filename };
+
       } catch (err) {
         console.error('Text-based PDF generation failed, falling back to raster', err);
       }
@@ -712,15 +791,19 @@ const BillDetailModal: React.FC<BillDetailModalProps> = ({
         heightLeft -= pageHeight;
       }
       const blob = pdfDoc.output('blob');
-      return { blob, filename };
+const compressedBlob = await compressPdf(blob);
+return { blob: compressedBlob, filename };
+
     } catch (rasterErr) {
       console.error('Raster fallback failed', rasterErr);
       // Final minimal PDF
       try {
         const fallback = new jsPDF();
         fallback.text('Unable to generate bill PDF. Please contact support.', 10, 10);
-        const blob = fallback.output('blob');
-        return { blob, filename };
+        const blob = pdfDoc.output('blob');
+const compressedBlob = await compressPdf(blob);
+return { blob: compressedBlob, filename };
+
       } catch (finalErr) {
         console.error('Final fallback failed', finalErr);
         throw new Error('PDF generation failed.');
@@ -764,6 +847,8 @@ const BillDetailModal: React.FC<BillDetailModalProps> = ({
   };
 
   const handleShare = async () => {
+    setIsSharing(true);
+
     try {
       if (hasUnsavedChanges) {
         await handleSaveChanges();
@@ -851,10 +936,18 @@ const BillDetailModal: React.FC<BillDetailModalProps> = ({
       console.error('Share flow failed', err);
       alert('Unable to share bill. Please try downloading manually.');
     }
+    setIsSharing(false);
+
   };
 
   return (
     <>
+    {isSharing && (
+  <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 text-white text-lg font-semibold">
+    Please wait, do not press back or exit...
+  </div>
+)}
+
       <div
         role="dialog"
         aria-modal="true"
@@ -1011,30 +1104,6 @@ const BillDetailModal: React.FC<BillDetailModalProps> = ({
               )}
             </div>
 
-            {/* UPI Selection Section */}
-            <div className="mt-6 pt-4 border-t-2 border-slate-200">
-              <div className="bg-gradient-to-r from-blue-50 to-green-50 p-4 rounded-lg mb-4">
-                <h3 className="text-lg font-semibold text-slate-800 mb-2 flex items-center">💳 Select UPI ID for Payment</h3>
-                <p className="text-sm text-slate-600">Choose a UPI ID to generate the payment QR code and download the bill</p>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                {UPI_IDS.map(upi => (
-                  <div key={upi.id} className={`p-4 border-2 rounded-lg cursor-pointer transition-all ${selectedUpiId === upi.id ? 'border-green-500 bg-green-50' : 'border-slate-300 hover:border-slate-400'}`} onClick={() => setSelectedUpiId(upi.id)}>
-                    <div className="flex items-center justify-between">
-                      <div className="flex-1">
-                        <p className="font-medium text-slate-800">{upi.name}</p>
-                        <p className="text-sm text-slate-600">{upi.displayName}</p>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <button onClick={(e) => { e.stopPropagation(); copyUpiId(upi.id); }} className="px-2 py-1 text-xs bg-slate-100 hover:bg-slate-200 rounded text-slate-600" title="Copy UPI ID">Copy</button>
-                        <div className={`w-4 h-4 rounded-full border-2 ${selectedUpiId === upi.id ? 'border-green-500 bg-green-500' : 'border-slate-300'}`}>
-                          {selectedUpiId === upi.id && <div className="w-full h-full rounded-full bg-white scale-50"></div>}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
 
               {selectedUpiId ? (
                 <div className="bg-slate-50 p-6 rounded-lg">
@@ -1065,7 +1134,9 @@ const BillDetailModal: React.FC<BillDetailModalProps> = ({
                   <ShareIcon className="h-5 w-5 mr-2" /> Share
                 </Button>
 
-                <Button onClick={handleDownload} disabled={!selectedUpiId} className={`${selectedUpiId ? 'bg-slate-600 hover:bg-slate-700' : 'bg-slate-400 cursor-not-allowed'}`} title={!selectedUpiId ? 'Please select a UPI ID first' : ''}>
+                <Button onClick={handleDownload} disabled={false}  disabled={false}
+className="bg-slate-600 hover:bg-slate-700 text-white"
+ title={!selectedUpiId ? 'Please select a UPI ID first' : ''}>
                   <ArrowDownTrayIcon className="h-5 w-5 mr-2" /> Download Bill
                 </Button>
               </div>
