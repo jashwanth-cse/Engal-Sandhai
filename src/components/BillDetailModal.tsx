@@ -11,7 +11,7 @@ import { XMarkIcon, EyeIcon, ArrowDownTrayIcon, ShareIcon } from './ui/Icon.tsx'
 import ImagePreviewModal from './ui/ImagePreviewModal.tsx';
 import Button from './ui/Button.tsx';
 import { getVegetableById, getDateKey } from '../services/dbService';
-import { upiPng } from '../assets/upi.ts';
+import qrImg from '../assets/QR.png';
 import { getStorage, ref, uploadBytes, getDownloadURL } from "firebase/storage";
 
 // Firestore imports
@@ -35,17 +35,12 @@ declare global {
 
 type ExtendedBill = Bill & { employee_name?: string };
 
-// UPI IDs configuration
+// UPI ID configuration (single fixed ID)
 const UPI_IDS = [
   {
-    id: 'qualitykannan1962-1@okhdfcbank',
-    name: 'Quality Kannan',
-    displayName: 'qualitykannan1962-1@okhdfcbank'
-  },
-  {
-    id: 'vishnusakra.doc-2@okhdfcbank',
-    name: 'Vishnu Sakra',
-    displayName: 'vishnusakra.doc-2@okhdfcbank'
+    id: 'bakkiyalakshmi.ramaswamy-2@okhdfcbank',
+    name: 'Bakkiyalakshmi Ramaswamy',
+    displayName: 'bakkiyalakshmi.ramaswamy-2@okhdfcbank'
   }
 ];
 
@@ -126,7 +121,7 @@ const BillDetailModal: React.FC<BillDetailModalProps> = ({
   const [fetchedVegetables, setFetchedVegetables] = useState<Map<string, Vegetable>>(new Map());
   const [isLoadingVegetables, setIsLoadingVegetables] = useState(false);
   const globalVegetableCache = React.useRef<Map<string, Vegetable>>(new Map());
-  const [selectedUpiId, setSelectedUpiId] = useState<string>('');
+  const [selectedUpiId, setSelectedUpiId] = useState<string>(UPI_IDS[0]?.id || '');
   // New: department fetched from DB for accurate file naming and header printing
   const [customerDeptFromDB, setCustomerDeptFromDB] = useState<string>('');
 
@@ -143,7 +138,7 @@ const BillDetailModal: React.FC<BillDetailModalProps> = ({
       setCalculatedTotal(bill.total || 0);
       setHasUnsavedChanges(false);
       setFetchedVegetables(new Map());
-      setSelectedUpiId('');
+      setSelectedUpiId(UPI_IDS[0]?.id || '');
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bill?.id]);
@@ -158,98 +153,47 @@ const BillDetailModal: React.FC<BillDetailModalProps> = ({
   useEffect(() => {
     if (!bill) return;
     let mounted = true;
-    const fetchMissingVegetables = async () => {
+    const fetchMissing = async () => {
       setIsLoadingVegetables(true);
-      const missingIds: string[] = [];
-      const cachedVegetables = new Map<string, Vegetable>();
-
-      for (const item of bill.items) {
-        const existing = vegetableMap.get(item.vegetableId)
-          || fetchedVegetables.get(item.vegetableId)
-          || globalVegetableCache.current.get(item.vegetableId);
-        if (!existing) missingIds.push(item.vegetableId);
-        else if (globalVegetableCache.current.has(item.vegetableId)) cachedVegetables.set(item.vegetableId, existing);
-      }
-
-      if (cachedVegetables.size > 0) setFetchedVegetables(prev => new Map([...prev, ...cachedVegetables]));
-
-      if (missingIds.length === 0) {
-        setIsLoadingVegetables(false);
-        return;
-      }
-
-      const billDate = new Date(bill.date);
-      const dateKey = getDateKey(billDate);
-
       try {
-        const promises = missingIds.map(async (vegId) => {
-          try {
-            let vegetableData = await getVegetableById(vegId);
-            if (!vegetableData) {
-              const dateBasedRef = doc(db, 'vegetables', dateKey, 'items', vegId);
-              const snap = await getDoc(dateBasedRef);
-              if (snap.exists()) {
-                const data = snap.data();
-                vegetableData = {
-                  id: snap.id,
-                  name: data.name || `Item ${vegId}`,
-                  unitType: (data.unitType as 'KG' | 'COUNT') || 'KG',
-                  pricePerKg: Number(data.pricePerKg || data.price) || 0,
-                  totalStockKg: Number(data.totalStockKg || data.stock || data.totalStock) || 0,
-                  stockKg: Number(data.stockKg || data.availableStock) || 0,
-                  category: data.category || 'Other'
-                };
-              }
-            }
-            if (!vegetableData) {
-              const billItem = bill.items.find(it => it.vegetableId === vegId);
-              const fallback: Vegetable = {
-                id: vegId,
-                name: `Item ${vegId.replace('veg_', '').replace(/_/g, ' ').toUpperCase()}`,
-                unitType: 'KG',
-                pricePerKg: billItem ? (billItem.subtotal / (billItem.quantityKg || 1)) || 0 : 0,
-                totalStockKg: 0,
-                stockKg: 0,
-                category: 'Unknown'
-              };
-              return { id: vegId, vegetable: fallback };
-            }
-            return { id: vegId, vegetable: vegetableData };
-          } catch (err) {
-            console.error('Error fetching veg', vegId, err);
-            const billItem = bill.items.find(it => it.vegetableId === vegId);
-            const fallback: Vegetable = {
-              id: vegId,
-              name: `Item ${vegId.replace('veg_', '').replace(/_/g, ' ').toUpperCase()}`,
-              unitType: 'KG',
-              pricePerKg: billItem ? (billItem.subtotal / (billItem.quantityKg || 1)) || 0 : 0,
-              totalStockKg: 0,
-              stockKg: 0,
-              category: 'Unknown'
-            };
-            return { id: vegId, vegetable: fallback };
-          }
-        });
+        const missingIds = bill.items
+          .map(it => it.vegetableId)
+          .filter(id => !vegetableMap.has(id) && !fetchedVegetables.has(id) && !globalVegetableCache.current.has(id));
 
-        const results = await Promise.all(promises);
-        const missingMap = new Map<string, Vegetable>();
-        results.forEach(r => {
-          if (r) {
-            missingMap.set(r.id, r.vegetable);
-            globalVegetableCache.current.set(r.id, r.vegetable);
+        const newMap = new Map<string, Vegetable>();
+        for (const vegId of missingIds) {
+          let vegetableData = await getVegetableById(vegId);
+          if (!vegetableData) {
+            const dateKey = getDateKey(new Date(bill.date));
+            const snap = await getDoc(doc(db, 'vegetables', dateKey, 'items', vegId));
+            if (snap.exists()) {
+              const data = snap.data() as any;
+              vegetableData = {
+                id: snap.id,
+                name: data.name || `Item ${vegId}`,
+                unitType: (data.unitType as 'KG' | 'COUNT') || 'KG',
+                pricePerKg: Number(data.pricePerKg ?? data.price ?? 0),
+                totalStockKg: Number(data.totalStockKg ?? 0),
+                stockKg: Number(data.stockKg ?? 0),
+                category: (data.category as string) || 'General'
+              };
+            }
           }
-        });
-        if (mounted && missingMap.size > 0) setFetchedVegetables(prev => new Map([...prev, ...missingMap]));
+          if (vegetableData) {
+            newMap.set(vegId, vegetableData);
+            globalVegetableCache.current.set(vegId, vegetableData);
+          }
+        }
+        if (mounted && newMap.size > 0) setFetchedVegetables(prev => new Map([...prev, ...newMap]));
       } catch (err) {
         console.error('Batch veg fetch failed', err);
       } finally {
         if (mounted) setIsLoadingVegetables(false);
       }
     };
-
-    fetchMissingVegetables();
+    fetchMissing();
     return () => { mounted = false; };
-  }, [bill?.id]);
+  }, [bill?.id, vegetableMap]);
 
   // Recalculate totals
   useEffect(() => {
@@ -465,16 +409,17 @@ const BillDetailModal: React.FC<BillDetailModalProps> = ({
     container.style.fontSize = '12px';
     container.style.lineHeight = '1.35';
 
-    // Header
+    // Header (neutral, no green background)
     const header = document.createElement('div');
     header.style.display = 'flex';
     header.style.justifyContent = 'space-between';
     header.style.alignItems = 'center';
     header.style.padding = '12px';
     header.style.borderRadius = '8px';
-    header.style.background = 'linear-gradient(90deg, #d8f5e6 0%, #48bb78 100%)';
-    header.style.color = '#064e3b';
-    header.innerHTML = `<div style="font-weight:800;font-size:20px">Engal Santhai</div><div style="font-size:12px;color:#065f46;margin-top:4px">Your Fresh Vegetable Partner</div><div style="font-weight:700;color:#064e3b">INVOICE</div>`;
+    header.style.background = 'transparent';
+    header.style.border = '1px solid #e5e7eb';
+    header.style.color = '#111827';
+    header.innerHTML = `<div style="font-weight:800;font-size:20px;color:#111827">Engal Santhai</div><div style="font-size:12px;color:#475569;margin-top:4px">Your Fresh Vegetable Partner</div><div style="font-weight:700;color:#111827">INVOICE</div>`;
     container.appendChild(header);
 
     // Meta
@@ -575,7 +520,7 @@ const BillDetailModal: React.FC<BillDetailModalProps> = ({
       throw new Error('jsPDF not available on window.jspdf');
     }
     const { jsPDF } = window.jspdf;
-    const pdfDoc: any = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait' });
+    const pdfDoc: any = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait', compress: true });
     const pageWidth = pdfDoc.internal.pageSize.getWidth();
     const pageHeight = pdfDoc.internal.pageSize.getHeight();
     const ITEMS_PER_PAGE = 22;
@@ -613,10 +558,11 @@ const BillDetailModal: React.FC<BillDetailModalProps> = ({
         for (let pageNum = 0; pageNum < totalPages; pageNum++) {
           if (pageNum > 0) pdfDoc.addPage();
 
-          // Header area
-          pdfDoc.setFillColor(198, 246, 213); // soft green
-          pdfDoc.rect(10, 10, pageWidth - 20, 18, 'F');
-          pdfDoc.setTextColor(6, 78, 59);
+          // Header area (no color background, add a light outline)
+          pdfDoc.setDrawColor(203, 213, 225); // slate-300
+          pdfDoc.setLineWidth(0.4);
+          pdfDoc.rect(10, 10, pageWidth - 20, 22, 'S'); // outline only
+          pdfDoc.setTextColor(17, 24, 39); // neutral dark text
           pdfDoc.setFontSize(18);
           pdfDoc.setFont(undefined, 'bold');
           pdfDoc.text('Engal Santhai', pageWidth / 2, 24, { align: 'center' });
@@ -750,18 +696,19 @@ const BillDetailModal: React.FC<BillDetailModalProps> = ({
       const scale = 2; // good resolution
       const canvas = await html2canvas(element as HTMLElement, { scale, useCORS: true, logging: false, scrollY: -window.scrollY });
       try { document.body.removeChild(element); } catch {}
-      const imgData = canvas.toDataURL('image/png');
+      // Use JPEG at high quality for much smaller file size with similar visual quality
+      const imgData = canvas.toDataURL('image/jpeg', 0.9);
       const imgProps = (pdfDoc as any).getImageProperties(imgData);
       const imgWidth = pageWidth;
       const imgHeight = (imgProps.height * imgWidth) / imgProps.width;
       let heightLeft = imgHeight;
       let position = 0;
-      pdfDoc.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
+      pdfDoc.addImage(imgData, 'JPEG', 0, position, imgWidth, imgHeight);
       heightLeft -= pageHeight;
       while (heightLeft > 0) {
         pdfDoc.addPage();
         position = heightLeft - imgHeight;
-        pdfDoc.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
+        pdfDoc.addImage(imgData, 'JPEG', 0, position, imgWidth, imgHeight);
         heightLeft -= pageHeight;
       }
       const blob = pdfDoc.output('blob');
@@ -822,49 +769,62 @@ const BillDetailModal: React.FC<BillDetailModalProps> = ({
         await handleSaveChanges();
       }
 
-      let employeeNameToQuery = billTyped?.employee_name || customerNameFromDB || bill.customerName || '';
-      let retries = 0;
-      while ((!employeeNameToQuery || employeeNameToQuery === 'Unknown Customer') && retries < 5) {
-        await new Promise(res => setTimeout(res, 200));
-        employeeNameToQuery = billTyped?.employee_name || customerNameFromDB || bill.customerName || '';
-        retries++;
+      // Resolve recipient phone number: try customerId doc first, then fallback by employee_name/name
+      let phoneNumber: string | null = null;
+      try {
+        if (bill.customerId) {
+          const userDocRef = doc(db, 'users', bill.customerId);
+          const userSnap = await getDoc(userDocRef);
+          if (userSnap.exists()) {
+            const d: any = userSnap.data();
+            phoneNumber = String(
+              d.phone || d.whatsapp || d.whatsapp_number || d.phoneNumber || d.phone_number || d.mobile || d.contact || ''
+            ) || null;
+          }
+        }
+      } catch (e) {
+        console.warn('CustomerId lookup failed', e);
       }
 
-      let phoneNumber: string | null = null;
-      if (employeeNameToQuery.trim()) {
-        try {
-          const usersRef = collection(db, 'users');
-          const q1 = query(usersRef, where('employee_name', '==', employeeNameToQuery));
-          const snap1 = await getDocs(q1);
-          let userData: any = null;
-          if (!snap1.empty) userData = snap1.docs[0].data();
-          else {
-            const q2 = query(usersRef, where('name', '==', employeeNameToQuery));
-            const snap2 = await getDocs(q2);
-            if (!snap2.empty) userData = snap2.docs[0].data();
+      if (!phoneNumber) {
+        let employeeNameToQuery = billTyped?.employee_name || customerNameFromDB || bill.customerName || '';
+        let retries = 0;
+        while ((!employeeNameToQuery || employeeNameToQuery === 'Unknown Customer') && retries < 5) {
+          await new Promise(res => setTimeout(res, 200));
+          employeeNameToQuery = billTyped?.employee_name || customerNameFromDB || bill.customerName || '';
+          retries++;
+        }
+        if (employeeNameToQuery.trim()) {
+          try {
+            const usersRef = collection(db, 'users');
+            const q1 = query(usersRef, where('employee_name', '==', employeeNameToQuery));
+            const snap1 = await getDocs(q1);
+            let userData: any = null;
+            if (!snap1.empty) userData = snap1.docs[0].data();
+            else {
+              const q2 = query(usersRef, where('name', '==', employeeNameToQuery));
+              const snap2 = await getDocs(q2);
+              if (!snap2.empty) userData = snap2.docs[0].data();
+            }
+            if (userData) {
+              phoneNumber = String(
+                userData.phone || userData.whatsapp || userData.whatsapp_number || userData.phoneNumber || userData.phone_number || userData.mobile || userData.contact || ''
+              ) || null;
+            }
+          } catch (err) {
+            console.error('Firestore user lookup failed', err);
           }
-          if (userData) {
-            phoneNumber = String(userData.phone || userData.mobile || userData.contact || userData.phoneNumber || '') || null;
-          }
-        } catch (err) {
-          console.error('Firestore user lookup failed', err);
         }
       }
 
       const normalized = normalizePhoneForWhatsApp(phoneNumber);
-      let downloadURL: string | null = null;
-      try {
-        const { blob, filename } = await generateBillPdfBlobAndFilename();
-        const storage = getStorage();
-        const pdfRef = ref(storage, `bills/${(bill as any).billNumber || bill.id || Date.now()}.pdf`);
-        await uploadBytes(pdfRef, blob);
-        const rawURL = await getDownloadURL(pdfRef);
-        downloadURL = rawURL + (rawURL.includes('?') ? '&dl=1' : '?dl=1');
-      } catch (err) {
-        console.warn('PDF upload failed', err);
-      }
 
-      const message = `Hello ${customerNameFromDB || bill.customerName},\n\nYour Engal Santhai bill is ready.\nTotal: ₹${Math.round(calculatedTotal)}\n📄 Download your E-bill here: ${downloadURL || 'Please find your bill attached.'}\n\nThank you for shopping with us!`;
+      // Build a UPI payment deep link for quick pay via UPI apps
+      const payee = UPI_IDS[0];
+      const upiAmount = Math.round(calculatedTotal);
+      const upiLink = `upi://pay?pa=${encodeURIComponent(payee.id)}&pn=${encodeURIComponent('Engal Santhai')}&am=${encodeURIComponent(String(upiAmount))}&cu=INR&tn=${encodeURIComponent('Engal Santhai bill payment')}`;
+
+      const message = `Hello ${customerNameFromDB || bill.customerName},\n\nYour Engal Santhai bill is ready.\nTotal: ₹${upiAmount}\n\nTap to pay via UPI (enter PIN to confirm):\n${upiLink}\n\nThank you for shopping with us!`;
 
       try {
         await navigator.clipboard.writeText(message);
@@ -872,7 +832,9 @@ const BillDetailModal: React.FC<BillDetailModalProps> = ({
         console.warn('Copy message failed', err);
       }
 
-      const waUrl = normalized ? `https://wa.me/${encodeURIComponent(normalized)}?text=${encodeURIComponent(message)}` : `https://wa.me/?text=${encodeURIComponent(message)}`;
+      const waUrl = normalized
+        ? `https://api.whatsapp.com/send?phone=${encodeURIComponent(normalized)}&text=${encodeURIComponent(message)}`
+        : `https://api.whatsapp.com/send?text=${encodeURIComponent(message)}`;
       window.open(waUrl, '_blank');
 
       // Try native share with file
@@ -1079,7 +1041,7 @@ const BillDetailModal: React.FC<BillDetailModalProps> = ({
                   <div className="text-center">
                     <p className="text-sm font-medium text-slate-700 mb-3">Payment QR Code for: {UPI_IDS.find(u => u.id === selectedUpiId)?.displayName}</p>
                     <div className="inline-block p-4 bg-white rounded-lg shadow-sm">
-                      <img src={upiPng} alt="UPI QR Code" className="w-32 h-32 mx-auto rounded border" />
+                      <img src={qrImg} alt="UPI QR Code" className="w-32 h-32 mx-auto rounded border" />
                     </div>
                     <p className="text-xs text-slate-500 mt-2">Scan this QR code to pay ₹{Math.round(calculatedTotal)}</p>
                   </div>
