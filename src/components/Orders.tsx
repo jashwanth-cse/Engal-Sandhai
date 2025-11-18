@@ -38,6 +38,32 @@ const Orders: React.FC<OrdersProps> = ({ bills, vegetables, initialBillId, onCle
   
   // State to track refreshed bill data (bills updated from database)
   const [refreshedBills, setRefreshedBills] = useState<Map<string, Bill>>(new Map());
+  // Optimistic status map to reflect UI changes immediately before Firestore snapshot returns
+  const [optimisticStatuses, setOptimisticStatuses] = useState<Map<string, { status: Bill['status']; ts: number }>>(new Map());
+
+  // Periodically clear refreshed cache to avoid stale overrides (keeps live status from subscription)
+  useEffect(() => {
+    const interval = setInterval(() => {
+      // Clear refreshed cache
+      setRefreshedBills((prev) => (prev.size === 0 ? prev : new Map()));
+      // Expire optimistic statuses older than ttl
+      const ttlMs = 10000; // 10s
+      setOptimisticStatuses((prev) => {
+        if (prev.size === 0) return prev;
+        const now = Date.now();
+        let changed = false;
+        const next = new Map(prev);
+        for (const [id, val] of prev.entries()) {
+          if (now - val.ts > ttlMs) {
+            next.delete(id);
+            changed = true;
+          }
+        }
+        return changed ? next : prev;
+      });
+    }, 30000); // every 30s
+    return () => clearInterval(interval);
+  }, []);
 
   // Function to refresh bill data from database
   const refreshBillData = async (billId: string) => {
@@ -181,6 +207,15 @@ const Orders: React.FC<OrdersProps> = ({ bills, vegetables, initialBillId, onCle
     }
   };
 
+  // When modal closes, refresh that bill once to pick any recalculated totals
+  useEffect(() => {
+    if (!viewingBill) return;
+    return () => {
+      // on unmount/close
+      refreshBillData(viewingBill.id).catch(() => {});
+    };
+  }, [viewingBill]);
+
   // Function to refresh all visible bills
   const refreshAllBills = async () => {
     console.log('🔄 Refreshing all visible bills...');
@@ -312,21 +347,33 @@ const Orders: React.FC<OrdersProps> = ({ bills, vegetables, initialBillId, onCle
   };
 
   const handleStatusChange = (billId: string, newStatus: 'pending' | 'packed' | 'delivered' | 'inprogress' | 'bill_sent') => {
-    if (onUpdateBillStatus) {
-      onUpdateBillStatus(billId, newStatus);
-    }
+    // Optimistically update the status for instant UI feedback
+    setOptimisticStatuses((prev) => {
+      const next = new Map(prev);
+      next.set(billId, { status: newStatus, ts: Date.now() });
+      return next;
+    });
+    if (onUpdateBillStatus) onUpdateBillStatus(billId, newStatus);
   };
 
   const filteredBills = useMemo(() => {
+    const getDisplayStatusForBill = (b: Bill): Bill['status'] => (optimisticStatuses.get(b.id)?.status || b.status || 'pending');
     // First, merge bills with refreshed data from database
     let mergedBills = bills ? [...bills] : [];
+    // Merge refreshed fields without overriding live status and other live-updating fields
     mergedBills = mergedBills.map(bill => {
       const refreshedBill = refreshedBills.get(bill.id);
       if (refreshedBill) {
-        console.log(`📊 Using refreshed data for bill ${bill.id}: ₹${bill.total} -> ₹${refreshedBill.total}`);
-        return refreshedBill; // Use refreshed data
+        // Only take stable fields that might need conversion (items/total)
+        // Always prefer status, bags, department, customerName from live subscription
+        const merged = {
+          ...bill,
+          items: refreshedBill.items ?? bill.items,
+          total: typeof refreshedBill.total === 'number' ? refreshedBill.total : bill.total,
+        } as Bill;
+        return merged;
       }
-      return bill; // Use original data
+      return bill;
     });
 
     // Work on a copy to avoid mutating props during sort
@@ -361,7 +408,7 @@ const Orders: React.FC<OrdersProps> = ({ bills, vegetables, initialBillId, onCle
 
     // Apply status filter
     if (filters.status !== 'all') {
-      filtered = filtered.filter(bill => (bill.status || 'pending') === filters.status);
+      filtered = filtered.filter(bill => getDisplayStatusForBill(bill) === filters.status);
     }
 
     // Apply date filter
@@ -407,13 +454,14 @@ const Orders: React.FC<OrdersProps> = ({ bills, vegetables, initialBillId, onCle
 
   // Calculate counts for filter tabs
   const statusCounts = useMemo(() => {
-    const pending = bills.filter(bill => (bill.status || 'pending') === 'pending').length;
-    const inprogress = bills.filter(bill => (bill.status || 'pending') === 'inprogress').length;
-    const packed = bills.filter(bill => (bill.status || 'pending') === 'packed').length;
-    const bill_sent = bills.filter(bill => (bill.status || 'pending') === 'bill_sent').length;
-    const delivered = bills.filter(bill => (bill.status || 'pending') === 'delivered').length;
+    const getDisplayStatusForBill = (b: Bill): Bill['status'] => (optimisticStatuses.get(b.id)?.status || b.status || 'pending');
+    const pending = bills.filter(b => getDisplayStatusForBill(b) === 'pending').length;
+    const inprogress = bills.filter(b => getDisplayStatusForBill(b) === 'inprogress').length;
+    const packed = bills.filter(b => getDisplayStatusForBill(b) === 'packed').length;
+    const bill_sent = bills.filter(b => getDisplayStatusForBill(b) === 'bill_sent').length;
+    const delivered = bills.filter(b => getDisplayStatusForBill(b) === 'delivered').length;
     return { pending, inprogress, packed, bill_sent, delivered };
-  }, [bills]);
+  }, [bills, optimisticStatuses]);
 
   useEffect(() => {
     if (initialBillId) {
@@ -521,9 +569,9 @@ const Orders: React.FC<OrdersProps> = ({ bills, vegetables, initialBillId, onCle
                       <td className="px-6 py-4">
                         <div className="status-dropdown">
                           <select
-                            value={bill.status || 'pending'}
+                            value={(optimisticStatuses.get(bill.id)?.status || bill.status || 'pending')}
                             onChange={(e) => handleStatusChange(bill.id, e.target.value as 'pending' | 'packed' | 'delivered' | 'inprogress' | 'bill_sent')}
-                            className={`text-sm rounded-md border focus:ring-2 focus:ring-opacity-50 font-medium px-3 py-1.5 ${getStatusStyles(bill.status || 'pending')}`}
+                            className={`text-sm rounded-md border focus:ring-2 focus:ring-opacity-50 font-medium px-3 py-1.5 ${getStatusStyles(optimisticStatuses.get(bill.id)?.status || bill.status || 'pending')}`}
                           >
                             <option value="pending">Pending</option>
                             <option value="inprogress">In Progress</option>
