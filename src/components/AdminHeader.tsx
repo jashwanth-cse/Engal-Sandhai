@@ -30,3 +30,5 @@ const AdminHeader: React.FC<AdminHeaderProps> = ({ onMenuClick, title, user }) =
 };
 
 export default AdminHeader;
+
+/**admin**/
