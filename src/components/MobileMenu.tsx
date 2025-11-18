@@ -50,7 +50,7 @@ const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose, user, onLogout
 
             <div className="flex-1 p-4">
                 <div className="text-left mb-6 p-4 rounded-lg bg-white">
-                    <p className="font-semibold text-slate-800 truncate">{user.name}</p>
+                    <p className="font-semibold text-slate-800 truncate">{user.employee_name || user.name}</p>
                     <p className="text-sm text-slate-500 capitalize">{user.role}</p>
                 </div>
 
@@ -61,7 +61,7 @@ const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose, user, onLogout
                             className="flex items-center w-full p-3 rounded-lg text-base font-medium text-slate-700 hover:bg-slate-200 transition-colors duration-200"
                         >
                             <CogIcon className="h-5 w-5 mr-3" />
-                            <span>Settings</span>
+                            <span>Dashboard</span>
                         </button>
                     )}
 

@@ -2,7 +2,7 @@
 import React, { useState, useRef, ChangeEvent } from 'react';
 import Button from './ui/Button.tsx';
 import { ArrowLeftIcon, CloudArrowUpIcon, TrashIcon, RefreshIcon } from './ui/Icon.tsx';
-import { upiPng } from '../assets/upi.ts';
+import qrImg from '../assets/QR.png';
 
 interface PaymentPageProps {
   total: number;
@@ -10,8 +10,8 @@ interface PaymentPageProps {
   onBack: () => void;
 }
 
-// TODO: Replace with your actual UPI link
-const UPI_PAYMENT_LINK = `upi://pay?pa=your-upi-id@okhdfcbank&pn=Engal%20Santhai&am=${'TOTAL'}&cu=INR`;
+// UPI payment link with fixed payee ID; amount substituted at runtime
+const UPI_PAYMENT_LINK = `upi://pay?pa=bakkiyalakshmi.ramaswamy-2@okhdfcbank&pn=Engal%20Santhai&am=${'TOTAL'}&cu=INR`;
 
 
 const PaymentPage: React.FC<PaymentPageProps> = ({ total, onConfirmOrder, onBack }) => {
@@ -52,7 +52,7 @@ const PaymentPage: React.FC<PaymentPageProps> = ({ total, onConfirmOrder, onBack
     }
   };
   
-  const paymentLink = UPI_PAYMENT_LINK.replace('TOTAL', total.toFixed(2));
+  const paymentLink = UPI_PAYMENT_LINK.replace('TOTAL', String(Math.round(total)));
 
   return (
     <div className="min-h-screen bg-slate-100 flex flex-col items-center justify-center p-4 font-sans">
@@ -68,7 +68,7 @@ const PaymentPage: React.FC<PaymentPageProps> = ({ total, onConfirmOrder, onBack
         <div className="mt-6 text-center">
             <h2 className="text-sm font-semibold text-slate-600 mb-2">1. Pay using QR Code or UPI App</h2>
             <div className="flex justify-center">
-                <img src={upiPng} alt="UPI QR Code" className="w-48 h-48 rounded-lg border-4 border-slate-200" />
+                <img src={qrImg} alt="UPI QR Code" className="w-48 h-48 rounded-lg border-4 border-slate-200" />
             </div>
             <a href={paymentLink}>
                 <Button className="w-full mt-4 bg-blue-600 hover:bg-blue-700">

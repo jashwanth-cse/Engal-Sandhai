@@ -33,6 +33,17 @@ export const useBillingData = (props: UseBillingDataProps = {}) => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    // If not authenticated, don't attach any Firestore listeners
+    if (!currentUser) {
+      setVegetables([]);
+      setAvailableStock(new Map());
+      setBills([]);
+      setVegetablesLoaded(false);
+      setStockLoaded(false);
+      setLoading(false);
+      return;
+    }
+
     // Use date-based subscriptions for inventory when a date is selected
     const unsubscribeVeg = subscribeToVegetables((items) => {
       setVegetables(items);
@@ -69,7 +80,7 @@ export const useBillingData = (props: UseBillingDataProps = {}) => {
         unsubscribeOrders();
       }
     };
-  }, [selectedDate]);
+  }, [selectedDate, currentUser]);
 
   // Derive overall loading from individual sources for first paint
   useEffect(() => {
