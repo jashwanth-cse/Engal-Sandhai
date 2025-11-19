@@ -321,8 +321,8 @@ const WeeklyInventory: React.FC<WeeklyInventoryProps> = ({ vegetables, bills, us
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium text-slate-600">Orders Out</p>
-                <p className="text-2xl font-bold text-red-600">{totals.ordersOut.toFixed(2)}</p>
-                <p className="text-xs text-slate-500">{overallOutPercentage.toFixed(1)}% of total stock</p>
+                <p className="text-2xl font-bold text-red-600">{Math.round(totals.ordersOut)}</p>
+                <p className="text-xs text-slate-500">{Math.round(overallOutPercentage)}% of total stock</p>
               </div>
               <div className="p-3 bg-red-50 rounded-full">
                 <ArrowDownTrayIcon className="h-6 w-6 text-red-600" />
@@ -334,7 +334,7 @@ const WeeklyInventory: React.FC<WeeklyInventoryProps> = ({ vegetables, bills, us
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium text-slate-600">Available Stock</p>
-                <p className="text-2xl font-bold text-green-600">{totals.availableStock.toFixed(2)}</p>
+                <p className="text-2xl font-bold text-green-600">{Math.round(totals.availableStock)}</p>
                 <p className="text-xs text-slate-500">kg remaining</p>
               </div>
               <div className="p-3 bg-green-50 rounded-full">
@@ -347,7 +347,7 @@ const WeeklyInventory: React.FC<WeeklyInventoryProps> = ({ vegetables, bills, us
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium text-slate-600">Total Revenue</p>
-                <p className="text-2xl font-bold text-purple-600">₹{totals.totalRevenue.toFixed(2)}</p>
+                <p className="text-2xl font-bold text-purple-600">₹{Math.round(totals.totalRevenue)}</p>
                 <p className="text-xs text-slate-500">this week</p>
               </div>
               <div className="p-3 bg-purple-50 rounded-full">
@@ -423,16 +423,16 @@ const WeeklyInventory: React.FC<WeeklyInventoryProps> = ({ vegetables, bills, us
                         {data.totalStock} {data.vegetable.unitType === 'KG' ? 'kg' : 'pcs'}
                       </td>
                       <td className="px-6 py-4 text-right text-red-600 font-medium">
-                        {data.ordersOut.toFixed(2)} {data.vegetable.unitType === 'KG' ? 'kg' : 'pcs'}
+                        {Math.round(data.ordersOut)} {data.vegetable.unitType === 'KG' ? 'kg' : 'pcs'}
                       </td>
                       <td className="px-6 py-4 text-right font-bold">
-                        {data.outPercentage.toFixed(1)}%
+                        {Math.round(data.outPercentage)}%
                       </td>
                       <td className="px-6 py-4 text-right text-green-600 font-medium">
-                        {data.availableStock.toFixed(2)} {data.vegetable.unitType === 'KG' ? 'kg' : 'pcs'}
+                        {Math.round(data.availableStock)} {data.vegetable.unitType === 'KG' ? 'kg' : 'pcs'}
                       </td>
                       <td className="px-6 py-4 text-right font-medium text-purple-600">
-                        ₹{data.totalRevenue.toFixed(2)}
+                        ₹{Math.round(data.totalRevenue)}
                       </td>
                       <td className="px-6 py-4">
                         <span className={`px-2 py-1 text-xs font-medium rounded-full ${statusColor}`}>
