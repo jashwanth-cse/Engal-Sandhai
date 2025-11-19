@@ -10,7 +10,7 @@ interface StatisticsProps {
 
 const Statistics: React.FC<StatisticsProps> = ({ bills, vegetables }) => {
     const stats = useMemo(() => {
-        const totalRevenue = bills.reduce((sum, bill) => sum + bill.total, 0);
+        const totalRevenue = bills.reduce((sum, bill) => sum + (bill.total || 0), 0);
         const totalOrders = bills.length;
         const lowStockItems = vegetables.filter(v => v.stockKg < 10).length;
         
@@ -21,7 +21,7 @@ const Statistics: React.FC<StatisticsProps> = ({ bills, vegetables }) => {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             <Card 
                 title="Total Revenue"
-                value={`₹${stats.totalRevenue.toFixed(2)}`}
+                value={`₹${Math.round(stats.totalRevenue)}`}
                 icon={<ChartBarIcon className="h-8 w-8 text-primary-600" />}
             />
             <Card 

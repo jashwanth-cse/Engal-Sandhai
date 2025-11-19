@@ -11,6 +11,7 @@ import { XMarkIcon, EyeIcon, ArrowDownTrayIcon, ShareIcon } from './ui/Icon.tsx'
 import ImagePreviewModal from './ui/ImagePreviewModal.tsx';
 import Button from './ui/Button.tsx';
 import { getVegetableById, getDateKey } from '../services/dbService';
+import { roundTotal } from '../utils/roundUtils';
 import { getStorage, ref, uploadBytes, getDownloadURL } from "firebase/storage";
 
 // Firestore imports
@@ -127,6 +128,7 @@ const BillDetailModal: React.FC<BillDetailModalProps> = ({
   const [fetchedVegetables, setFetchedVegetables] = useState<Map<string, Vegetable>>(new Map());
   const [isLoadingVegetables, setIsLoadingVegetables] = useState(false);
   const globalVegetableCache = React.useRef<Map<string, Vegetable>>(new Map());
+  const [needsRecalculation, setNeedsRecalculation] = useState(false);
 
   // New: department fetched from DB for accurate file naming and header printing
   const [customerDeptFromDB, setCustomerDeptFromDB] = useState<string>('');
@@ -147,6 +149,7 @@ const [isSharing, setIsSharing] = useState(false);
       setHasUnsavedChanges(false);
       setFetchedVegetables(new Map());
       setSelectedUpiId('');
+      setNeedsRecalculation(true);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bill?.id]);
@@ -254,6 +257,50 @@ const [isSharing, setIsSharing] = useState(false);
     return () => { mounted = false; };
   }, [bill?.id]);
 
+  // Recalculate items with current prices after vegetables are loaded
+  useEffect(() => {
+    if (needsRecalculation && !isLoadingVegetables && editedItems.length > 0 && bill) {
+      const recalculatedItems = editedItems.map(item => {
+        const veg = combinedVegetableMap.get(item.vegetableId);
+        if (veg) {
+          // Use current price from database
+          const newSubtotal = Math.round(item.quantityKg * veg.pricePerKg * 100) / 100;
+          return { ...item, subtotal: newSubtotal, pricePerKg: veg.pricePerKg };
+        }
+        return item;
+      });
+      
+      // Check if any subtotals actually changed
+      const hasActualChanges = recalculatedItems.some((item, idx) => 
+        item.subtotal !== bill.items[idx]?.subtotal
+      );
+      
+      setEditedItems(recalculatedItems);
+      
+      if (hasActualChanges) {
+        console.log('📊 Recalculated bill items with current prices - changes detected');
+        // Auto-save the corrected amounts to database to overwrite old data
+        setTimeout(async () => {
+          if (onUpdateBill) {
+            const finalTotal = recalculatedItems.reduce((sum, item) => sum + (item.subtotal || 0), 0);
+            const roundedTotal = roundTotal(finalTotal);
+            try {
+              console.log(`🔄 Overwriting DB with corrected amounts: Old total ₹${bill.total} → New total ₹${roundedTotal}`);
+              await onUpdateBill(bill.id, { items: recalculatedItems, total: roundedTotal });
+              console.log('✅ Bill amounts auto-corrected and saved to DB');
+            } catch (err) {
+              console.error('❌ Failed to auto-save corrected amounts:', err);
+            }
+          }
+        }, 500);
+      } else {
+        console.log('✓ Bill calculations are already correct');
+      }
+      
+      setNeedsRecalculation(false);
+    }
+  }, [needsRecalculation, isLoadingVegetables, combinedVegetableMap, bill, onUpdateBill]);
+
   // Recalculate totals
   useEffect(() => {
     const itemsTotal = editedItems.reduce((s, it) => s + (it.subtotal || 0), 0);
@@ -338,11 +385,12 @@ const [isSharing, setIsSharing] = useState(false);
     if (!current) return;
     const veg = combinedVegetableMap.get(current.vegetableId);
     const clamped = Math.max(0, Math.round(newQuantity * 100) / 100);
-    const pricePerKg = veg ? veg.pricePerKg : (current.quantityKg ? current.subtotal / current.quantityKg : 0);
+    const pricePerKg = veg ? veg.pricePerKg : ((current as any).pricePerKg || (current.quantityKg > 0 ? current.subtotal / current.quantityKg : 0));
     const newSubtotal = Math.round(clamped * pricePerKg * 100) / 100;
     const copy = [...editedItems];
     copy[index] = { ...copy[index], quantityKg: clamped, subtotal: newSubtotal, pricePerKg };
     setEditedItems(copy);
+    console.log(`📝 Updated item ${index + 1}: ${clamped}kg × ₹${pricePerKg}/kg = ₹${newSubtotal}`);
   };
 
   const handleAddVegetable = (vegetableId: string, quantity: number) => {
@@ -351,12 +399,16 @@ const [isSharing, setIsSharing] = useState(false);
     const idx = editedItems.findIndex(it => it.vegetableId === vegetableId);
     if (idx >= 0) {
       const copy = [...editedItems];
-      const newQty = copy[idx].quantityKg + quantity;
-      copy[idx] = { ...copy[idx], quantityKg: newQty, subtotal: newQty * veg.pricePerKg, pricePerKg: veg.pricePerKg };
+      const newQty = Math.round((copy[idx].quantityKg + quantity) * 100) / 100;
+      const newSubtotal = Math.round(newQty * veg.pricePerKg * 100) / 100;
+      copy[idx] = { ...copy[idx], quantityKg: newQty, subtotal: newSubtotal, pricePerKg: veg.pricePerKg };
       setEditedItems(copy);
+      console.log(`➕ Added ${veg.name}: ${newQty}kg × ₹${veg.pricePerKg}/kg = ₹${newSubtotal}`);
     } else {
-      const ni: BillItem = { vegetableId, quantityKg: quantity, subtotal: quantity * veg.pricePerKg, pricePerKg: veg.pricePerKg };
+      const subtotal = Math.round(quantity * veg.pricePerKg * 100) / 100;
+      const ni: BillItem = { vegetableId, quantityKg: quantity, subtotal, pricePerKg: veg.pricePerKg };
       setEditedItems(prev => [...prev, ni]);
+      console.log(`✨ New item ${veg.name}: ${quantity}kg × ₹${veg.pricePerKg}/kg = ₹${subtotal}`);
     }
   };
 
@@ -429,7 +481,10 @@ const [isSharing, setIsSharing] = useState(false);
     setIsSaving(true);
     try {
       await updateStockForQuantityChanges();
-      await onUpdateBill(bill.id, { items: editedItems, total: calculatedTotal });
+      // Recalculate total from edited items to ensure accuracy
+      const finalTotal = editedItems.reduce((sum, item) => sum + (item.subtotal || 0), 0);
+      const roundedTotal = roundTotal(finalTotal);
+      await onUpdateBill(bill.id, { items: editedItems, total: roundedTotal });
       setHasUnsavedChanges(false);
       console.log('Bill updated successfully');
     } catch (err) {
@@ -589,7 +644,7 @@ const createPrintableBillElement = async (): Promise<HTMLElement> => {
 
   totalDiv.innerHTML = `
     <div></div>
-    <div style="font-size:16px;color:#000">TOTAL: ₹${Number(calculatedTotal).toFixed(2)}</div>
+    <div style="font-size:16px;color:#000">TOTAL: ₹${Math.round(calculatedTotal)}</div>
   `;
   container.appendChild(totalDiv);
 
@@ -1153,9 +1208,7 @@ window.open(waUrl, "_blank");
                   <ShareIcon className="h-5 w-5 mr-2" /> Share
                 </Button>
 
-                <Button onClick={handleDownload} disabled={false}  disabled={false}
-className="bg-slate-600 hover:bg-slate-700 text-white"
- title={!selectedUpiId ? 'Please select a UPI ID first' : ''}>
+                <Button onClick={handleDownload} className="bg-slate-600 hover:bg-slate-700 text-white" title={!selectedUpiId ? 'Please select a UPI ID first' : ''}>
                   <ArrowDownTrayIcon className="h-5 w-5 mr-2" /> Download Bill
                 </Button>
               </div>
@@ -1163,7 +1216,6 @@ className="bg-slate-600 hover:bg-slate-700 text-white"
               <div className="text-right">
                 <p className="text-sm text-slate-500">Total Amount</p>
                 <p className="text-2xl font-bold text-slate-800">₹{Math.round(calculatedTotal)}</p>
-                {Number(calculatedTotal) !== Number(bill.total) && <p className="text-xs text-slate-500 mt-1">Original: ₹{Math.round(bill.total)}</p>}
               </div>
             </div>
 

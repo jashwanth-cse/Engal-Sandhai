@@ -3,6 +3,7 @@ import type { User } from '../../types/types';
 import Button from './ui/Button.tsx';
 import { EyeIcon, UserCircleIcon, LockClosedIcon, CheckCircleIcon } from './ui/Icon.tsx';
 import Toast from './ui/Toast.tsx';
+import { recalculateBillsForDate, recalculateBillsForDateRange } from '../utils/bulkBillRecalculator';
 
 interface PasswordChangeData {
   currentPassword: string;
@@ -46,7 +47,7 @@ interface SettingsProps {
 }
 
 const Settings: React.FC<SettingsProps> = ({ user, onUpdateProfile, onChangePassword }) => {
-  const [activeTab, setActiveTab] = useState<'profile' | 'password' | 'preferences'>('profile');
+  const [activeTab, setActiveTab] = useState<'profile' | 'password' | 'preferences' | 'data'>('profile');
   const [showCurrentPassword, setShowCurrentPassword] = useState(false);
   const [showNewPassword, setShowNewPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
@@ -109,6 +110,7 @@ const Settings: React.FC<SettingsProps> = ({ user, onUpdateProfile, onChangePass
     { id: 'profile' as const, name: 'Profile', icon: <UserCircleIcon className="h-5 w-5" /> },
     { id: 'password' as const, name: 'Password', icon: <LockClosedIcon className="h-5 w-5" /> },
     { id: 'preferences' as const, name: 'Preferences', icon: <CheckCircleIcon className="h-5 w-5" /> },
+    { id: 'data' as const, name: 'Data Management', icon: <CheckCircleIcon className="h-5 w-5" /> },
   ];
 
   return (
@@ -381,6 +383,123 @@ const Settings: React.FC<SettingsProps> = ({ user, onUpdateProfile, onChangePass
               >
                 Save Preferences
               </Button>
+            </div>
+          </div>
+        </SettingsCard>
+      )}
+
+      {/* Data Management Tab */}
+      {activeTab === 'data' && (
+        <SettingsCard className="p-6">
+          <div className="mb-6">
+            <h2 className="text-xl font-semibold text-gray-900 mb-2">Data Management</h2>
+            <p className="text-gray-600">Manage and fix your billing data.</p>
+          </div>
+
+          <div className="space-y-6">
+            <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
+              <h3 className="text-sm font-semibold text-amber-900 mb-2">⚠️ Bulk Bill Recalculation</h3>
+              <p className="text-sm text-amber-800 mb-4">
+                This will recalculate all bill totals using current vegetable prices and overwrite the database with corrected amounts. 
+                Use this if you have bills with incorrect calculations.
+              </p>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                <div>
+                  <label htmlFor="recalc-start" className="block text-sm font-medium text-gray-700 mb-2">
+                    Start Date
+                  </label>
+                  <input
+                    type="date"
+                    id="recalc-start"
+                    value={recalcStartDate}
+                    onChange={(e) => setRecalcStartDate(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+                  />
+                </div>
+                <div>
+                  <label htmlFor="recalc-end" className="block text-sm font-medium text-gray-700 mb-2">
+                    End Date
+                  </label>
+                  <input
+                    type="date"
+                    id="recalc-end"
+                    value={recalcEndDate}
+                    onChange={(e) => setRecalcEndDate(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+                  />
+                </div>
+              </div>
+              
+              <div className="flex gap-3">
+                <Button
+                  onClick={async () => {
+                    if (!recalcStartDate) {
+                      setToast({ message: 'Please select a date', type: 'error' });
+                      return;
+                    }
+                    setIsRecalculating(true);
+                    try {
+                      const targetDate = new Date(recalcStartDate);
+                      const results = await recalculateBillsForDate(targetDate);
+                      const updatedCount = results.filter(r => r.updated).length;
+                      setToast({ 
+                        message: `Recalculated ${updatedCount} bills for ${recalcStartDate}`, 
+                        type: 'success' 
+                      });
+                    } catch (error) {
+                      setToast({ message: 'Recalculation failed. Check console for details.', type: 'error' });
+                    } finally {
+                      setIsRecalculating(false);
+                    }
+                  }}
+                  disabled={isRecalculating || !recalcStartDate}
+                  className="bg-amber-600 hover:bg-amber-700 text-white"
+                >
+                  {isRecalculating ? 'Recalculating...' : 'Recalculate Single Date'}
+                </Button>
+                
+                <Button
+                  onClick={async () => {
+                    if (!recalcStartDate || !recalcEndDate) {
+                      setToast({ message: 'Please select both start and end dates', type: 'error' });
+                      return;
+                    }
+                    setIsRecalculating(true);
+                    try {
+                      const startDate = new Date(recalcStartDate);
+                      const endDate = new Date(recalcEndDate);
+                      const results = await recalculateBillsForDateRange(startDate, endDate);
+                      let totalUpdated = 0;
+                      results.forEach(r => totalUpdated += r.filter(x => x.updated).length);
+                      setToast({ 
+                        message: `Recalculated ${totalUpdated} bills across date range`, 
+                        type: 'success' 
+                      });
+                    } catch (error) {
+                      setToast({ message: 'Recalculation failed. Check console for details.', type: 'error' });
+                    } finally {
+                      setIsRecalculating(false);
+                    }
+                  }}
+                  disabled={isRecalculating || !recalcStartDate || !recalcEndDate}
+                  className="bg-red-600 hover:bg-red-700 text-white"
+                >
+                  {isRecalculating ? 'Recalculating...' : 'Recalculate Date Range'}
+                </Button>
+              </div>
+            </div>
+            
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+              <h3 className="text-sm font-semibold text-blue-900 mb-2">ℹ️ How It Works</h3>
+              <ul className="text-sm text-blue-800 space-y-2">
+                <li>• Loads current vegetable prices from the database</li>
+                <li>• Recalculates each bill item: quantity × current price</li>
+                <li>• Updates subtotals with 2 decimal precision</li>
+                <li>• Recalculates and rounds final bill total</li>
+                <li>• Overwrites database with corrected amounts</li>
+                <li>• Dashboard revenue automatically updates</li>
+              </ul>
             </div>
           </div>
         </SettingsCard>
