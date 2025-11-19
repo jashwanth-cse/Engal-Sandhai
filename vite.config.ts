@@ -31,4 +31,7 @@ export default defineConfig(({ mode }) => {
             vendor: ['react', 'react-dom', 'react-router-dom'],
           }
         }
-
+      }
+    }
+  };
+});
