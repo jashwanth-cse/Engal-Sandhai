@@ -11,7 +11,6 @@ import { XMarkIcon, EyeIcon, ArrowDownTrayIcon, ShareIcon } from './ui/Icon.tsx'
 import ImagePreviewModal from './ui/ImagePreviewModal.tsx';
 import Button from './ui/Button.tsx';
 import { getVegetableById, getDateKey } from '../services/dbService';
-import qrImg from '../assets/QR.png';
 import { getStorage, ref, uploadBytes, getDownloadURL } from "firebase/storage";
 
 // Firestore imports
@@ -37,12 +36,17 @@ declare global {
 
 type ExtendedBill = Bill & { employee_name?: string };
 
-// UPI ID configuration (single fixed ID)
+// UPI IDs configuration
 const UPI_IDS = [
   {
-    id: 'bakkiyalakshmi.ramaswamy-2@okhdfcbank',
-    name: 'Bakkiyalakshmi Ramaswamy',
-    displayName: 'bakkiyalakshmi.ramaswamy-2@okhdfcbank'
+    id: 'qualitykannan1962-1@okhdfcbank',
+    name: 'Quality Kannan',
+    displayName: 'qualitykannan1962-1@okhdfcbank'
+  },
+  {
+    id: 'vishnusakra.doc-2@okhdfcbank',
+    name: 'Vishnu Sakra',
+    displayName: 'vishnusakra.doc-2@okhdfcbank'
   }
 ];
 
@@ -123,7 +127,7 @@ const BillDetailModal: React.FC<BillDetailModalProps> = ({
   const [fetchedVegetables, setFetchedVegetables] = useState<Map<string, Vegetable>>(new Map());
   const [isLoadingVegetables, setIsLoadingVegetables] = useState(false);
   const globalVegetableCache = React.useRef<Map<string, Vegetable>>(new Map());
-  const [selectedUpiId, setSelectedUpiId] = useState<string>(UPI_IDS[0]?.id || '');
+
   // New: department fetched from DB for accurate file naming and header printing
   const [customerDeptFromDB, setCustomerDeptFromDB] = useState<string>('');
 const [isSharing, setIsSharing] = useState(false);
@@ -142,7 +146,7 @@ const [isSharing, setIsSharing] = useState(false);
       setCalculatedTotal(bill.total || 0);
       setHasUnsavedChanges(false);
       setFetchedVegetables(new Map());
-      setSelectedUpiId(UPI_IDS[0]?.id || '');
+      setSelectedUpiId('');
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bill?.id]);
@@ -157,47 +161,98 @@ const [isSharing, setIsSharing] = useState(false);
   useEffect(() => {
     if (!bill) return;
     let mounted = true;
-    const fetchMissing = async () => {
+    const fetchMissingVegetables = async () => {
       setIsLoadingVegetables(true);
-      try {
-        const missingIds = bill.items
-          .map(it => it.vegetableId)
-          .filter(id => !vegetableMap.has(id) && !fetchedVegetables.has(id) && !globalVegetableCache.current.has(id));
+      const missingIds: string[] = [];
+      const cachedVegetables = new Map<string, Vegetable>();
 
-        const newMap = new Map<string, Vegetable>();
-        for (const vegId of missingIds) {
-          let vegetableData = await getVegetableById(vegId);
-          if (!vegetableData) {
-            const dateKey = getDateKey(new Date(bill.date));
-            const snap = await getDoc(doc(db, 'vegetables', dateKey, 'items', vegId));
-            if (snap.exists()) {
-              const data = snap.data() as any;
-              vegetableData = {
-                id: snap.id,
-                name: data.name || `Item ${vegId}`,
-                unitType: (data.unitType as 'KG' | 'COUNT') || 'KG',
-                pricePerKg: Number(data.pricePerKg ?? data.price ?? 0),
-                totalStockKg: Number(data.totalStockKg ?? 0),
-                stockKg: Number(data.stockKg ?? 0),
-                category: (data.category as string) || 'General'
-              };
+      for (const item of bill.items) {
+        const existing = vegetableMap.get(item.vegetableId)
+          || fetchedVegetables.get(item.vegetableId)
+          || globalVegetableCache.current.get(item.vegetableId);
+        if (!existing) missingIds.push(item.vegetableId);
+        else if (globalVegetableCache.current.has(item.vegetableId)) cachedVegetables.set(item.vegetableId, existing);
+      }
+
+      if (cachedVegetables.size > 0) setFetchedVegetables(prev => new Map([...prev, ...cachedVegetables]));
+
+      if (missingIds.length === 0) {
+        setIsLoadingVegetables(false);
+        return;
+      }
+
+      const billDate = new Date(bill.date);
+      const dateKey = getDateKey(billDate);
+
+      try {
+        const promises = missingIds.map(async (vegId) => {
+          try {
+            let vegetableData = await getVegetableById(vegId);
+            if (!vegetableData) {
+              const dateBasedRef = doc(db, 'vegetables', dateKey, 'items', vegId);
+              const snap = await getDoc(dateBasedRef);
+              if (snap.exists()) {
+                const data = snap.data();
+                vegetableData = {
+                  id: snap.id,
+                  name: data.name || `Item ${vegId}`,
+                  unitType: (data.unitType as 'KG' | 'COUNT') || 'KG',
+                  pricePerKg: Number(data.pricePerKg || data.price) || 0,
+                  totalStockKg: Number(data.totalStockKg || data.stock || data.totalStock) || 0,
+                  stockKg: Number(data.stockKg || data.availableStock) || 0,
+                  category: data.category || 'Other'
+                };
+              }
             }
+            if (!vegetableData) {
+              const billItem = bill.items.find(it => it.vegetableId === vegId);
+              const fallback: Vegetable = {
+                id: vegId,
+                name: `Item ${vegId.replace('veg_', '').replace(/_/g, ' ').toUpperCase()}`,
+                unitType: 'KG',
+                pricePerKg: billItem ? (billItem.subtotal / (billItem.quantityKg || 1)) || 0 : 0,
+                totalStockKg: 0,
+                stockKg: 0,
+                category: 'Unknown'
+              };
+              return { id: vegId, vegetable: fallback };
+            }
+            return { id: vegId, vegetable: vegetableData };
+          } catch (err) {
+            console.error('Error fetching veg', vegId, err);
+            const billItem = bill.items.find(it => it.vegetableId === vegId);
+            const fallback: Vegetable = {
+              id: vegId,
+              name: `Item ${vegId.replace('veg_', '').replace(/_/g, ' ').toUpperCase()}`,
+              unitType: 'KG',
+              pricePerKg: billItem ? (billItem.subtotal / (billItem.quantityKg || 1)) || 0 : 0,
+              totalStockKg: 0,
+              stockKg: 0,
+              category: 'Unknown'
+            };
+            return { id: vegId, vegetable: fallback };
           }
-          if (vegetableData) {
-            newMap.set(vegId, vegetableData);
-            globalVegetableCache.current.set(vegId, vegetableData);
+        });
+
+        const results = await Promise.all(promises);
+        const missingMap = new Map<string, Vegetable>();
+        results.forEach(r => {
+          if (r) {
+            missingMap.set(r.id, r.vegetable);
+            globalVegetableCache.current.set(r.id, r.vegetable);
           }
-        }
-        if (mounted && newMap.size > 0) setFetchedVegetables(prev => new Map([...prev, ...newMap]));
+        });
+        if (mounted && missingMap.size > 0) setFetchedVegetables(prev => new Map([...prev, ...missingMap]));
       } catch (err) {
         console.error('Batch veg fetch failed', err);
       } finally {
         if (mounted) setIsLoadingVegetables(false);
       }
     };
-    fetchMissing();
+
+    fetchMissingVegetables();
     return () => { mounted = false; };
-  }, [bill?.id, vegetableMap]);
+  }, [bill?.id]);
 
   // Recalculate totals
   useEffect(() => {
@@ -411,18 +466,14 @@ const createPrintableBillElement = async (): Promise<HTMLElement> => {
       .replace(/\u200D/g, "")
       .trim();
 
-    // Header (neutral, no green background)
-    const header = document.createElement('div');
-    header.style.display = 'flex';
-    header.style.justifyContent = 'space-between';
-    header.style.alignItems = 'center';
-    header.style.padding = '12px';
-    header.style.borderRadius = '8px';
-    header.style.background = 'transparent';
-    header.style.border = '1px solid #e5e7eb';
-    header.style.color = '#111827';
-    header.innerHTML = `<div style="font-weight:800;font-size:20px;color:#111827">Engal Santhai</div><div style="font-size:12px;color:#475569;margin-top:4px">Your Fresh Vegetable Partner</div><div style="font-weight:700;color:#111827">INVOICE</div>`;
-    container.appendChild(header);
+  const container = document.createElement("div");
+  container.style.width = "794px";
+  container.style.padding = "18px";
+  container.style.background = "#ffffff";
+  container.style.color = "#000000";
+  container.style.fontFamily = "'Noto Sans Tamil', Arial, sans-serif";
+  container.style.fontSize = "12px";
+  container.style.lineHeight = "1.35";
 
   // HEADER — black & white only
   const header = document.createElement("div");
@@ -597,7 +648,7 @@ const createPrintableBillElement = async (): Promise<HTMLElement> => {
       throw new Error('jsPDF not available on window.jspdf');
     }
     const { jsPDF } = window.jspdf;
-    const pdfDoc: any = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait', compress: true });
+    const pdfDoc: any = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait' });
     const pageWidth = pdfDoc.internal.pageSize.getWidth();
     const pageHeight = pdfDoc.internal.pageSize.getHeight();
     const ITEMS_PER_PAGE = 22;
@@ -635,11 +686,10 @@ const createPrintableBillElement = async (): Promise<HTMLElement> => {
         for (let pageNum = 0; pageNum < totalPages; pageNum++) {
           if (pageNum > 0) pdfDoc.addPage();
 
-          // Header area (no color background, add a light outline)
-          pdfDoc.setDrawColor(203, 213, 225); // slate-300
-          pdfDoc.setLineWidth(0.4);
-          pdfDoc.rect(10, 10, pageWidth - 20, 22, 'S'); // outline only
-          pdfDoc.setTextColor(17, 24, 39); // neutral dark text
+          // Header area
+         // pdfDoc.setFillColor(198, 246, 213); // soft green
+          //pdfDoc.rect(10, 10, pageWidth - 20, 18, 'F');
+       //   pdfDoc.setTextColor(6, 78, 59);
           pdfDoc.setFontSize(18);
           pdfDoc.setFont(undefined, 'bold');
           pdfDoc.text('Engal Santhai', pageWidth / 2, 24, { align: 'center' });
@@ -775,8 +825,7 @@ const createPrintableBillElement = async (): Promise<HTMLElement> => {
       const scale = 2; // good resolution
       const canvas = await html2canvas(element as HTMLElement, { scale, useCORS: true, logging: false, scrollY: -window.scrollY });
       try { document.body.removeChild(element); } catch {}
-      // Use JPEG at high quality for much smaller file size with similar visual quality
-      const imgData = canvas.toDataURL('image/jpeg', 0.9);
+      const imgData = canvas.toDataURL('image/jpeg');
       const imgProps = (pdfDoc as any).getImageProperties(imgData);
       const imgWidth = pageWidth;
       const imgHeight = (imgProps.height * imgWidth) / imgProps.width;
@@ -787,7 +836,7 @@ const createPrintableBillElement = async (): Promise<HTMLElement> => {
       while (heightLeft > 0) {
         pdfDoc.addPage();
         position = heightLeft - imgHeight;
-        pdfDoc.addImage(imgData, 'JPEG', 0, position, imgWidth, imgHeight);
+      pdfDoc.addImage(imgData, 'JPEG', 0, position, imgWidth, imgHeight);
         heightLeft -= pageHeight;
       }
       const blob = pdfDoc.output('blob');
@@ -854,62 +903,49 @@ return { blob: compressedBlob, filename };
         await handleSaveChanges();
       }
 
-      // Resolve recipient phone number: try customerId doc first, then fallback by employee_name/name
-      let phoneNumber: string | null = null;
-      try {
-        if (bill.customerId) {
-          const userDocRef = doc(db, 'users', bill.customerId);
-          const userSnap = await getDoc(userDocRef);
-          if (userSnap.exists()) {
-            const d: any = userSnap.data();
-            phoneNumber = String(
-              d.phone || d.whatsapp || d.whatsapp_number || d.phoneNumber || d.phone_number || d.mobile || d.contact || ''
-            ) || null;
-          }
-        }
-      } catch (e) {
-        console.warn('CustomerId lookup failed', e);
+      let employeeNameToQuery = billTyped?.employee_name || customerNameFromDB || bill.customerName || '';
+      let retries = 0;
+      while ((!employeeNameToQuery || employeeNameToQuery === 'Unknown Customer') && retries < 5) {
+        await new Promise(res => setTimeout(res, 200));
+        employeeNameToQuery = billTyped?.employee_name || customerNameFromDB || bill.customerName || '';
+        retries++;
       }
 
-      if (!phoneNumber) {
-        let employeeNameToQuery = billTyped?.employee_name || customerNameFromDB || bill.customerName || '';
-        let retries = 0;
-        while ((!employeeNameToQuery || employeeNameToQuery === 'Unknown Customer') && retries < 5) {
-          await new Promise(res => setTimeout(res, 200));
-          employeeNameToQuery = billTyped?.employee_name || customerNameFromDB || bill.customerName || '';
-          retries++;
-        }
-        if (employeeNameToQuery.trim()) {
-          try {
-            const usersRef = collection(db, 'users');
-            const q1 = query(usersRef, where('employee_name', '==', employeeNameToQuery));
-            const snap1 = await getDocs(q1);
-            let userData: any = null;
-            if (!snap1.empty) userData = snap1.docs[0].data();
-            else {
-              const q2 = query(usersRef, where('name', '==', employeeNameToQuery));
-              const snap2 = await getDocs(q2);
-              if (!snap2.empty) userData = snap2.docs[0].data();
-            }
-            if (userData) {
-              phoneNumber = String(
-                userData.phone || userData.whatsapp || userData.whatsapp_number || userData.phoneNumber || userData.phone_number || userData.mobile || userData.contact || ''
-              ) || null;
-            }
-          } catch (err) {
-            console.error('Firestore user lookup failed', err);
+      let phoneNumber: string | null = null;
+      if (employeeNameToQuery.trim()) {
+        try {
+          const usersRef = collection(db, 'users');
+          const q1 = query(usersRef, where('employee_name', '==', employeeNameToQuery));
+          const snap1 = await getDocs(q1);
+          let userData: any = null;
+          if (!snap1.empty) userData = snap1.docs[0].data();
+          else {
+            const q2 = query(usersRef, where('name', '==', employeeNameToQuery));
+            const snap2 = await getDocs(q2);
+            if (!snap2.empty) userData = snap2.docs[0].data();
           }
+          if (userData) {
+            phoneNumber = String(userData.phone || userData.mobile || userData.contact || userData.phoneNumber || '') || null;
+          }
+        } catch (err) {
+          console.error('Firestore user lookup failed', err);
         }
       }
 
       const normalized = normalizePhoneForWhatsApp(phoneNumber);
+      let downloadURL: string | null = null;
+      try {
+        const { blob, filename } = await generateBillPdfBlobAndFilename();
+        const storage = getStorage();
+        const pdfRef = ref(storage, `bills/${(bill as any).billNumber || bill.id || Date.now()}.pdf`);
+        await uploadBytes(pdfRef, blob);
+        const rawURL = await getDownloadURL(pdfRef);
+        downloadURL = rawURL + (rawURL.includes('?') ? '&dl=1' : '?dl=1');
+      } catch (err) {
+        console.warn('PDF upload failed', err);
+      }
 
-      // Build a UPI payment deep link for quick pay via UPI apps
-      const payee = UPI_IDS[0];
-      const upiAmount = Math.round(calculatedTotal);
-      const upiLink = `upi://pay?pa=${encodeURIComponent(payee.id)}&pn=${encodeURIComponent('Engal Santhai')}&am=${encodeURIComponent(String(upiAmount))}&cu=INR&tn=${encodeURIComponent('Engal Santhai bill payment')}`;
-
-      const message = `Hello ${customerNameFromDB || bill.customerName},\n\nYour Engal Santhai bill is ready.\nTotal: ₹${upiAmount}\n\nTap to pay via UPI (enter PIN to confirm):\n${upiLink}\n\nThank you for shopping with us!`;
+      const message = `Hello customer!,\n\nYour Engal Santhai bill is ready.\nTotal: ₹${Math.round(calculatedTotal)}\n📄 Download your E-bill here: ${downloadURL || 'Please download your bill from the link.'}\n\n If you are using mobile pay here: \n upi://pay?pa=bakkiyalakshmi.ramaswamy-2@okhdfcbank&pn=Bakkiyalakshmi%20Ramaswamy&am=${Math.round(calculatedTotal)}&cu=INR&aid=uGICAgICNqbyEJg \n\nPlease download your bill, \nThank you for shopping with us!`;
 
       try {
         await navigator.clipboard.writeText(message);
@@ -918,9 +954,10 @@ return { blob: compressedBlob, filename };
       }
 
       const waUrl = normalized
-        ? `https://api.whatsapp.com/send?phone=${encodeURIComponent(normalized)}&text=${encodeURIComponent(message)}`
-        : `https://api.whatsapp.com/send?text=${encodeURIComponent(message)}`;
-      window.open(waUrl, '_blank');
+  ? `https://api.whatsapp.com/send?phone=${encodeURIComponent(normalized)}&text=${encodeURIComponent(message)}`
+  : `https://api.whatsapp.com/send?text=${encodeURIComponent(message)}`;
+
+window.open(waUrl, "_blank");
 
       // Try native share with file
       try {
@@ -1105,24 +1142,6 @@ return { blob: compressedBlob, filename };
             </div>
 
 
-              {selectedUpiId ? (
-                <div className="bg-slate-50 p-6 rounded-lg">
-                  <div className="text-center">
-                    <p className="text-sm font-medium text-slate-700 mb-3">Payment QR Code for: {UPI_IDS.find(u => u.id === selectedUpiId)?.displayName}</p>
-                    <div className="inline-block p-4 bg-white rounded-lg shadow-sm">
-                      <img src={qrImg} alt="UPI QR Code" className="w-32 h-32 mx-auto rounded border" />
-                    </div>
-                    <p className="text-xs text-slate-500 mt-2">Scan this QR code to pay ₹{Math.round(calculatedTotal)}</p>
-                  </div>
-                </div>
-              ) : (
-                <div className="bg-amber-50 p-4 rounded-lg border border-amber-200">
-                  <div className="text-center">
-                    <p className="text-sm text-amber-700">Please select a UPI ID above to view the payment QR code</p>
-                  </div>
-                </div>
-              )}
-            </div>
 
             <div className="flex justify-between items-center mt-6 pt-4 border-t border-slate-200">
               <div className="flex gap-3">
