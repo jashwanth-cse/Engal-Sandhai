@@ -697,7 +697,7 @@ const createPrintableBillElement = async (): Promise<HTMLElement> => {
 
 
   // Generate PDF and filename
-  const generateBillPdfBlobAndFilename = async (): Promise<{ blob: Blob; filename: string }> => {
+  const generateBillPdfBlobAndFilename = async (): Promise<{ blob: Blob; filename: string ;billDate: string;}> => {
     // Ensure window.jspdf present
     if (!(window as any).jspdf || !(window as any).jspdf.jsPDF) {
       throw new Error('jsPDF not available on window.jspdf');
@@ -713,6 +713,7 @@ const createPrintableBillElement = async (): Promise<HTMLElement> => {
     const dd = String(billDateObj.getDate()).padStart(2, '0');
     const mm = String(billDateObj.getMonth() + 1).padStart(2, '0');
     const yyyy = billDateObj.getFullYear();
+    const billDate = `${dd}.${mm}.${yyyy}`;
     const idMatch = bill.id.match(/(\d{3,})$/);
     let serial = '001';
     if (idMatch) serial = idMatch[1].slice(-3).padStart(3, '0');
@@ -757,6 +758,7 @@ const createPrintableBillElement = async (): Promise<HTMLElement> => {
           pdfDoc.text('INVOICE', 14, 42);
 
           const dateStr = billDateObj.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' });
+         
           const timeStr = billDateObj.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }).toLowerCase();
           pdfDoc.setFont(undefined, 'normal');
           pdfDoc.setFontSize(10);
@@ -867,7 +869,7 @@ const createPrintableBillElement = async (): Promise<HTMLElement> => {
 
         const blob = pdfDoc.output('blob');
         const compressedBlob = await compressPdf(blob);
-        return { blob: compressedBlob, filename };
+        return { blob: compressedBlob, filename,billDate };
 
       } catch (err) {
         console.error('Text-based PDF generation failed, falling back to raster', err);
@@ -896,7 +898,7 @@ const createPrintableBillElement = async (): Promise<HTMLElement> => {
       }
       const blob = pdfDoc.output('blob');
 const compressedBlob = await compressPdf(blob);
-return { blob: compressedBlob, filename };
+return { blob: compressedBlob, filename ,billDate};
 
     } catch (rasterErr) {
       console.error('Raster fallback failed', rasterErr);
@@ -906,7 +908,7 @@ return { blob: compressedBlob, filename };
         fallback.text('Unable to generate bill PDF. Please contact support.', 10, 10);
         const blob = pdfDoc.output('blob');
 const compressedBlob = await compressPdf(blob);
-return { blob: compressedBlob, filename };
+return { blob: compressedBlob, filename,billDate};
 
       } catch (finalErr) {
         console.error('Final fallback failed', finalErr);
@@ -917,7 +919,7 @@ return { blob: compressedBlob, filename };
 
   const handleDownload = async () => {
     try {
-      const { blob, filename } = await generateBillPdfBlobAndFilename();
+      const { blob, filename, billDate } = await generateBillPdfBlobAndFilename();
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
@@ -999,8 +1001,28 @@ return { blob: compressedBlob, filename };
       } catch (err) {
         console.warn('PDF upload failed', err);
       }
+const {billDate } = await generateBillPdfBlobAndFilename();
 
-      const message = `Hello customer!,\n\nYour Engal Santhai bill is ready.\nTotal: ₹${Math.round(calculatedTotal)}\n📄 Download your E-bill here: ${downloadURL || 'Please download your bill from the link.'}\n\n If you are using mobile pay here: \n upi://pay?pa=bakkiyalakshmi.ramaswamy-2@okhdfcbank&pn=Bakkiyalakshmi%20Ramaswamy&am=${Math.round(calculatedTotal)}&cu=INR&aid=uGICAgICNqbyEJg \n\nPlease download your bill, \nThank you for shopping with us!`;
+const totalAmount = Math.round(calculatedTotal);
+const upiId = "bakkiyalakshmi.ramaswamy-2@okhdfcbank";
+const billDownloadLink = downloadURL || "Kindly download your bill from the link.";
+
+// Final message
+const message =
+`🌟 Hello!
+Thank you for ordering from *Engal Sandhai* on ${billDate} 🙏
+
+Your Engal Sandhai Bill is ready.
+*Total: ₹${totalAmount}*
+
+📄 _Download your E-bill here:_
+${billDownloadLink}
+
+📌 *Please make your payment to the following UPI ID:*
+${upiId}
+📷 Once done, kindly send a screenshot of the payment confirmation here.
+
+Thank You!`;
 
       try {
         await navigator.clipboard.writeText(message);

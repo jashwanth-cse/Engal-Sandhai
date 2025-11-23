@@ -23,5 +23,7 @@ dist-ssr
 *.sln
 *.sw?
 firebase.json
+package.json
+package-lock.json
 src/firebase.ts
 vite.config.ts
