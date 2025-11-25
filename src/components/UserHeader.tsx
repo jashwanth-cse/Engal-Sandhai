@@ -8,9 +8,10 @@ interface UserHeaderProps {
   user: User;
   onLogout: () => void;
   onOpenSettings?: () => void;
+  onShowOrders?: () => void;
 }
 
-const UserHeader: React.FC<UserHeaderProps> = ({ user, onLogout, onOpenSettings }) => {
+const UserHeader: React.FC<UserHeaderProps> = ({ user, onLogout, onOpenSettings, onShowOrders }) => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
 
   return (
@@ -42,6 +43,7 @@ const UserHeader: React.FC<UserHeaderProps> = ({ user, onLogout, onOpenSettings 
         user={user}
         onLogout={onLogout}
         onOpenSettings={onOpenSettings}
+        onShowOrders={onShowOrders}
       />
     </>
   );

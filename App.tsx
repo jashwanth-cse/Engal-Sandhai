@@ -14,6 +14,7 @@ import Settings from './src/components/Settings';
 import CreateBill from './src/components/CreateBill';
 import Sidebar from './src/components/Sidebar';
 import AdminHeader from './src/components/AdminHeader';
+import UserOrders from './src/components/UserOrders';
 import { useBillingData } from './hooks/useBillingData';
 import type { User } from './types/types';
 import { loginWithEmployeeID, auth, observeUser } from './src/services/authService';
@@ -384,6 +385,18 @@ const App: React.FC = () => {
               onUpdateUser={handleUpdateUser}
               loading={(billingData as any).loading}
               onRefresh={(billingData as any).refreshData}
+            />
+          </ProtectedRoute>
+        }
+      />
+
+      <Route
+        path="/my-orders"
+        element={
+          <ProtectedRoute user={currentUser} loading={loading}>
+            <UserOrders
+              user={currentUser}
+              onLogout={handleLogout}
             />
           </ProtectedRoute>
         }

@@ -1,6 +1,7 @@
 import React from 'react';
+import { useNavigate } from 'react-router-dom';
 import type { User } from'../../types/types';
-import { HomeIcon, CubeIcon, ShoppingCartIcon, LogoutIcon, XMarkIcon, CogIcon, PlusIcon, DocumentMagnifyingGlassIcon, CalendarDaysIcon } from './ui/Icon.tsx';
+import { HomeIcon, CubeIcon, ShoppingCartIcon, LogoutIcon, XMarkIcon, CogIcon, PlusIcon, DocumentMagnifyingGlassIcon, CalendarDaysIcon, ShoppingBagIcon } from './ui/Icon.tsx';
 
 type AdminPage = 'dashboard' | 'inventory' | 'orders' | 'settings' | 'create-bill' | 'reports' | 'weekly-stock';
 
@@ -11,9 +12,12 @@ interface SidebarProps {
   setCurrentPage: (page: AdminPage) => void;
   isOpen: boolean;
   setIsOpen: (isOpen: boolean) => void;
+  onShowOrders?: () => void;
 }
 
-const Sidebar: React.FC<SidebarProps> = ({ user, onLogout, currentPage, setCurrentPage, isOpen, setIsOpen }) => {
+const Sidebar: React.FC<SidebarProps> = ({ user, onLogout, currentPage, setCurrentPage, isOpen, setIsOpen, onShowOrders }) => {
+  const navigate = useNavigate();
+  
   const navItems: { id: AdminPage; name: string; icon: React.ReactNode }[] = [
     { id: 'dashboard', name: 'Dashboard', icon: <HomeIcon className="h-6 w-6" /> },
     { id: 'inventory', name: 'Inventory', icon: <CubeIcon className="h-6 w-6" /> },
@@ -22,6 +26,11 @@ const Sidebar: React.FC<SidebarProps> = ({ user, onLogout, currentPage, setCurre
     { id: 'weekly-stock', name: 'Weekly Stock Report', icon: <CalendarDaysIcon className="h-6 w-6" /> },
     { id: 'create-bill', name: 'Create Bill', icon: <PlusIcon className="h-6 w-6" /> },
   ];
+
+  const handleYourOrders = () => {
+    navigate('/my-orders');
+    setIsOpen(false);
+  };
 
   const sidebarContent = (
     <div className="flex flex-col h-full">
@@ -55,6 +64,13 @@ const Sidebar: React.FC<SidebarProps> = ({ user, onLogout, currentPage, setCurre
         ))}
       </nav>
       <div className="px-2 py-4 border-t border-primary-800">
+        <button
+          onClick={handleYourOrders}
+          className="flex items-center w-full px-4 py-2.5 mb-2 text-base font-semibold text-primary-100 rounded-lg hover:bg-primary-800 hover:text-white transition-colors duration-200"
+        >
+          <ShoppingBagIcon className="h-6 w-6" />
+          <span className="ml-4">Your Orders</span>
+        </button>
         <div className="p-4 rounded-lg bg-primary-800/50 mb-4">
             <p className="font-semibold text-white truncate">{user.name}</p>
             <p className="text-sm text-primary-300 capitalize">{user.role}</p>

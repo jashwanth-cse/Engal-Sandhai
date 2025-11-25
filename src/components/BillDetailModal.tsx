@@ -523,62 +523,66 @@ const createPrintableBillElement = async (): Promise<HTMLElement> => {
 
   const container = document.createElement("div");
   container.style.width = "794px";
-  container.style.padding = "18px";
+  container.style.padding = "60px";
   container.style.background = "#ffffff";
   container.style.color = "#000000";
-  container.style.fontFamily = "'Noto Sans Tamil', Arial, sans-serif";
+  container.style.fontFamily = "'Poppins', Arial, sans-serif";
   container.style.fontSize = "12px";
-  container.style.lineHeight = "1.35";
+  container.style.lineHeight = "1.4";
 
-  // HEADER — black & white only
+  // HEADER — Simple centered layout
   const header = document.createElement("div");
-  header.style.display = "flex";
-  header.style.justifyContent = "space-between";
-  header.style.padding = "10px 0";
-  header.style.borderBottom = "1px solid #000";
+  header.style.textAlign = "center";
+  header.style.paddingBottom = "16px";
+  header.style.borderBottom = "2px solid #000";
+  header.style.marginBottom = "20px";
 
   header.innerHTML = `
-    <div>
-      <div style="font-weight:800;font-size:20px;color:#000">Engal Santhai</div>
-      <div style="font-size:12px;margin-top:3px;color:#000">Your Fresh Vegetable Partner</div>
-    </div>
-    <div style="text-align:right;font-weight:700;color:#000">INVOICE</div>
+    <div style="font-weight:800;font-size:22px;color:#000;margin-bottom:4px">Engal Santhai</div>
+    <div style="font-size:11px;color:#666">Your Fresh Vegetable Partner</div>
   `;
   container.appendChild(header);
 
-  // METADATA
-  const meta = document.createElement("div");
-  meta.style.display = "flex";
-  meta.style.justifyContent = "space-between";
-  meta.style.marginTop = "12px";
-
+  // Calculate dates and numbers
   const billDateObj = new Date(bill.date);
   const dd = String(billDateObj.getDate()).padStart(2, "0");
   const mm = String(billDateObj.getMonth() + 1).padStart(2, "0");
-  const yy = String(billDateObj.getFullYear());
+  const yyyy = String(billDateObj.getFullYear());
 
   const serialMatch = bill.id.match(/(\d{3,})$/);
   let serial = serialMatch ? serialMatch[1].slice(-3).padStart(3, "0") : "001";
-  const billNoFormatted = `ES${dd}${mm}${yy}-${serial}`;
+  const billNoFormatted = `ES${dd}${mm}${yyyy}-${serial}`;
 
   const timeStr = billDateObj.toLocaleTimeString("en-US", {
     hour: "2-digit",
     minute: "2-digit",
     hour12: true
-  }).toLowerCase();
+  }).toUpperCase();
 
-  let employeeId = bill.customerId || bill.customerName || "N/A";
-  if (employeeId.includes("@")) employeeId = employeeId.split("@")[0];
+  // INVOICE label
+  const invoiceLabel = document.createElement("div");
+  invoiceLabel.style.fontWeight = "700";
+  invoiceLabel.style.fontSize = "13px";
+  invoiceLabel.style.marginBottom = "12px";
+  invoiceLabel.style.color = "#000";
+  invoiceLabel.textContent = "INVOICE";
+  container.appendChild(invoiceLabel);
+
+  // METADATA - Two columns
+  const meta = document.createElement("div");
+  meta.style.display = "flex";
+  meta.style.justifyContent = "space-between";
+  meta.style.marginBottom = "20px";
+  meta.style.fontSize = "11px";
 
   const leftMeta = `
-      <div style="font-weight:600">BILL NO: ${billNoFormatted}</div>
-      <div>Date: ${dd}/${mm}/${yy}</div>
+      <div style="margin-bottom:4px">BILL NO: <span style="font-weight:600">${billNoFormatted}</span></div>
+      <div>Date: <span style="font-weight:600">${dd}/${mm}/${yyyy}</span></div>
   `;
 
   const rightMeta = `
-      <div style="font-weight:600">CUSTOMER : ${sanitizeNoEmoji(customerNameFromDB || bill.customerName)}</div>
-      <div>Time: ${timeStr}</div>
-      <div>EMP ID: ${sanitizeNoEmoji(employeeId)}</div>
+      <div style="margin-bottom:4px">CUSTOMER: <span style="font-weight:600">${sanitizeNoEmoji(customerNameFromDB || bill.customerName)}</span></div>
+      <div>Time: <span style="font-weight:600">${timeStr}</span></div>
   `;
 
   const left = document.createElement("div");
@@ -592,20 +596,19 @@ const createPrintableBillElement = async (): Promise<HTMLElement> => {
   meta.appendChild(right);
   container.appendChild(meta);
 
-  // TABLE
+  // TABLE - Clean design without borders
   const table = document.createElement("table");
   table.style.width = "100%";
   table.style.borderCollapse = "collapse";
-  table.style.marginTop = "16px";
+  table.style.marginBottom = "20px";
 
   const thead = `
     <thead>
-      <tr style="background:#fff;color:#000;font-weight:700">
-        <th style="border:0.5px solid #000;padding:6px;width:8%">S.No.</th>
-        <th style="border:0.5px solid #000;padding:6px">Item</th>
-        <th style="border:0.5px solid #000;padding:6px;text-align:right;width:15%">Qty(kg)</th>
-        <th style="border:0.5px solid #000;padding:6px;text-align:right;width:18%">Rate(₹)</th>
-        <th style="border:0.5px solid #000;padding:6px;text-align:right;width:20%">Amount(₹)</th>
+      <tr style="background:#f5f5f5;color:#000;font-weight:600;font-size:11px">
+        <th style="padding:10px 8px;text-align:left;width:10%">S.No</th>
+        <th style="padding:10px 8px;text-align:left">Item</th>
+        <th style="padding:10px 8px;text-align:center;width:18%">Qty(kg)</th>
+        <th style="padding:10px 8px;text-align:right;width:20%">Amount(₹)</th>
       </tr>
     </thead>
   `;
@@ -617,14 +620,12 @@ const createPrintableBillElement = async (): Promise<HTMLElement> => {
     const name = sanitizeNoEmoji((item as any).name || veg?.name || "Item");
 
     const tr = document.createElement("tr");
+    tr.style.borderBottom = "1px solid #e5e5e5";
     tr.innerHTML = `
-      <td style="border:0.5px solid #000;padding:6px">${idx + 1}</td>
-      <td style="border:0.5px solid #000;padding:6px">${name}</td>
-      <td style="border:0.5px solid #000;padding:6px;text-align:right">${item.quantityKg}</td>
-      <td style="border:0.5px solid #000;padding:6px;text-align:right">
-        ₹${Number((item as any).pricePerKg || veg?.pricePerKg || 0).toFixed(2)}
-      </td>
-      <td style="border:0.5px solid #000;padding:6px;text-align:right">₹${Number(item.subtotal).toFixed(2)}</td>
+      <td style="padding:10px 8px;font-size:11px">${idx + 1}</td>
+      <td style="padding:10px 8px;font-size:11px">${name}</td>
+      <td style="padding:10px 8px;text-align:center;font-size:11px">${item.quantityKg}</td>
+      <td style="padding:10px 8px;text-align:right;font-size:11px;font-weight:600">₹${Math.round(item.subtotal)}</td>
     `;
     tbody.appendChild(tr);
   });
@@ -633,56 +634,62 @@ const createPrintableBillElement = async (): Promise<HTMLElement> => {
   table.appendChild(tbody);
   container.appendChild(table);
 
-  // TOTAL ONLY
+  // TOTAL - Right aligned
   const totalDiv = document.createElement("div");
-  totalDiv.style.marginTop = "18px";
-  totalDiv.style.borderTop = "1px solid #000";
-  totalDiv.style.paddingTop = "10px";
+  totalDiv.style.marginBottom = "24px";
+  totalDiv.style.paddingTop = "12px";
+  totalDiv.style.borderTop = "2px solid #000";
   totalDiv.style.display = "flex";
-  totalDiv.style.justifyContent = "space-between";
+  totalDiv.style.justifyContent = "flex-end";
   totalDiv.style.fontWeight = "700";
+  totalDiv.style.fontSize = "14px";
 
   totalDiv.innerHTML = `
-    <div></div>
-    <div style="font-size:16px;color:#000">TOTAL: ₹${Math.round(calculatedTotal)}</div>
+    <div style="color:#000">TOTAL: &nbsp;&nbsp;<span style="font-size:16px">₹${Math.round(calculatedTotal)}</span></div>
   `;
   container.appendChild(totalDiv);
 
   // PAYMENT INFORMATION BLOCK + STATIC QR IMAGE
   const payBlock = document.createElement("div");
-  payBlock.style.marginTop = "20px";
-  payBlock.style.padding = "12px";
-  payBlock.style.border = "1px solid #000";
+  payBlock.style.marginTop = "24px";
+  payBlock.style.padding = "16px";
+  payBlock.style.border = "none";
   payBlock.style.color = "#000";
+  payBlock.style.textAlign = "center";
 
   payBlock.innerHTML = `
-    <div style="font-weight:700;margin-bottom:8px;font-size:14px;color:#000">
+    <div style="font-weight:700;margin-bottom:12px;font-size:13px;color:#000">
       PAYMENT INFORMATION
     </div>
-    <div style="font-size:13px;margin-bottom:4px;color:#000">
-      Payee Name: Bakkiyalakshmi Ramaswamy
-      UPI ID: bakkiyalakshmi.ramaswamy-2@okhdfcbank
+    <div style="font-size:11px;margin-bottom:8px;color:#333;line-height:1.6">
+      Payee Name: Bakkiyalakshmi Ramaswamy, UPI ID:<br/>bakkiyalakshmi.ramaswamy-2@okhdfcbank
     </div>
-    <div style="margin-top:10px;text-align:center;color:#000;font-weight:600">
-      <div>Scan & Pay</div>
+    <div style="margin-top:16px;text-align:center;color:#000;font-weight:700;font-size:13px">
+      Scan & Pay
     </div>
   `;
 
-  // QR CODE (FULL QUALITY PNG)
+  // QR CODE (FULL QUALITY PNG) - Centered without background
+  const qrWrapper = document.createElement("div");
+  qrWrapper.style.display = "flex";
+  qrWrapper.style.justifyContent = "center";
+  qrWrapper.style.marginTop = "12px";
+
   const qrImg = document.createElement("img");
   qrImg.src = PaymentQR; // imported image
   qrImg.style.width = "140px";
   qrImg.style.height = "140px";
   qrImg.style.objectFit = "contain";
-  qrImg.style.margin = "10px auto 0 auto";
   qrImg.style.display = "block";
-  payBlock.appendChild(qrImg);
+  
+  qrWrapper.appendChild(qrImg);
+  payBlock.appendChild(qrWrapper);
 
   container.appendChild(payBlock);
 
-  // Load Tamil font
+  // Load Poppins font
   const fontLink = document.createElement("link");
-  fontLink.href = "https://fonts.googleapis.com/css2?family=Noto+Sans+Tamil&display=swap";
+  fontLink.href = "https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700&display=swap";
   fontLink.rel = "stylesheet";
   container.appendChild(fontLink);
 

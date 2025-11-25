@@ -1,7 +1,8 @@
 
 import React from 'react';
+import { useNavigate } from 'react-router-dom';
 import type { User } from '../../types/types';
-import { LogoutIcon, XMarkIcon, CogIcon } from './ui/Icon.tsx';
+import { LogoutIcon, XMarkIcon, CogIcon, ShoppingBagIcon } from './ui/Icon.tsx';
 
 interface MobileMenuProps {
   isOpen: boolean;
@@ -9,14 +10,22 @@ interface MobileMenuProps {
   user: User;
   onLogout: () => void;
   onOpenSettings?: () => void;
+  onShowOrders?: () => void;
 }
 
-const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose, user, onLogout, onOpenSettings }) => {
+const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose, user, onLogout, onOpenSettings, onShowOrders }) => {
+  const navigate = useNavigate();
+  
   const handleSettingsClick = () => {
     if (onOpenSettings) {
       onOpenSettings();
       onClose();
     }
+  };
+
+  const handleYourOrders = () => {
+    navigate('/my-orders');
+    onClose();
   };
   return (
     <div 
@@ -64,6 +73,14 @@ const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose, user, onLogout
                             <span>Dashboard</span>
                         </button>
                     )}
+
+                    <button
+                        onClick={handleYourOrders}
+                        className="flex items-center w-full p-3 rounded-lg text-base font-medium text-slate-700 hover:bg-slate-200 transition-colors duration-200"
+                    >
+                        <ShoppingBagIcon className="h-5 w-5 mr-3" />
+                        <span>Your Orders</span>
+                    </button>
 
                     <button
                         onClick={onLogout}
