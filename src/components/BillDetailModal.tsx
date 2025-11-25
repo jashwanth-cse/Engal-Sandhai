@@ -12,6 +12,8 @@ import ImagePreviewModal from './ui/ImagePreviewModal.tsx';
 import Button from './ui/Button.tsx';
 import { getVegetableById, getDateKey } from '../services/dbService';
 import { roundTotal } from '../utils/roundUtils';
+import qrImg from '../assets/QR.jpeg';
+
 import { getStorage, ref, uploadBytes, getDownloadURL } from "firebase/storage";
 
 // Firestore imports
@@ -1072,9 +1074,9 @@ window.open(waUrl, "_blank");
       <div
         role="dialog"
         aria-modal="true"
-        className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 animate-fade-in-down"
+        className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 p-4"
       >
-        <div className="relative bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] flex flex-col">
+        <div className="relative bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] flex flex-col animate-fade-in-down">
           <div className="flex items-center justify-between p-4 border-b bg-slate-50 rounded-t-lg">
             <div>
               <h2 className="text-xl font-bold text-slate-800">Bill Details</h2>

@@ -2,8 +2,9 @@ import React, { useState, useMemo } from 'react';
 import type { Vegetable, Bill } from '../../types/types';
 import Button from './ui/Button.tsx';
 import MetricCard from './ui/MetricCard.tsx';
-import { PlusIcon, PencilSquareIcon, TrashIcon, MagnifyingGlassIcon, CalendarDaysIcon } from './ui/Icon.tsx';
+import { PlusIcon, PencilSquareIcon, TrashIcon, MagnifyingGlassIcon, CalendarDaysIcon, CalendarIcon } from './ui/Icon.tsx';
 import VegetableFormModal from './VegetableFormModal.tsx';
+import StockTemplateSelector from './StockTemplateSelector.tsx';
 import Toast from './ui/Toast.tsx';
 
 interface InventoryProps {
@@ -37,7 +38,9 @@ const Inventory: React.FC<InventoryProps> = ({
   loading,
 }) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isTemplateSelectorOpen, setIsTemplateSelectorOpen] = useState(false);
   const [editingVegetable, setEditingVegetable] = useState<Vegetable | null>(null);
+  const [templateData, setTemplateData] = useState<Vegetable | null>(null);
   const [toast, setToast] = useState<ToastState>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [localSelectedDate, setLocalSelectedDate] = useState<Date>(selectedDate || new Date());
@@ -172,12 +175,62 @@ const Inventory: React.FC<InventoryProps> = ({
 
   const handleOpenModal = (vegetable: Vegetable | null = null) => {
     setEditingVegetable(vegetable);
+    setTemplateData(null);
     setIsModalOpen(true);
   };
 
   const handleCloseModal = () => {
     setIsModalOpen(false);
     setEditingVegetable(null);
+    setTemplateData(null);
+  };
+
+  const handleOpenTemplateSelector = () => {
+    setIsTemplateSelectorOpen(true);
+  };
+
+  const handleCloseTemplateSelector = () => {
+    setIsTemplateSelectorOpen(false);
+  };
+
+  const handleSelectTemplate = (vegetable: Vegetable) => {
+    setTemplateData(vegetable);
+    setEditingVegetable(null);
+    setIsModalOpen(true);
+  };
+
+  const handleApplyTemplate = async (vegs: Vegetable[]) => {
+    if (!vegs || vegs.length === 0) return;
+    if (!window.confirm(`Apply template with ${vegs.length} items to ${formatDateForDisplay(currentDate)}? This will add items for the selected date.`)) {
+      return;
+    }
+
+    try {
+      setPendingRefresh(true);
+      // Map to Omit<Vegetable, 'id'> format and call addVegetable
+      for (const v of vegs) {
+        const newVeg: Omit<Vegetable, 'id'> = {
+          name: v.name,
+          unitType: v.unitType,
+          pricePerKg: v.pricePerKg,
+          totalStockKg: v.totalStockKg,
+          stockKg: v.stockKg,
+          category: v.category,
+        };
+        // eslint-disable-next-line no-await-in-loop
+        await addVegetable(newVeg, currentDate);
+      }
+      showToast('Template items added to inventory!', 'success');
+    } catch (err) {
+      console.error('Error applying template:', err);
+      showToast('Failed to apply template', 'error');
+    } finally {
+      if (onRefresh) {
+        try { await onRefresh(); } finally { setPendingRefresh(false); }
+      } else {
+        setPendingRefresh(false);
+      }
+    }
   };
 
   const handleSubmit = async (data: Omit<Vegetable, 'id'> | Vegetable) => {
@@ -247,10 +300,19 @@ const Inventory: React.FC<InventoryProps> = ({
               className="border-0 bg-transparent focus:outline-none focus:ring-0 text-sm font-medium text-slate-700"
             />
           </div>
-          <Button onClick={() => handleOpenModal()}>
+          <div className="flex items-center gap-2">
+            <Button 
+              onClick={handleOpenTemplateSelector}
+              className="bg-primary-100 hover:bg-primary-200 text-primary-700 border border-primary-300"
+            >
+              <CalendarIcon className="h-5 w-5 mr-2" />
+              Load Template
+            </Button>
+            <Button onClick={() => handleOpenModal()}>
               <PlusIcon className="h-5 w-5 mr-2" />
               Add Stock
-          </Button>
+            </Button>
+          </div>
         </div>
       </div>
 
@@ -380,11 +442,20 @@ const Inventory: React.FC<InventoryProps> = ({
         </div>
       </div>
 
+      <StockTemplateSelector
+        isOpen={isTemplateSelectorOpen}
+        onClose={handleCloseTemplateSelector}
+        onSelectTemplate={handleSelectTemplate}
+        currentDate={currentDate}
+        onUseTemplate={handleApplyTemplate}
+      />
+
       <VegetableFormModal
         isOpen={isModalOpen}
         onClose={handleCloseModal}
         onSubmit={handleSubmit}
         vegetableToEdit={editingVegetable}
+        templateData={templateData}
       />
       {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
     </div>
