@@ -306,7 +306,8 @@ const [isSharing, setIsSharing] = useState(false);
   // Recalculate totals
   useEffect(() => {
     const itemsTotal = editedItems.reduce((s, it) => s + (it.subtotal || 0), 0);
-    setCalculatedTotal(itemsTotal);
+    const bagsAmount = (bill?.bags || 0) * 10;
+    setCalculatedTotal(itemsTotal + bagsAmount);
 
     if (bill) {
       const originalItemsTotal = bill.items.reduce((s, it) => s + (it.subtotal || 0), 0);
@@ -632,6 +633,19 @@ const createPrintableBillElement = async (): Promise<HTMLElement> => {
     tbody.appendChild(tr);
   });
 
+  // Add bags row if bags exist
+  if (bill?.bags && bill.bags > 0) {
+    const bagsTr = document.createElement("tr");
+    bagsTr.style.borderBottom = "1px solid #e5e5e5";
+    bagsTr.innerHTML = `
+      <td style="padding:10px 8px;font-size:11px">${editedItems.length + 1}</td>
+      <td style="padding:10px 8px;font-size:11px">Bags</td>
+      <td style="padding:10px 8px;text-align:center;font-size:11px">${bill.bags}</td>
+      <td style="padding:10px 8px;text-align:right;font-size:11px;font-weight:600">₹${bill.bags * 10}</td>
+    `;
+    tbody.appendChild(bagsTr);
+  }
+
   table.innerHTML = thead;
   table.appendChild(tbody);
   container.appendChild(table);
@@ -845,6 +859,17 @@ const createPrintableBillElement = async (): Promise<HTMLElement> => {
               // break to next page (loop will continue)
               break;
             }
+          }
+
+          // Add bags row if on last page and bags exist
+          if (pageNum === totalPages - 1 && bill?.bags && bill.bags > 0 && y <= pageHeight - 66) {
+            pdfDoc.setFont('helvetica', 'normal');
+            pdfDoc.text(String(editedItems.length + 1), colSNo, y);
+            pdfDoc.text('Bags', colItem, y);
+            pdfDoc.text(String(bill.bags), colQty, y, { align: 'right' });
+            pdfDoc.text('₹10.00', colRate, y, { align: 'right' });
+            pdfDoc.text(`₹${(bill.bags * 10).toFixed(2)}`, colAmount, y, { align: 'right' });
+            y += 6;
           }
 
           // Footer totals on last page
@@ -1229,7 +1254,7 @@ window.open(waUrl, "_blank");
 
 
 
-            <div className="flex justify-between items-center mt-6 pt-4 border-t border-slate-200">
+            <div className="flex justify-between items-start mt-6 pt-4 border-t border-slate-200">
               <div className="flex gap-3">
                 <Button onClick={handleSaveChanges} disabled={!hasUnsavedChanges || isSaving} className={`${hasUnsavedChanges ? 'bg-green-600 hover:bg-green-700' : 'bg-slate-400 cursor-not-allowed'} text-white`}>
                   {isSaving ? 'Saving...' : 'Save Changes'}
@@ -1244,9 +1269,26 @@ window.open(waUrl, "_blank");
                 </Button>
               </div>
 
-              <div className="text-right">
-                <p className="text-sm text-slate-500">Total Amount</p>
-                <p className="text-2xl font-bold text-slate-800">₹{Math.round(calculatedTotal)}</p>
+              <div className="text-right space-y-2">
+                {/* Subtotal (Items only) */}
+                <div className="flex justify-between items-center gap-8">
+                  <p className="text-sm text-slate-500">Subtotal</p>
+                  <p className="text-lg font-semibold text-slate-700">₹{Math.round(editedItems.reduce((s, it) => s + (it.subtotal || 0), 0))}</p>
+                </div>
+                
+                {/* Bags (if any) */}
+                {bill?.bags && bill.bags > 0 && (
+                  <div className="flex justify-between items-center gap-8">
+                    <p className="text-sm text-slate-500">Bags ({bill.bags} × ₹10)</p>
+                    <p className="text-lg font-semibold text-slate-700">₹{bill.bags * 10}</p>
+                  </div>
+                )}
+                
+                {/* Grand Total */}
+                <div className="flex justify-between items-center gap-8 pt-2 border-t border-slate-300">
+                  <p className="text-sm text-slate-500">Total Amount</p>
+                  <p className="text-2xl font-bold text-slate-800">₹{Math.round(calculatedTotal)}</p>
+                </div>
               </div>
             </div>
 

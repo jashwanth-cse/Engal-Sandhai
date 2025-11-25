@@ -209,7 +209,9 @@ const Reports: React.FC = () => {
     return orders.reduce((sum, order) => {
       const items = Array.isArray(order.items) ? order.items : [];
       // Count each line item (array length). This shows total lines in the cart (including zero-quantity lines).
-      return sum + items.length;
+      // Also count bags as separate items if they exist
+      const bagCount = order.bags && order.bags > 0 ? 1 : 0;
+      return sum + items.length + bagCount;
     }, 0);
   }, [orders]);
 

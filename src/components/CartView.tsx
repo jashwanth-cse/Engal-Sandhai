@@ -305,7 +305,7 @@ const CartContent: React.FC<Omit<CartViewProps, "isOpen">> = ({
                 <div className="bg-slate-50 rounded-lg p-3 mb-4">
                   <div className="flex justify-between items-center mb-2">
                     <span className="text-sm font-medium text-slate-600">Total Items:</span>
-                    <span className="text-sm font-semibold text-slate-800">{cartItems.length}</span>
+                    <span className="text-sm font-semibold text-slate-800">{cartItems.length + (bagCount > 0 ? 1 : 0)}</span>
                   </div>
                   <div className="flex justify-between items-center">
                     <span className="text-sm font-medium text-slate-600">Total Amount:</span>

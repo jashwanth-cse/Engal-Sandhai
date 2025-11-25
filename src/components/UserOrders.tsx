@@ -34,7 +34,15 @@ const UserOrders: React.FC<UserOrdersProps> = ({ user, onLogout }) => {
   const [selectedOrder, setSelectedOrder] = useState<Bill | null>(null);
   
   // Single date filter - set today's date as default
-  const [selectedDate, setSelectedDate] = useState<string>(new Date().toISOString().split('T')[0]);
+  const getTodayDate = () => {
+    const today = new Date();
+    const year = today.getFullYear();
+    const month = String(today.getMonth() + 1).padStart(2, '0');
+    const day = String(today.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+  
+  const [selectedDate, setSelectedDate] = useState<string>(getTodayDate());
   const [showDatePicker, setShowDatePicker] = useState(true);
   const [statusFilter, setStatusFilter] = useState<string>('all');
 
@@ -158,7 +166,7 @@ const UserOrders: React.FC<UserOrdersProps> = ({ user, onLogout }) => {
     const statusConfig: Record<string, { bg: string; text: string; label: string }> = {
       'pending': { bg: 'bg-yellow-100', text: 'text-yellow-700', label: 'Pending' },
       'inprogress': { bg: 'bg-blue-100', text: 'text-blue-700', label: 'In Progress' },
-      'packed': { bg: 'bg-purple-100', text: 'text-purple-700', label: 'Packed' },
+      'packed': { bg: 'bg-blue-100', text: 'text-blue-700', label: 'Packed' },
       'bill_sent': { bg: 'bg-indigo-100', text: 'text-indigo-700', label: 'Bill Sent' },
       'bill sent': { bg: 'bg-indigo-100', text: 'text-indigo-700', label: 'Bill Sent' },
       'delivered': { bg: 'bg-green-100', text: 'text-green-700', label: 'Delivered' },
@@ -213,7 +221,6 @@ const UserOrders: React.FC<UserOrdersProps> = ({ user, onLogout }) => {
               type="date"
               value={selectedDate}
               onChange={(e) => setSelectedDate(e.target.value)}
-              max={new Date().toISOString().split('T')[0]}
               className="absolute opacity-0 w-0 h-0"
               onClick={(e) => e.currentTarget.showPicker?.()}
             />
@@ -221,7 +228,7 @@ const UserOrders: React.FC<UserOrdersProps> = ({ user, onLogout }) => {
           
           {selectedDate && (
             <span className="px-4 py-3 bg-primary-50 text-primary-700 rounded-lg text-sm font-medium border border-primary-200">
-              {new Date(selectedDate).toLocaleDateString('en-US', { day: '2-digit', month: 'short', year: 'numeric' })}
+              {new Date(selectedDate + 'T00:00:00').toLocaleDateString('en-US', { day: '2-digit', month: 'short', year: 'numeric' })}
             </span>
           )}
         </div>
@@ -399,18 +406,20 @@ const UserOrders: React.FC<UserOrdersProps> = ({ user, onLogout }) => {
 
             {/* Modal Footer - Totals */}
             <div className="border-t border-gray-200 px-6 py-5 bg-white">
-              {/* Subtotal */}
-              <div className="flex justify-between items-center mb-4 pb-4 border-b border-gray-200">
-                <span className="text-gray-600">Subtotal</span>
-                <span className="font-semibold text-gray-900">
-                  ₹{Math.round(selectedOrder.total)}
-                </span>
-              </div>
+              {/* Bags Count (if any) - only show if bags exist and are greater than 0 */}
+              {selectedOrder.bags !== undefined && selectedOrder.bags !== null && Number(selectedOrder.bags) > 0 ? (
+                <div className="flex justify-between items-center mb-4 pb-4 border-b border-gray-200">
+                  <span className="text-gray-600">Bags ({selectedOrder.bags} × ₹10)</span>
+                  <span className="font-semibold text-gray-900">
+                    ₹{selectedOrder.bags * 10}
+                  </span>
+                </div>
+              ) : null}
               
               {/* Grand Total */}
               <div className="flex justify-between items-center">
                 <span className="text-xl font-bold text-gray-900">Grand Total</span>
-                <span className="text-3xl font-bold" style={{color: '#14532d'}}>
+                <span className="text-3xl font-bold text-green-600">
                   ₹{Math.round(selectedOrder.total)}
                 </span>
               </div>
