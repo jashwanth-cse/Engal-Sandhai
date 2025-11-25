@@ -13,13 +13,13 @@ const ImagePreviewModal: React.FC<ImagePreviewModalProps> = ({ isOpen, onClose, 
 
   return (
     <div 
-        role="dialog"
-        aria-modal="true"
-        className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 animate-fade-in-down"
-        onClick={onClose}
+      role="dialog"
+      aria-modal="true"
+      className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/80 p-4"
+      onClick={onClose}
     >
       <div 
-        className="relative bg-white rounded-lg shadow-xl p-2" 
+        className="relative bg-white rounded-lg shadow-xl p-2 animate-fade-in-down" 
         onClick={(e) => e.stopPropagation()}
       >
         <button 
