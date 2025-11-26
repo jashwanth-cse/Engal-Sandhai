@@ -524,6 +524,22 @@ const createPrintableBillElement = async (): Promise<HTMLElement> => {
       .replace(/\u200D/g, "")
       .trim();
 
+  const ITEMS_PER_PAGE = 20;
+  
+  // Prepare all items including bags
+  const allItems = [...editedItems];
+  if (bill?.bags && bill.bags > 0) {
+    allItems.push({
+      vegetableId: 'bags',
+      quantityKg: bill.bags,
+      subtotal: bill.bags * 10,
+      name: 'Bags',
+      pricePerKg: 10
+    } as any);
+  }
+  
+  const totalPages = Math.ceil(allItems.length / ITEMS_PER_PAGE);
+
   const container = document.createElement("div");
   container.style.width = "794px";
   container.style.padding = "60px";
@@ -599,7 +615,9 @@ const createPrintableBillElement = async (): Promise<HTMLElement> => {
   meta.appendChild(right);
   container.appendChild(meta);
 
-  // TABLE - Clean design without borders
+  // Generate table for FIRST PAGE ONLY (max 20 items)
+  const firstPageItems = allItems.slice(0, Math.min(ITEMS_PER_PAGE, allItems.length));
+  
   const table = document.createElement("table");
   table.style.width = "100%";
   table.style.borderCollapse = "collapse";
@@ -618,9 +636,9 @@ const createPrintableBillElement = async (): Promise<HTMLElement> => {
 
   const tbody = document.createElement("tbody");
 
-  editedItems.forEach((item, idx) => {
+  firstPageItems.forEach((item, idx) => {
     const veg = combinedVegetableMap.get(item.vegetableId);
-    const name = sanitizeNoEmoji((item as any).name || veg?.name || "Item");
+    const name = item.vegetableId === 'bags' ? 'Bags' : sanitizeNoEmoji((item as any).name || veg?.name || "Item");
 
     const tr = document.createElement("tr");
     tr.style.borderBottom = "1px solid #e5e5e5";
@@ -633,96 +651,68 @@ const createPrintableBillElement = async (): Promise<HTMLElement> => {
     tbody.appendChild(tr);
   });
 
-  // Add bags row if bags exist
-  if (bill?.bags && bill.bags > 0) {
-    const bagsTr = document.createElement("tr");
-    bagsTr.style.borderBottom = "1px solid #e5e5e5";
-    bagsTr.innerHTML = `
-      <td style="padding:10px 8px;font-size:11px">${editedItems.length + 1}</td>
-      <td style="padding:10px 8px;font-size:11px">Bags</td>
-      <td style="padding:10px 8px;text-align:center;font-size:11px">${bill.bags}</td>
-      <td style="padding:10px 8px;text-align:right;font-size:11px;font-weight:600">₹${bill.bags * 10}</td>
-    `;
-    tbody.appendChild(bagsTr);
-  }
-
   table.innerHTML = thead;
   table.appendChild(tbody);
   container.appendChild(table);
 
-  // Check if we need to move payment info to second page (more than 12 items including bags)
-  const totalItemCount = editedItems.length + (bill?.bags && bill.bags > 0 ? 1 : 0);
-  const needsPaymentOnSecondPage = totalItemCount > 12;
-
-  // TOTAL - Right aligned
-  const totalDiv = document.createElement("div");
-  totalDiv.style.marginBottom = needsPaymentOnSecondPage ? "0" : "24px";
-  totalDiv.style.paddingTop = "12px";
-  totalDiv.style.borderTop = "2px solid #000";
-  totalDiv.style.display = "flex";
-  totalDiv.style.justifyContent = "flex-end";
-  totalDiv.style.fontWeight = "700";
-  totalDiv.style.fontSize = "14px";
-
-  totalDiv.innerHTML = `
-    <div style="color:#000">TOTAL: &nbsp;&nbsp;<span style="font-size:16px">₹${Math.round(calculatedTotal)}</span></div>
-  `;
-  container.appendChild(totalDiv);
-
-  // If more than 12 items, add page break before payment info
-  if (needsPaymentOnSecondPage) {
-    // Calculate remaining space to push to next page
-    // Each item is roughly 35-40px, so after 12-17 items we need to fill remaining space
-    const itemsHeight = totalItemCount * 38; // approximate height per item
-    const headerAndMetaHeight = 180; // header, invoice label, metadata
-    const totalHeight = headerAndMetaHeight + itemsHeight + 80; // +80 for total div
-    const remainingToPageEnd = 1122 - (totalHeight % 1122);
-    
-    const pageBreak = document.createElement("div");
-    pageBreak.style.pageBreakAfter = "always";
-    pageBreak.style.breakAfter = "page";
-    pageBreak.style.height = "1px";
-    pageBreak.style.marginBottom = remainingToPageEnd + "px";
-    container.appendChild(pageBreak);
-  }
-
-  // PAYMENT INFORMATION BLOCK + STATIC QR IMAGE
-  const payBlock = document.createElement("div");
-  payBlock.style.marginTop = needsPaymentOnSecondPage ? "0px" : "24px";
-  payBlock.style.padding = "16px";
-  payBlock.style.border = "none";
-  payBlock.style.color = "#000";
-  payBlock.style.textAlign = "center";
-
-  payBlock.innerHTML = `
-    <div style="font-weight:700;margin-bottom:12px;font-size:13px;color:#000">
-      PAYMENT INFORMATION
-    </div>
-    <div style="font-size:11px;margin-bottom:8px;color:#333;line-height:1.6">
-      Payee Name: Bakkiyalakshmi Ramaswamy, UPI ID:<br/>bakkiyalakshmi.ramaswamy-2@okhdfcbank
-    </div>
-    <div style="margin-top:16px;text-align:center;color:#000;font-weight:700;font-size:13px">
-      Scan & Pay
-    </div>
-  `;
-
-  // QR CODE (FULL QUALITY PNG) - Centered without background
-  const qrWrapper = document.createElement("div");
-  qrWrapper.style.display = "flex";
-  qrWrapper.style.justifyContent = "center";
-  qrWrapper.style.marginTop = "12px";
-
-  const qrImg = document.createElement("img");
-  qrImg.src = PaymentQR; // imported image
-  qrImg.style.width = "140px";
-  qrImg.style.height = "140px";
-  qrImg.style.objectFit = "contain";
-  qrImg.style.display = "block";
+  // Only show total and payment info if items are 13 or less (all items fit on first page)
+  const showPaymentOnFirstPage = allItems.length <= 13;
   
-  qrWrapper.appendChild(qrImg);
-  payBlock.appendChild(qrWrapper);
+  if (showPaymentOnFirstPage) {
+    // TOTAL - Right aligned
+    const totalDiv = document.createElement("div");
+    totalDiv.style.marginBottom = "24px";
+    totalDiv.style.paddingTop = "12px";
+    totalDiv.style.borderTop = "2px solid #000";
+    totalDiv.style.display = "flex";
+    totalDiv.style.justifyContent = "flex-end";
+    totalDiv.style.fontWeight = "700";
+    totalDiv.style.fontSize = "14px";
 
-  container.appendChild(payBlock);
+    totalDiv.innerHTML = `
+      <div style="color:#000">TOTAL: &nbsp;&nbsp;<span style="font-size:16px">₹${Math.round(calculatedTotal)}</span></div>
+    `;
+    container.appendChild(totalDiv);
+
+    // PAYMENT INFORMATION BLOCK
+    const payBlock = document.createElement("div");
+    payBlock.style.marginTop = "24px";
+    payBlock.style.padding = "16px";
+    payBlock.style.border = "none";
+    payBlock.style.color = "#000";
+    payBlock.style.textAlign = "center";
+
+    payBlock.innerHTML = `
+      <div style="font-weight:700;margin-bottom:12px;font-size:13px;color:#000">
+        PAYMENT INFORMATION
+      </div>
+      <div style="font-size:11px;margin-bottom:4px;color:#000">
+        Payee Name: <strong>Bakkiyalakshmi Ramasamy</strong>
+      </div>
+      <div style="font-size:11px;margin-bottom:12px;color:#000">
+        UPI ID: <strong>bakkiyalakshmi.ramasamy-2@okicicibank</strong>
+      </div>
+      <div style="font-weight:600;margin-bottom:8px;font-size:12px;color:#000">Scan & Pay</div>
+    `;
+
+    // QR CODE
+    const qrWrapper = document.createElement("div");
+    qrWrapper.style.display = "flex";
+    qrWrapper.style.justifyContent = "center";
+    qrWrapper.style.marginTop = "12px";
+
+    const qrImg = document.createElement("img");
+    qrImg.src = PaymentQR;
+    qrImg.style.width = "140px";
+    qrImg.style.height = "140px";
+    qrImg.style.objectFit = "contain";
+    qrImg.style.display = "block";
+    
+    qrWrapper.appendChild(qrImg);
+    payBlock.appendChild(qrWrapper);
+
+    container.appendChild(payBlock);
+  }
 
   // Load Poppins font
   const fontLink = document.createElement("link");
@@ -735,6 +725,133 @@ const createPrintableBillElement = async (): Promise<HTMLElement> => {
   container.style.top = "0";
   document.body.appendChild(container);
 
+  await new Promise((res) => setTimeout(res, 250));
+  return container;
+};
+
+// Create subsequent page element (pages 2+)
+const createSubsequentPageElement = async (
+  allItems: any[],
+  startIdx: number,
+  endIdx: number,
+  isLastPage: boolean,
+  calculatedTotal: number
+): Promise<HTMLElement> => {
+  const sanitizeNoEmoji = (text: string) =>
+    (text || "")
+      .replace(/[\p{Emoji_Presentation}\p{Extended_Pictographic}]/gu, "")
+      .replace(/[\uD800-\uDBFF][\uDC00-\uDFFF]/g, "")
+      .replace(/\u200D/g, "")
+      .trim();
+
+  const container = document.createElement("div");
+  container.style.position = "absolute";
+  container.style.left = "-9999px";
+  container.style.top = "0";
+  container.style.width = "794px";
+  container.style.padding = "40px";
+  container.style.backgroundColor = "#fff";
+  container.style.color = "#000";
+  container.style.fontFamily = "Poppins, Arial, sans-serif";
+
+  const pageItems = allItems.slice(startIdx, endIdx);
+
+  // Only add items table if there are items to show (not a payment-only page)
+  if (pageItems.length > 0) {
+    const table = document.createElement("table");
+    table.style.width = "100%";
+    table.style.borderCollapse = "collapse";
+    table.style.marginBottom = "20px";
+
+    const thead = `
+      <thead>
+        <tr style="background:#f5f5f5;color:#000;font-weight:600;font-size:11px">
+          <th style="padding:10px 8px;text-align:left;width:10%">S.No</th>
+          <th style="padding:10px 8px;text-align:left">Item</th>
+          <th style="padding:10px 8px;text-align:center;width:18%">Qty(kg)</th>
+          <th style="padding:10px 8px;text-align:right;width:20%">Amount(₹)</th>
+        </tr>
+      </thead>
+    `;
+
+    const tbody = document.createElement("tbody");
+
+    pageItems.forEach((item, idx) => {
+      const veg = combinedVegetableMap.get(item.vegetableId);
+      const name = item.vegetableId === 'bags' ? 'Bags' : sanitizeNoEmoji((item as any).name || veg?.name || "Item");
+
+      const tr = document.createElement("tr");
+      tr.style.borderBottom = "1px solid #e5e5e5";
+      tr.innerHTML = `
+        <td style="padding:10px 8px;font-size:11px">${startIdx + idx + 1}</td>
+        <td style="padding:10px 8px;font-size:11px">${name}</td>
+        <td style="padding:10px 8px;text-align:center;font-size:11px">${item.quantityKg}</td>
+        <td style="padding:10px 8px;text-align:right;font-size:11px;font-weight:600">₹${Math.round(item.subtotal)}</td>
+      `;
+      tbody.appendChild(tr);
+    });
+
+    table.innerHTML = thead;
+    table.appendChild(tbody);
+    container.appendChild(table);
+  }
+
+  // Show total and payment info on last page
+  if (isLastPage) {
+    // TOTAL - Right aligned
+    const totalDiv = document.createElement("div");
+    totalDiv.style.marginBottom = "24px";
+    totalDiv.style.paddingTop = "12px";
+    totalDiv.style.borderTop = "2px solid #000";
+    totalDiv.style.display = "flex";
+    totalDiv.style.justifyContent = "flex-end";
+    totalDiv.style.fontWeight = "700";
+    totalDiv.style.fontSize = "14px";
+
+    totalDiv.innerHTML = `
+      <div style="color:#000">TOTAL: &nbsp;&nbsp;<span style="font-size:16px">₹${Math.round(calculatedTotal)}</span></div>
+    `;
+    container.appendChild(totalDiv);
+
+    // PAYMENT INFORMATION BLOCK
+    const payBlock = document.createElement("div");
+    payBlock.style.marginTop = "24px";
+    payBlock.style.padding = "16px";
+    payBlock.style.border = "none";
+    payBlock.style.color = "#000";
+    payBlock.style.textAlign = "center";
+
+    payBlock.innerHTML = `
+      <div style="font-weight:700;margin-bottom:12px;font-size:13px;color:#000">
+        PAYMENT INFORMATION
+      </div>
+      <div style="font-size:11px;margin-bottom:4px;color:#000">
+        Payee Name: <strong>Bakkiyalakshmi Ramasamy</strong>
+      </div>
+      <div style="font-size:11px;margin-bottom:12px;color:#000">
+        UPI ID: <strong>bakkiyalakshmi.ramasamy-2@okicicibank</strong>
+      </div>
+      <div style="font-weight:600;margin-bottom:8px;font-size:12px;color:#000">Scan & Pay</div>
+    `;
+
+    const qrWrapper = document.createElement("div");
+    qrWrapper.style.display = "flex";
+    qrWrapper.style.justifyContent = "center";
+    qrWrapper.style.marginTop = "12px";
+
+    const qrImg = document.createElement("img");
+    qrImg.src = PaymentQR;
+    qrImg.style.width = "140px";
+    qrImg.style.height = "140px";
+    qrImg.style.objectFit = "contain";
+    qrImg.style.display = "block";
+
+    qrWrapper.appendChild(qrImg);
+    payBlock.appendChild(qrWrapper);
+    container.appendChild(payBlock);
+  }
+
+  document.body.appendChild(container);
   await new Promise((res) => setTimeout(res, 250));
   return container;
 };
@@ -933,27 +1050,78 @@ const createPrintableBillElement = async (): Promise<HTMLElement> => {
 
     // Raster fallback using html2canvas (for emojis or if text path failed)
     try {
-      const element = await createPrintableBillElement();
-      const scale = 2; // good resolution
-      const canvas = await html2canvas(element as HTMLElement, { scale, useCORS: true, logging: false, scrollY: -window.scrollY });
-      try { document.body.removeChild(element); } catch {}
-      const imgData = canvas.toDataURL('image/jpeg');
-      const imgProps = (pdfDoc as any).getImageProperties(imgData);
+      const firstPageElement = await createPrintableBillElement();
+      const scale = 2;
+      
+      // Render first page
+      const firstCanvas = await html2canvas(firstPageElement as HTMLElement, { scale, useCORS: true, logging: false, scrollY: -window.scrollY });
+      try { document.body.removeChild(firstPageElement); } catch {}
+      
+      const firstImgData = firstCanvas.toDataURL('image/jpeg', 0.95);
+      const firstImgProps = (pdfDoc as any).getImageProperties(firstImgData);
       const imgWidth = pageWidth;
-      const imgHeight = (imgProps.height * imgWidth) / imgProps.width;
-      let heightLeft = imgHeight;
-      let position = 0;
-      pdfDoc.addImage(imgData, 'JPEG', 0, position, imgWidth, imgHeight);
-      heightLeft -= pageHeight;
-      while (heightLeft > 0) {
-        pdfDoc.addPage();
-        position = heightLeft - imgHeight;
-      pdfDoc.addImage(imgData, 'JPEG', 0, position, imgWidth, imgHeight);
-        heightLeft -= pageHeight;
+      const firstImgHeight = (firstImgProps.height * imgWidth) / firstImgProps.width;
+      
+      pdfDoc.addImage(firstImgData, 'JPEG', 0, 0, imgWidth, firstImgHeight);
+      
+      // Calculate remaining items
+      const allItems = [...editedItems];
+      if (bill?.bags && bill.bags > 0) {
+        allItems.push({
+          vegetableId: 'bags',
+          quantityKg: bill.bags,
+          subtotal: bill.bags * 10,
+          name: 'Bags',
+          pricePerKg: 10
+        } as any);
       }
+      
+      const ITEMS_PER_PAGE = 20;
+      const totalPages = Math.ceil(allItems.length / ITEMS_PER_PAGE);
+      const needsPaymentOnSecondPage = allItems.length > 13;
+      
+      // Generate subsequent pages if needed OR if payment needs to move to second page
+      if (totalPages > 1 || needsPaymentOnSecondPage) {
+        pdfDoc.addPage();
+        
+        if (totalPages > 1) {
+          // Multiple pages of items
+          for (let pageNum = 1; pageNum < totalPages; pageNum++) {
+            if (pageNum > 1) {
+              pdfDoc.addPage();
+            }
+            
+            const startIdx = pageNum * ITEMS_PER_PAGE;
+            const endIdx = Math.min(startIdx + ITEMS_PER_PAGE, allItems.length);
+            const isLastPage = pageNum === totalPages - 1;
+            
+            const pageElement = await createSubsequentPageElement(allItems, startIdx, endIdx, isLastPage, calculatedTotal);
+            const pageCanvas = await html2canvas(pageElement as HTMLElement, { scale, useCORS: true, logging: false, scrollY: -window.scrollY });
+            try { document.body.removeChild(pageElement); } catch {}
+            
+            const pageImgData = pageCanvas.toDataURL('image/jpeg', 0.95);
+            const pageImgProps = (pdfDoc as any).getImageProperties(pageImgData);
+            const pageImgHeight = (pageImgProps.height * imgWidth) / pageImgProps.width;
+            
+            pdfDoc.addImage(pageImgData, 'JPEG', 0, 0, imgWidth, pageImgHeight);
+          }
+        } else {
+          // Single page of items (14-20 items) - just show payment on second page
+          const pageElement = await createSubsequentPageElement(allItems, 0, 0, true, calculatedTotal);
+          const pageCanvas = await html2canvas(pageElement as HTMLElement, { scale, useCORS: true, logging: false, scrollY: -window.scrollY });
+          try { document.body.removeChild(pageElement); } catch {}
+          
+          const pageImgData = pageCanvas.toDataURL('image/jpeg', 0.95);
+          const pageImgProps = (pdfDoc as any).getImageProperties(pageImgData);
+          const pageImgHeight = (pageImgProps.height * imgWidth) / pageImgProps.width;
+          
+          pdfDoc.addImage(pageImgData, 'JPEG', 0, 0, imgWidth, pageImgHeight);
+        }
+      }
+      
       const blob = pdfDoc.output('blob');
-const compressedBlob = await compressPdf(blob);
-return { blob: compressedBlob, filename ,billDate};
+      const compressedBlob = await compressPdf(blob);
+      return { blob: compressedBlob, filename, billDate};
 
     } catch (rasterErr) {
       console.error('Raster fallback failed', rasterErr);

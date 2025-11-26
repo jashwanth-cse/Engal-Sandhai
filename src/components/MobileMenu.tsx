@@ -74,13 +74,15 @@ const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose, user, onLogout
                         </button>
                     )}
 
-                    <button
-                        onClick={handleYourOrders}
-                        className="flex items-center w-full p-3 rounded-lg text-base font-medium text-slate-700 hover:bg-slate-200 transition-colors duration-200"
-                    >
-                        <ShoppingBagIcon className="h-5 w-5 mr-3" />
-                        <span>Your Orders</span>
-                    </button>
+                    {user.role !== 'admin' && (
+                        <button
+                            onClick={handleYourOrders}
+                            className="flex items-center w-full p-3 rounded-lg text-base font-medium text-slate-700 hover:bg-slate-200 transition-colors duration-200"
+                        >
+                            <ShoppingBagIcon className="h-5 w-5 mr-3" />
+                            <span>Your Orders</span>
+                        </button>
+                    )}
 
                     <button
                         onClick={onLogout}
