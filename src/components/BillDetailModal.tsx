@@ -650,9 +650,13 @@ const createPrintableBillElement = async (): Promise<HTMLElement> => {
   table.appendChild(tbody);
   container.appendChild(table);
 
+  // Check if we need to move payment info to second page (more than 12 items including bags)
+  const totalItemCount = editedItems.length + (bill?.bags && bill.bags > 0 ? 1 : 0);
+  const needsPaymentOnSecondPage = totalItemCount > 12;
+
   // TOTAL - Right aligned
   const totalDiv = document.createElement("div");
-  totalDiv.style.marginBottom = "24px";
+  totalDiv.style.marginBottom = needsPaymentOnSecondPage ? "0" : "24px";
   totalDiv.style.paddingTop = "12px";
   totalDiv.style.borderTop = "2px solid #000";
   totalDiv.style.display = "flex";
@@ -665,9 +669,26 @@ const createPrintableBillElement = async (): Promise<HTMLElement> => {
   `;
   container.appendChild(totalDiv);
 
+  // If more than 12 items, add page break before payment info
+  if (needsPaymentOnSecondPage) {
+    // Calculate remaining space to push to next page
+    // Each item is roughly 35-40px, so after 12-17 items we need to fill remaining space
+    const itemsHeight = totalItemCount * 38; // approximate height per item
+    const headerAndMetaHeight = 180; // header, invoice label, metadata
+    const totalHeight = headerAndMetaHeight + itemsHeight + 80; // +80 for total div
+    const remainingToPageEnd = 1122 - (totalHeight % 1122);
+    
+    const pageBreak = document.createElement("div");
+    pageBreak.style.pageBreakAfter = "always";
+    pageBreak.style.breakAfter = "page";
+    pageBreak.style.height = "1px";
+    pageBreak.style.marginBottom = remainingToPageEnd + "px";
+    container.appendChild(pageBreak);
+  }
+
   // PAYMENT INFORMATION BLOCK + STATIC QR IMAGE
   const payBlock = document.createElement("div");
-  payBlock.style.marginTop = "24px";
+  payBlock.style.marginTop = needsPaymentOnSecondPage ? "0px" : "24px";
   payBlock.style.padding = "16px";
   payBlock.style.border = "none";
   payBlock.style.color = "#000";
