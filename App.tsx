@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Routes, Route, useNavigate, Navigate } from 'react-router-dom';
+import { Routes, Route, useNavigate, Navigate, useParams } from 'react-router-dom';
 import LoginPage from './src/components/LoginPage';
 import AdminDashboard from './src/components/AdminDashboard';
 import OrderPage from './src/components/OrderPage';
@@ -14,6 +14,7 @@ import Settings from './src/components/Settings';
 import CreateBill from './src/components/CreateBill';
 import Sidebar from './src/components/Sidebar';
 import AdminHeader from './src/components/AdminHeader';
+import UserOrders from './src/components/Userorders';
 import { useBillingData } from './hooks/useBillingData';
 import type { User } from './types/types';
 import { loginWithEmployeeID, auth, observeUser } from './src/services/authService';
@@ -350,6 +351,34 @@ const App: React.FC = () => {
     );
   }
 
+  // Local route component to render admin view of a specific user's orders
+  const AdminUserOrdersRoute: React.FC = () => {
+    const { userId } = useParams();
+    return (
+      <ProtectedRoute user={currentUser} loading={loading} requiredRole="admin">
+        <div className="flex h-screen bg-slate-100 font-sans">
+          <Sidebar 
+            user={currentUser!} 
+            onLogout={handleLogout} 
+            currentPage="dashboard"
+            setCurrentPage={(page) => {
+              setSidebarOpen(false);
+              navigate(`/admin/${page}`);
+            }}
+            isOpen={isSidebarOpen}
+            setIsOpen={setSidebarOpen}
+          />
+          <div className="flex-1 flex flex-col overflow-hidden">
+            <AdminHeader onMenuClick={() => setSidebarOpen(true)} title="User Orders" user={currentUser!} />
+            <main className="flex-1 overflow-x-hidden overflow-y-auto bg-slate-100 p-4 sm:p-6">
+              <UserOrders user={currentUser!} onLogout={handleLogout} targetUserId={userId as string} />
+            </main>
+          </div>
+        </div>
+      </ProtectedRoute>
+    );
+  };
+
   return (
     <Routes>
       <Route
@@ -385,6 +414,16 @@ const App: React.FC = () => {
               loading={(billingData as any).loading}
               onRefresh={(billingData as any).refreshData}
             />
+          </ProtectedRoute>
+        }
+      />
+
+      {/* User: Your Orders */}
+      <Route
+        path="/my-orders"
+        element={
+          <ProtectedRoute user={currentUser} loading={loading}>
+            <UserOrders user={currentUser!} onLogout={handleLogout} />
           </ProtectedRoute>
         }
       />
@@ -497,6 +536,9 @@ const App: React.FC = () => {
           </ProtectedRoute>
         }
       />
+
+      {/* Admin: Per-user orders */}
+      <Route path="/admin/user-orders/:userId" element={<AdminUserOrdersRoute />} />
       
       <Route
         path="/admin/reports"

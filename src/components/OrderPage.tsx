@@ -1,5 +1,6 @@
 
 import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import type { Vegetable, BillItem, Bill, User } from '../../types/types';
 import UserHeader from './UserHeader.tsx';
 import Button from './ui/Button.tsx';
@@ -39,6 +40,7 @@ type OrderStage = 'ordering' | 'payment' | 'success' | 'settings';
 type CartItemDetails = BillItem & { name: string; pricePerKg: number; stockKg: number; unitType: 'KG' | 'COUNT'; };
 
 const OrderPage: React.FC<OrderPageProps> = ({ user, vegetables, availableStock, addBill, onLogout, onUpdateUser, loading = false, onRefresh }) => {
+  const navigate = useNavigate();
   const [stage, setStage] = useState<OrderStage>('ordering');
   const [cart, setCart] = useState<Map<string, number>>(new Map());
   const [searchTerm, setSearchTerm] = useState('');

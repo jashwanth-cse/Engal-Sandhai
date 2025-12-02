@@ -1458,4 +1458,243 @@ export const updateBill = async (
   }
 };
 
+/**
+ * Fetches orders for a specific user/customer on a specific date
+ * @param customerId - The unique ID of the customer
+ * @param date - The date to fetch orders for (Date object)
+ * @returns Promise with array of Bill objects
+ */
+export const fetchUserOrdersByDate = async (customerId: string, date: Date): Promise<Bill[]> => {
+  if (!customerId) {
+    console.error('❌ fetchUserOrdersByDate: customerId is required');
+    return [];
+  }
+
+  console.log(`🔍 Fetching orders for customer: ${customerId} on ${date.toDateString()}`);
+  const allOrders: Bill[] = [];
+  const vegetableCache = new Map<string, Vegetable>();
+
+  try {
+    const dateKey = getDateKey(date);
+    console.log(`📅 Searching orders for date: ${dateKey}`);
+
+    // Search in date-based collection for the specific date
+    try {
+      const ordersCol = collection(db, 'orders', dateKey, 'items');
+      const ordersQuery = query(
+        ordersCol,
+        where('customerId', '==', customerId)
+      );
+      const orderDocs = await getDocs(ordersQuery);
+
+      // If no results with customerId, try userId (legacy field name)
+      if (orderDocs.empty) {
+        const userIdQuery = query(
+          ordersCol,
+          where('userId', '==', customerId)
+        );
+        const userIdDocs = await getDocs(userIdQuery);
+        
+        userIdDocs.forEach((doc) => {
+          const data = doc.data();
+          const bill: Bill = {
+            id: doc.id,
+            date: data.createdAt?.toDate?.()?.toISOString() || data.date || new Date().toISOString(),
+            customerName: data.customerName || '',
+            customerId: data.customerId || data.userId || customerId,
+            items: (data.items || []).map((item: any) => ({
+              vegetableId: item.id || item.vegetableId || '',
+              quantityKg: item.quantity || item.quantityKg || 0,
+              pricePerKg: item.pricePerKg || 0,
+              subtotal: item.subtotal || 0,
+              name: item.name || '',
+            })),
+            total: data.totalAmount || data.total || 0,
+            status: data.status || 'pending',
+            bags: data.bagCount || data.bags || 0,
+            department: data.department,
+          };
+          allOrders.push(bill);
+        });
+      } else {
+        orderDocs.forEach((doc) => {
+          const data = doc.data();
+          const bill: Bill = {
+            id: doc.id,
+            date: data.createdAt?.toDate?.()?.toISOString() || data.date || new Date().toISOString(),
+            customerName: data.customerName || '',
+            customerId: data.customerId || data.userId || customerId,
+            items: (data.items || []).map((item: any) => ({
+              vegetableId: item.id || item.vegetableId || '',
+              quantityKg: item.quantity || item.quantityKg || 0,
+              pricePerKg: item.pricePerKg || 0,
+              subtotal: item.subtotal || 0,
+              name: item.name || '',
+            })),
+            total: data.totalAmount || data.total || 0,
+            status: data.status || 'pending',
+            bags: data.bagCount || data.bags || 0,
+            department: data.department,
+          };
+          allOrders.push(bill);
+        });
+      }
+    } catch (error: any) {
+      console.log(`⚠️ No date-based orders found for ${dateKey}:`, error.message);
+    }
+
+    // Also check legacy 'orders' collection for the same date
+    try {
+      const legacyOrdersCol = collection(db, 'orders');
+      const legacyQuery = query(
+        legacyOrdersCol,
+        where('customerId', '==', customerId)
+      );
+      const legacyDocs = await getDocs(legacyQuery);
+
+      // Filter by date and try userId if needed
+      legacyDocs.forEach((doc) => {
+        const data = doc.data();
+        const orderDate = data.createdAt?.toDate?.() || (data.date ? new Date(data.date) : null);
+        
+        // Only include orders from the selected date
+        if (orderDate && getDateKey(orderDate) === dateKey) {
+          const bill: Bill = {
+            id: doc.id,
+            date: data.createdAt?.toDate?.()?.toISOString() || data.date || new Date().toISOString(),
+            customerName: data.customerName || '',
+            customerId: data.customerId || data.userId || customerId,
+            items: (data.items || []).map((item: any) => ({
+              vegetableId: item.id || item.vegetableId || '',
+              quantityKg: item.quantity || item.quantityKg || 0,
+              pricePerKg: item.pricePerKg || 0,
+              subtotal: item.subtotal || 0,
+              name: item.name || '',
+            })),
+            total: data.totalAmount || data.total || 0,
+            status: data.status || 'pending',
+            bags: data.bagCount || data.bags || 0,
+            department: data.department,
+          };
+          allOrders.push(bill);
+        }
+      });
+
+      // Try userId if no results
+      if (legacyDocs.empty) {
+        const userIdQuery = query(
+          legacyOrdersCol,
+          where('userId', '==', customerId)
+        );
+        const userIdDocs = await getDocs(userIdQuery);
+        
+        userIdDocs.forEach((doc) => {
+          const data = doc.data();
+          const orderDate = data.createdAt?.toDate?.() || (data.date ? new Date(data.date) : null);
+          
+          // Only include orders from the selected date
+          if (orderDate && getDateKey(orderDate) === dateKey) {
+            const bill: Bill = {
+              id: doc.id,
+              date: data.createdAt?.toDate?.()?.toISOString() || data.date || new Date().toISOString(),
+              customerName: data.customerName || '',
+              customerId: data.customerId || data.userId || customerId,
+              items: (data.items || []).map((item: any) => ({
+                vegetableId: item.id || item.vegetableId || '',
+                quantityKg: item.quantity || item.quantityKg || 0,
+                pricePerKg: item.pricePerKg || 0,
+                subtotal: item.subtotal || 0,
+                name: item.name || '',
+              })),
+              total: data.totalAmount || data.total || 0,
+              status: data.status || 'pending',
+              bags: data.bagCount || data.bags || 0,
+              department: data.department,
+            };
+            allOrders.push(bill);
+          }
+        });
+      }
+    } catch (error: any) {
+      console.log('⚠️ Legacy orders collection not accessible or empty');
+    }
+
+    // Enrich orders with vegetable names if missing
+    const missingVegetableIds = new Set<string>();
+    allOrders.forEach(order => {
+      order.items.forEach(item => {
+        if (!item.name && item.vegetableId) {
+          missingVegetableIds.add(item.vegetableId);
+        }
+      });
+    });
+
+    // Fetch missing vegetable names
+    if (missingVegetableIds.size > 0) {
+      console.log(`📦 Fetching ${missingVegetableIds.size} vegetable details...`);
+      const vegetablePromises = Array.from(missingVegetableIds).map(async (vegId) => {
+        try {
+          const vegetable = await getVegetableById(vegId);
+          if (vegetable) {
+            vegetableCache.set(vegId, vegetable);
+          }
+        } catch (error) {
+          console.warn(`Failed to fetch vegetable ${vegId}:`, error);
+        }
+      });
+
+      await Promise.all(vegetablePromises);
+
+      // Enrich orders with vegetable names
+      allOrders.forEach(order => {
+        order.items = order.items.map(item => {
+          if (!item.name && item.vegetableId) {
+            const vegetable = vegetableCache.get(item.vegetableId);
+            if (vegetable) {
+              return {
+                ...item,
+                name: vegetable.name,
+                pricePerKg: item.pricePerKg || vegetable.pricePerKg,
+              };
+            }
+          }
+          return item;
+        });
+      });
+    }
+
+    // Filter orders by allowed statuses only
+    const allowedStatuses = ['packed', 'delivered', 'bill sent', 'bill_sent'];
+    const filteredOrders = allOrders.filter(order => {
+      const status = order.status?.toLowerCase();
+      return allowedStatuses.includes(status);
+    });
+
+    // Sort orders by date (newest first)
+    filteredOrders.sort((a, b) => {
+      const dateA = new Date(a.date).getTime();
+      const dateB = new Date(b.date).getTime();
+      return dateB - dateA;
+    });
+
+    console.log(`✅ Found ${filteredOrders.length} completed orders (out of ${allOrders.length} total) for customer ${customerId}`);
+    
+    if (filteredOrders.length === 0 && allOrders.length > 0) {
+      console.log(`⚠️ Found ${allOrders.length} orders, but none with status: packed, delivered, or bill sent`);
+    } else if (allOrders.length === 0) {
+      console.log(`⚠️ No orders found. Make sure:
+        1. Orders exist in Firebase with customerId: ${customerId}
+        2. Firebase rules allow reading orders for this user
+        3. The field name is 'customerId' (not 'userId')`);
+    }
+
+    return filteredOrders;
+  } catch (error) {
+    console.error('❌ Error fetching user orders:', error);
+    throw error;
+  }
+};
+
+
+
 
