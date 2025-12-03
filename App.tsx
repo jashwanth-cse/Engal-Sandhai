@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Routes, Route, useNavigate, Navigate } from 'react-router-dom';
+import { Routes, Route, useNavigate, Navigate, useParams } from 'react-router-dom';
 import LoginPage from './src/components/LoginPage';
 import AdminDashboard from './src/components/AdminDashboard';
 import OrderPage from './src/components/OrderPage';
@@ -43,6 +43,9 @@ function mapAuthErrorToMessage(error: any): string {
       return 'No account found for this Employee ID.';
     case 'auth/popup-closed-by-user':
       return 'Please try again.';
+    case 'permission-denied':
+    case 'start/permission-denied':
+      return 'Closed';
     default:
       return 'Sign-in failed. Please check your credentials and try again.';
   }
@@ -52,10 +55,11 @@ const App: React.FC = () => {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [loginError, setLoginError] = useState<string | null>(null);
-  const [selectedDate, setSelectedDate] = useState<Date | null>(null); // Add date state\n  const [sessionTimeout, setSessionTimeout] = useState<NodeJS.Timeout | null>(null); // Add session timeout
+  const [selectedDate, setSelectedDate] = useState<Date | null>(null);
+  const [sessionTimeout, setSessionTimeout] = useState<NodeJS.Timeout | null>(null);
   const [isSidebarOpen, setSidebarOpen] = useState(false);
   const [initialBillId, setInitialBillId] = useState<string | null>(null);
-  const billingData = useBillingData({ selectedDate, currentUser }); // Pass selected date and currentUser to hook
+  const billingData = useBillingData({ selectedDate, currentUser });
   const navigate = useNavigate();
 
   // Force logout on app startup to require authentication every time
@@ -80,7 +84,7 @@ const App: React.FC = () => {
   useEffect(() => {
     // Prevent page caching
     window.history.replaceState(null, '', window.location.href);
-    
+
     // Add cache control headers via meta tags
     const metaTag = document.createElement('meta');
     metaTag.httpEquiv = 'Cache-Control';
@@ -150,7 +154,57 @@ const App: React.FC = () => {
     return () => unsubscribe();
   }, [navigate]);
 
-  // Session timeout management - logout after inactivity\n  useEffect(() => {\n    let timeoutId: NodeJS.Timeout;\n    \n    const resetTimeout = () => {\n      if (timeoutId) clearTimeout(timeoutId);\n      \n      if (currentUser) {\n        // Auto logout after 30 minutes of inactivity\n        timeoutId = setTimeout(async () => {\n          console.log('Session timeout - logging out user');\n          await handleLogout();\n        }, 30 * 60 * 1000); // 30 minutes\n      }\n    };\n\n    const handleActivity = () => {\n      resetTimeout();\n    };\n\n    // Reset timeout on user activity\n    if (currentUser) {\n      resetTimeout();\n      \n      // Listen for user activity\n      const events = ['mousedown', 'mousemove', 'keypress', 'scroll', 'touchstart', 'click'];\n      events.forEach(event => {\n        document.addEventListener(event, handleActivity, { passive: true });\n      });\n\n      return () => {\n        if (timeoutId) clearTimeout(timeoutId);\n        events.forEach(event => {\n          document.removeEventListener(event, handleActivity);\n        });\n      };\n    }\n  }, [currentUser]);\n\n  // Enhanced security: Force redirect to login for any protected route access\n  useEffect(() => {\n    const currentPath = window.location.pathname;\n    \n    // If user is not authenticated and trying to access protected routes\n    if (!currentUser && !loading && currentPath !== '/') {\n      console.log('Direct route access blocked: Not authenticated, redirecting to login');\n      navigate('/', { replace: true });\n    }\n  }, [currentUser, loading, navigate]);\n\n  // Enhanced security: Check auth state when window gains focus
+  // Session timeout management - logout after inactivity
+  useEffect(() => {
+    let timeoutId: NodeJS.Timeout;
+
+    const resetTimeout = () => {
+      if (timeoutId) clearTimeout(timeoutId);
+
+      if (currentUser) {
+        // Auto logout after 30 minutes of inactivity
+        timeoutId = setTimeout(async () => {
+          console.log('Session timeout - logging out user');
+          await handleLogout();
+        }, 30 * 60 * 1000); // 30 minutes
+      }
+    };
+
+    const handleActivity = () => {
+      resetTimeout();
+    };
+
+    // Reset timeout on user activity
+    if (currentUser) {
+      resetTimeout();
+
+      // Listen for user activity
+      const events = ['mousedown', 'mousemove', 'keypress', 'scroll', 'touchstart', 'click'];
+      events.forEach(event => {
+        document.addEventListener(event, handleActivity, { passive: true });
+      });
+
+      return () => {
+        if (timeoutId) clearTimeout(timeoutId);
+        events.forEach(event => {
+          document.removeEventListener(event, handleActivity);
+        });
+      };
+    }
+  }, [currentUser]);
+
+  // Enhanced security: Force redirect to login for any protected route access
+  useEffect(() => {
+    const currentPath = window.location.pathname;
+
+    // If user is not authenticated and trying to access protected routes
+    if (!currentUser && !loading && currentPath !== '/') {
+      console.log('Direct route access blocked: Not authenticated, redirecting to login');
+      navigate('/', { replace: true });
+    }
+  }, [currentUser, loading, navigate]);
+
+  // Enhanced security: Check auth state when window gains focus
   useEffect(() => {
     const handleFocus = async () => {
       if (currentUser) {
@@ -178,7 +232,7 @@ const App: React.FC = () => {
   useEffect(() => {
     const handlePopstate = async (event: PopStateEvent) => {
       event.preventDefault();
-      
+
       if (!currentUser) {
         console.log('Navigation blocked: No authenticated user');
         navigate('/', { replace: true });
@@ -186,7 +240,7 @@ const App: React.FC = () => {
       }
 
       const targetPath = window.location.pathname;
-      
+
       // Check if user has access to the target path
       if (targetPath.startsWith('/admin') && currentUser.role !== 'admin') {
         console.log('Navigation blocked: Non-admin accessing admin route');
@@ -286,7 +340,7 @@ const App: React.FC = () => {
       await auth.signOut();
       setCurrentUser(null);
       setLoginError(null);
-      
+
       // Clear browser history to prevent back button access
       window.history.replaceState(null, '', '/');
       navigate('/', { replace: true });
@@ -351,6 +405,34 @@ const App: React.FC = () => {
     );
   }
 
+  // Local route component to render admin view of a specific user's orders
+  const AdminUserOrdersRoute: React.FC = () => {
+    const { userId } = useParams();
+    return (
+      <ProtectedRoute user={currentUser} loading={loading} requiredRole="admin">
+        <div className="flex h-screen bg-slate-100 font-sans">
+          <Sidebar
+            user={currentUser!}
+            onLogout={handleLogout}
+            currentPage="dashboard"
+            setCurrentPage={(page) => {
+              setSidebarOpen(false);
+              navigate(`/admin/${page}`);
+            }}
+            isOpen={isSidebarOpen}
+            setIsOpen={setSidebarOpen}
+          />
+          <div className="flex-1 flex flex-col overflow-hidden">
+            <AdminHeader onMenuClick={() => setSidebarOpen(true)} title="User Orders" user={currentUser!} />
+            <main className="flex-1 overflow-x-hidden overflow-y-auto bg-slate-100 p-4 sm:p-6">
+              <UserOrders user={currentUser!} onLogout={handleLogout} targetUserId={userId as string} />
+            </main>
+          </div>
+        </div>
+      </ProtectedRoute>
+    );
+  };
+
   return (
     <Routes>
       <Route
@@ -364,9 +446,9 @@ const App: React.FC = () => {
               <Navigate to="/dashboard" replace />
             )
           ) : (
-            <LoginPage 
-              error={loginError} 
-              clearError={() => setLoginError(null)} 
+            <LoginPage
+              error={loginError}
+              clearError={() => setLoginError(null)}
               onLogin={handleLogin}
             />
           )
@@ -390,10 +472,15 @@ const App: React.FC = () => {
         }
       />
 
+<<<<<<< HEAD
+=======
+      {/* User: Your Orders */}
+>>>>>>> dev
       <Route
         path="/my-orders"
         element={
           <ProtectedRoute user={currentUser} loading={loading}>
+<<<<<<< HEAD
             <UserOrders
               user={currentUser}
               onLogout={handleLogout}
@@ -402,15 +489,22 @@ const App: React.FC = () => {
         }
       />
       
+=======
+            <UserOrders user={currentUser!} onLogout={handleLogout} />
+          </ProtectedRoute>
+        }
+      />
+
+>>>>>>> dev
       {/* Admin Routes with Sidebar Layout */}
       <Route
         path="/admin/dashboard"
         element={
           <ProtectedRoute user={currentUser} loading={loading} requiredRole="admin">
             <div className="flex h-screen bg-slate-100 font-sans">
-              <Sidebar 
-                user={currentUser!} 
-                onLogout={handleLogout} 
+              <Sidebar
+                user={currentUser!}
+                onLogout={handleLogout}
                 currentPage="dashboard"
                 setCurrentPage={(page) => {
                   setSidebarOpen(false);
@@ -422,12 +516,12 @@ const App: React.FC = () => {
               <div className="flex-1 flex flex-col overflow-hidden">
                 <AdminHeader onMenuClick={() => setSidebarOpen(true)} title="Dashboard" user={currentUser!} />
                 <main className="flex-1 overflow-x-hidden overflow-y-auto bg-slate-100 p-4 sm:p-6">
-                  <Dashboard 
-                    bills={billingData.bills} 
-                    vegetables={billingData.vegetables} 
-                    onViewOrder={handleViewOrder} 
-                    onUpdateBillStatus={handleUpdateBillStatus} 
-                    onUpdateBill={billingData.updateBill} 
+                  <Dashboard
+                    bills={billingData.bills}
+                    vegetables={billingData.vegetables}
+                    onViewOrder={handleViewOrder}
+                    onUpdateBillStatus={handleUpdateBillStatus}
+                    onUpdateBill={billingData.updateBill}
                     onDateSelectionChange={handleDateSelectionChange}
                   />
                 </main>
@@ -436,15 +530,15 @@ const App: React.FC = () => {
           </ProtectedRoute>
         }
       />
-      
+
       <Route
         path="/admin/inventory"
         element={
           <ProtectedRoute user={currentUser} loading={loading} requiredRole="admin">
             <div className="flex h-screen bg-slate-100 font-sans">
-              <Sidebar 
-                user={currentUser!} 
-                onLogout={handleLogout} 
+              <Sidebar
+                user={currentUser!}
+                onLogout={handleLogout}
                 currentPage="inventory"
                 setCurrentPage={(page) => {
                   setSidebarOpen(false);
@@ -456,11 +550,11 @@ const App: React.FC = () => {
               <div className="flex-1 flex flex-col overflow-hidden">
                 <AdminHeader onMenuClick={() => setSidebarOpen(true)} title="Inventory" user={currentUser!} />
                 <main className="flex-1 overflow-x-hidden overflow-y-auto bg-slate-100 p-4 sm:p-6">
-                  <Inventory 
-                    vegetables={billingData.vegetables} 
+                  <Inventory
+                    vegetables={billingData.vegetables}
                     bills={billingData.bills}
                     availableStock={billingData.availableStock}
-                    addVegetable={billingData.addVegetable} 
+                    addVegetable={billingData.addVegetable}
                     updateVegetable={billingData.updateVegetable}
                     deleteVegetable={billingData.deleteVegetable}
                     selectedDate={selectedDate}
@@ -474,15 +568,15 @@ const App: React.FC = () => {
           </ProtectedRoute>
         }
       />
-      
+
       <Route
         path="/admin/orders"
         element={
           <ProtectedRoute user={currentUser} loading={loading} requiredRole="admin">
             <div className="flex h-screen bg-slate-100 font-sans">
-              <Sidebar 
-                user={currentUser!} 
-                onLogout={handleLogout} 
+              <Sidebar
+                user={currentUser!}
+                onLogout={handleLogout}
                 currentPage="orders"
                 setCurrentPage={(page) => {
                   setSidebarOpen(false);
@@ -494,10 +588,10 @@ const App: React.FC = () => {
               <div className="flex-1 flex flex-col overflow-hidden">
                 <AdminHeader onMenuClick={() => setSidebarOpen(true)} title="Order History" user={currentUser!} />
                 <main className="flex-1 overflow-x-hidden overflow-y-auto bg-slate-100 p-4 sm:p-6">
-                  <Orders 
-                    bills={billingData.bills} 
-                    vegetables={billingData.vegetables} 
-                    initialBillId={initialBillId} 
+                  <Orders
+                    bills={billingData.bills}
+                    vegetables={billingData.vegetables}
+                    initialBillId={initialBillId}
                     onClearInitialBill={() => setInitialBillId(null)}
                     onUpdateBillStatus={handleUpdateBillStatus}
                     onUpdateBill={billingData.updateBill}
@@ -510,15 +604,18 @@ const App: React.FC = () => {
           </ProtectedRoute>
         }
       />
-      
+
+      {/* Admin: Per-user orders */}
+      <Route path="/admin/user-orders/:userId" element={<AdminUserOrdersRoute />} />
+
       <Route
         path="/admin/reports"
         element={
           <ProtectedRoute user={currentUser} loading={loading} requiredRole="admin">
             <div className="flex h-screen bg-slate-100 font-sans">
-              <Sidebar 
-                user={currentUser!} 
-                onLogout={handleLogout} 
+              <Sidebar
+                user={currentUser!}
+                onLogout={handleLogout}
                 currentPage="reports"
                 setCurrentPage={(page) => {
                   setSidebarOpen(false);
@@ -537,15 +634,15 @@ const App: React.FC = () => {
           </ProtectedRoute>
         }
       />
-      
+
       <Route
         path="/admin/weekly-stock"
         element={
           <ProtectedRoute user={currentUser} loading={loading} requiredRole="admin">
             <div className="flex h-screen bg-slate-100 font-sans">
-              <Sidebar 
-                user={currentUser!} 
-                onLogout={handleLogout} 
+              <Sidebar
+                user={currentUser!}
+                onLogout={handleLogout}
                 currentPage="weekly-stock"
                 setCurrentPage={(page) => {
                   setSidebarOpen(false);
@@ -557,7 +654,7 @@ const App: React.FC = () => {
               <div className="flex-1 flex flex-col overflow-hidden">
                 <AdminHeader onMenuClick={() => setSidebarOpen(true)} title="Weekly Stock Report" user={currentUser!} />
                 <main className="flex-1 overflow-x-hidden overflow-y-auto bg-slate-100 p-4 sm:p-6">
-                  <WeeklyInventory 
+                  <WeeklyInventory
                     vegetables={billingData.vegetables}
                     bills={billingData.bills}
                     user={currentUser!}
@@ -568,15 +665,15 @@ const App: React.FC = () => {
           </ProtectedRoute>
         }
       />
-      
+
       <Route
         path="/admin/create-bill"
         element={
           <ProtectedRoute user={currentUser} loading={loading} requiredRole="admin">
             <div className="flex h-screen bg-slate-100 font-sans">
-              <Sidebar 
-                user={currentUser!} 
-                onLogout={handleLogout} 
+              <Sidebar
+                user={currentUser!}
+                onLogout={handleLogout}
                 currentPage="create-bill"
                 setCurrentPage={(page) => {
                   setSidebarOpen(false);
@@ -588,7 +685,7 @@ const App: React.FC = () => {
               <div className="flex-1 flex flex-col overflow-hidden">
                 <AdminHeader onMenuClick={() => setSidebarOpen(true)} title="Create Bill" user={currentUser!} />
                 <main className="flex-1 overflow-x-hidden overflow-y-auto bg-slate-100 p-4 sm:p-6">
-                  <CreateBill 
+                  <CreateBill
                     user={currentUser!}
                     vegetables={billingData.vegetables}
                     bills={billingData.bills}
@@ -601,15 +698,15 @@ const App: React.FC = () => {
           </ProtectedRoute>
         }
       />
-      
+
       <Route
         path="/admin/settings"
         element={
           <ProtectedRoute user={currentUser} loading={loading} requiredRole="admin">
             <div className="flex h-screen bg-slate-100 font-sans">
-              <Sidebar 
-                user={currentUser!} 
-                onLogout={handleLogout} 
+              <Sidebar
+                user={currentUser!}
+                onLogout={handleLogout}
                 currentPage="settings"
                 setCurrentPage={(page) => {
                   setSidebarOpen(false);
@@ -621,7 +718,7 @@ const App: React.FC = () => {
               <div className="flex-1 flex flex-col overflow-hidden">
                 <AdminHeader onMenuClick={() => setSidebarOpen(true)} title="Settings" user={currentUser!} />
                 <main className="flex-1 overflow-x-hidden overflow-y-auto bg-slate-100 p-4 sm:p-6">
-                  <Settings 
+                  <Settings
                     user={currentUser!}
                     onUpdateProfile={handleUpdateProfile}
                     onChangePassword={handleChangePassword}
@@ -632,12 +729,12 @@ const App: React.FC = () => {
           </ProtectedRoute>
         }
       />
-      
+
       <Route
         path="/admindashboard"
         element={<Navigate to="/admin/dashboard" replace />}
       />
-      
+
       <Route
         path="/admin-choice"
         element={

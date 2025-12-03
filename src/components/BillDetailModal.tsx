@@ -134,8 +134,14 @@ const BillDetailModal: React.FC<BillDetailModalProps> = ({
 
   // New: department fetched from DB for accurate file naming and header printing
   const [customerDeptFromDB, setCustomerDeptFromDB] = useState<string>('');
+<<<<<<< HEAD
 const [isSharing, setIsSharing] = useState(false);
   const [selectedUpiId, setSelectedUpiId] = useState<string>('');
+=======
+  // Stock validation states
+  const [availableStockMap, setAvailableStockMap] = useState<Map<string, number>>(new Map());
+  const [stockAlert, setStockAlert] = useState<{ show: boolean; itemName: string; requested: number; available: number } | null>(null);
+>>>>>>> dev
 
   useEffect(() => {
     if (bill) {
@@ -331,6 +337,29 @@ const [isSharing, setIsSharing] = useState(false);
     return null;
   };
 
+  // Fetch available stock for all vegetables
+  useEffect(() => {
+    if (!bill) return;
+    let mounted = true;
+    const fetchAvailableStock = async () => {
+      try {
+        const dateKey = getDateKey(new Date(bill.date));
+        const availStockCol = collection(db, 'availableStock', dateKey, 'items');
+        const snapshot = await getDocs(availStockCol);
+        const stockMap = new Map<string, number>();
+        snapshot.forEach(doc => {
+          const data = doc.data();
+          stockMap.set(doc.id, Number(data.availableStockKg || 0));
+        });
+        if (mounted) setAvailableStockMap(stockMap);
+      } catch (err) {
+        console.error('Error fetching available stock:', err);
+      }
+    };
+    fetchAvailableStock();
+    return () => { mounted = false; };
+  }, [bill?.id]);
+
   // Fetch customer name and department from DB
   useEffect(() => {
     if (!bill) return;
@@ -387,8 +416,40 @@ const [isSharing, setIsSharing] = useState(false);
     const current = editedItems[index];
     if (!current) return;
     const veg = combinedVegetableMap.get(current.vegetableId);
+<<<<<<< HEAD
     const clamped = Math.max(0, Math.round(newQuantity * 100) / 100);
     const pricePerKg = veg ? veg.pricePerKg : ((current as any).pricePerKg || (current.quantityKg > 0 ? current.subtotal / current.quantityKg : 0));
+=======
+    
+    // For COUNT items, ensure integer values; for KG items, allow decimals
+    let clamped: number;
+    if (veg?.unitType === 'COUNT') {
+      clamped = Math.max(0, Math.floor(newQuantity)); // Integer only for count
+    } else {
+      clamped = Math.max(0, Math.round(newQuantity * 100) / 100); // Decimal for kg
+    }
+    
+    // Check available stock - get current item quantity to calculate what's being added
+    const availableStock = availableStockMap.get(current.vegetableId) || 0;
+    const currentItemQty = current.quantityKg;
+    const otherItemsQty = editedItems
+      .filter((_, idx) => idx !== index && _.vegetableId === current.vegetableId)
+      .reduce((sum, item) => sum + item.quantityKg, 0);
+    const maxAllowed = availableStock + currentItemQty - otherItemsQty;
+    
+    if (clamped > maxAllowed) {
+      setStockAlert({
+        show: true,
+        itemName: veg?.name || `Item ${current.vegetableId}`,
+        requested: clamped,
+        available: Math.max(0, maxAllowed)
+      });
+      setTimeout(() => setStockAlert(null), 5000);
+      clamped = Math.max(0, maxAllowed);
+    }
+    
+    const pricePerKg = veg ? veg.pricePerKg : (current.quantityKg ? current.subtotal / current.quantityKg : 0);
+>>>>>>> dev
     const newSubtotal = Math.round(clamped * pricePerKg * 100) / 100;
     const copy = [...editedItems];
     copy[index] = { ...copy[index], quantityKg: clamped, subtotal: newSubtotal, pricePerKg };
@@ -399,17 +460,52 @@ const [isSharing, setIsSharing] = useState(false);
   const handleAddVegetable = (vegetableId: string, quantity: number) => {
     const veg = combinedVegetableMap.get(vegetableId);
     if (!veg || quantity <= 0) return;
+    
+    // Ensure correct quantity format based on unit type
+    let adjustedQty = quantity;
+    if (veg.unitType === 'COUNT') {
+      adjustedQty = Math.floor(quantity); // Integer only for count
+    }
+    
+    // Check available stock
+    const availableStock = availableStockMap.get(vegetableId) || 0;
+    const currentItemQty = editedItems
+      .filter(it => it.vegetableId === vegetableId)
+      .reduce((sum, item) => sum + item.quantityKg, 0);
+    const maxAllowed = availableStock - currentItemQty;
+    
+    if (adjustedQty > maxAllowed) {
+      setStockAlert({
+        show: true,
+        itemName: veg.name,
+        requested: adjustedQty,
+        available: Math.max(0, maxAllowed)
+      });
+      setTimeout(() => setStockAlert(null), 5000);
+      if (maxAllowed <= 0) return; // Don't add if no stock available
+      adjustedQty = maxAllowed; // Adjust to max allowed
+    }
+    
     const idx = editedItems.findIndex(it => it.vegetableId === vegetableId);
     if (idx >= 0) {
       const copy = [...editedItems];
+<<<<<<< HEAD
       const newQty = Math.round((copy[idx].quantityKg + quantity) * 100) / 100;
       const newSubtotal = Math.round(newQty * veg.pricePerKg * 100) / 100;
       copy[idx] = { ...copy[idx], quantityKg: newQty, subtotal: newSubtotal, pricePerKg: veg.pricePerKg };
+=======
+      const newQty = copy[idx].quantityKg + adjustedQty;
+      copy[idx] = { ...copy[idx], quantityKg: newQty, subtotal: newQty * veg.pricePerKg, pricePerKg: veg.pricePerKg };
+>>>>>>> dev
       setEditedItems(copy);
       console.log(`➕ Added ${veg.name}: ${newQty}kg × ₹${veg.pricePerKg}/kg = ₹${newSubtotal}`);
     } else {
+<<<<<<< HEAD
       const subtotal = Math.round(quantity * veg.pricePerKg * 100) / 100;
       const ni: BillItem = { vegetableId, quantityKg: quantity, subtotal, pricePerKg: veg.pricePerKg };
+=======
+      const ni: BillItem = { vegetableId, quantityKg: adjustedQty, subtotal: adjustedQty * veg.pricePerKg, pricePerKg: veg.pricePerKg };
+>>>>>>> dev
       setEditedItems(prev => [...prev, ni]);
       console.log(`✨ New item ${veg.name}: ${quantity}kg × ₹${veg.pricePerKg}/kg = ₹${subtotal}`);
     }
@@ -1290,6 +1386,40 @@ window.open(waUrl, "_blank");
         aria-modal="true"
         className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 p-4"
       >
+        {/* Stock Alert Notification */}
+        {stockAlert?.show && (
+          <div className="fixed top-20 left-1/2 transform -translate-x-1/2 z-[10000] w-11/12 max-w-md">
+            <div className="bg-white border border-red-300 rounded-lg shadow-lg p-4">
+              <div className="flex items-start gap-3">
+                <svg className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                </svg>
+                <div className="flex-1">
+                  <h4 className="font-semibold text-slate-800 text-sm mb-2">Stock Limit Exceeded</h4>
+                  <div className="bg-slate-50 rounded p-2 border border-slate-200">
+                    <div className="font-medium text-slate-700">{stockAlert.itemName}</div>
+                    <div className="text-xs text-slate-500 mt-0.5">
+                      You wanted <span className="font-semibold text-red-600">{stockAlert.requested}{(() => {
+                        const veg = combinedVegetableMap.get(editedItems.find(i => (i as any).name === stockAlert.itemName || combinedVegetableMap.get(i.vegetableId)?.name === stockAlert.itemName)?.vegetableId || '');
+                        return veg?.unitType === 'COUNT' ? ' count' : 'kg';
+                      })()}</span>, only <span className="font-semibold text-green-600">{stockAlert.available}{(() => {
+                        const veg = combinedVegetableMap.get(editedItems.find(i => (i as any).name === stockAlert.itemName || combinedVegetableMap.get(i.vegetableId)?.name === stockAlert.itemName)?.vegetableId || '');
+                        return veg?.unitType === 'COUNT' ? ' count' : 'kg';
+                      })()}</span> available
+                    </div>
+                  </div>
+                  <p className="text-xs text-slate-500 mt-2">Quantity adjusted to available stock</p>
+                </div>
+                <button onClick={() => setStockAlert(null)} className="text-slate-400 hover:text-slate-600">
+                  <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+        
         <div className="relative bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] flex flex-col animate-fade-in-down">
           <div className="flex items-center justify-between p-4 border-b bg-slate-50 rounded-t-lg">
             <div>
@@ -1348,7 +1478,7 @@ window.open(waUrl, "_blank");
                       <th scope="col" className="px-2 py-2 w-8 text-center"> </th>
                       <th scope="col" className="px-2 py-2 w-12 text-center">S.No.</th>
                       <th scope="col" className="px-4 py-2">Item</th>
-                      <th scope="col" className="px-4 py-2 text-right">Qty (kg)</th>
+                      <th scope="col" className="px-4 py-2 text-right">Quantity</th>
                       <th scope="col" className="px-4 py-2 text-right">Rate</th>
                       <th scope="col" className="px-4 py-2 text-right">Subtotal</th>
                       <th scope="col" className="px-4 py-2 text-center">Action</th>
@@ -1386,15 +1516,20 @@ window.open(waUrl, "_blank");
                             )}
                           </td>
                           <td className="px-4 py-3 text-right">
-                            <input
-                              type="number"
-                              value={item.quantityKg}
-                              onChange={(e) => handleQuantityChange(index, parseFloat(e.target.value) || 0)}
-                              className="w-20 text-right bg-white border border-slate-200 rounded px-2 py-1 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 font-medium text-slate-900"
-                              min="0"
-                              step="0.25"
-                              onFocus={(e) => e.target.select()}
-                            />
+                            <div className="flex items-center justify-end gap-1">
+                              <input
+                                type="number"
+                                value={vegetable?.unitType === 'COUNT' ? Math.floor(item.quantityKg) : item.quantityKg}
+                                onChange={(e) => handleQuantityChange(index, parseFloat(e.target.value) || 0)}
+                                className="w-16 text-right bg-white border border-slate-200 rounded px-2 py-1 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 font-medium text-slate-900"
+                                min="0"
+                                step={vegetable?.unitType === 'COUNT' ? '1' : '0.25'}
+                                onFocus={(e) => e.target.select()}
+                              />
+                              <span className="text-xs text-slate-500 w-8">
+                                {vegetable?.unitType === 'COUNT' ? 'count' : 'kg'}
+                              </span>
+                            </div>
                           </td>
                           <td className="px-4 py-3 text-right">
                             {(() => {
@@ -1432,7 +1567,7 @@ window.open(waUrl, "_blank");
                 <div className="bg-slate-50 rounded-lg p-4 space-y-3">
                   {getAvailableVegetables().length > 0 ? (
                     getAvailableVegetables().map(veg => (
-                      <VegetableAddRow key={veg.id} vegetable={veg} onAdd={(quantity) => { handleAddVegetable(veg.id, quantity); setShowAddVegetables(false); }} />
+                      <VegetableAddRow key={veg.id} vegetable={veg} availableStock={availableStockMap.get(veg.id) || 0} onAdd={(quantity) => { handleAddVegetable(veg.id, quantity); setShowAddVegetables(false); }} />
                     ))
                   ) : (
                     <p className="text-slate-500 text-center py-4">All available vegetables are already in this order</p>
@@ -1494,15 +1629,42 @@ window.open(waUrl, "_blank");
 interface VegetableAddRowProps {
   vegetable: Vegetable;
   onAdd: (quantity: number) => void;
+  availableStock: number;
 }
 
-const VegetableAddRow: React.FC<VegetableAddRowProps> = ({ vegetable, onAdd }) => {
-  const [quantity, setQuantity] = useState(0.25);
+const VegetableAddRow: React.FC<VegetableAddRowProps> = ({ vegetable, onAdd, availableStock }) => {
+  const isCount = vegetable.unitType === 'COUNT';
+  const minQty = isCount ? 1 : 0.25;
+  const stepQty = isCount ? 1 : 0.25;
+  const [quantity, setQuantity] = useState(minQty);
 
   const handleAdd = () => {
     if (quantity > 0) {
-      onAdd(quantity);
-      setQuantity(0.25);
+      const finalQty = isCount ? Math.floor(quantity) : quantity;
+      onAdd(finalQty);
+      setQuantity(minQty);
+    }
+  };
+  
+  const handleDecrement = () => {
+    setQuantity(Math.max(minQty, isCount ? Math.floor(quantity) - 1 : quantity - stepQty));
+  };
+  
+  const handleIncrement = () => {
+    const newQty = isCount ? Math.floor(quantity) + 1 : quantity + stepQty;
+    // Don't allow incrementing beyond available stock
+    if (newQty <= availableStock) {
+      setQuantity(newQty);
+    }
+  };
+  
+  const handleInputChange = (value: number) => {
+    if (isCount) {
+      const newQty = Math.max(minQty, Math.floor(value || minQty));
+      setQuantity(Math.min(newQty, availableStock)); // Cap at available stock
+    } else {
+      const newQty = Math.max(minQty, value || minQty);
+      setQuantity(Math.min(newQty, availableStock)); // Cap at available stock
     }
   };
 
@@ -1511,16 +1673,24 @@ const VegetableAddRow: React.FC<VegetableAddRowProps> = ({ vegetable, onAdd }) =
       <div className="flex items-center gap-3">
         <div>
           <h5 className="font-medium text-slate-800">{vegetable.name}</h5>
-          <p className="text-sm text-slate-600">₹{vegetable.pricePerKg}/kg</p>
+          <p className="text-sm text-slate-600">₹{vegetable.pricePerKg}/{isCount ? 'count' : 'kg'}</p>
         </div>
       </div>
 
       <div className="flex items-center gap-3">
         <div className="flex items-center gap-2">
-          <button onClick={() => setQuantity(Math.max(0.25, quantity - 0.25))} className="w-6 h-6 rounded-full bg-slate-200 hover:bg-slate-300 text-slate-700 flex items-center justify-center text-sm font-semibold" disabled={quantity <= 0.25}>-</button>
-          <input type="number" value={quantity} onChange={(e) => setQuantity(Math.max(0.25, parseFloat(e.target.value) || 0.25))} className="w-16 text-center border border-slate-300 rounded px-2 py-1 text-sm" min="0.25" step="0.25" />
-          <button onClick={() => setQuantity(quantity + 0.25)} className="w-6 h-6 rounded-full bg-slate-200 hover:bg-slate-300 text-slate-700 flex items-center justify-center text-sm font-semibold">+</button>
-          <span className="text-sm text-slate-500">kg</span>
+          <button onClick={handleDecrement} className="w-6 h-6 rounded-full bg-slate-200 hover:bg-slate-300 text-slate-700 flex items-center justify-center text-sm font-semibold" disabled={quantity <= minQty}>-</button>
+          <input 
+            type="number" 
+            value={isCount ? Math.floor(quantity) : quantity} 
+            onChange={(e) => handleInputChange(parseFloat(e.target.value))} 
+            className="w-16 text-center border border-slate-300 rounded px-2 py-1 text-sm" 
+            min={minQty}
+            max={availableStock}
+            step={stepQty} 
+          />
+          <button onClick={handleIncrement} className="w-6 h-6 rounded-full bg-slate-200 hover:bg-slate-300 text-slate-700 flex items-center justify-center text-sm font-semibold disabled:opacity-50 disabled:cursor-not-allowed" disabled={quantity >= availableStock}>+</button>
+          <span className="text-sm text-slate-500">{isCount ? 'count' : 'kg'}</span>
         </div>
 
         <Button onClick={handleAdd} className="bg-green-600 hover:bg-green-700 text-white px-3 py-1 text-sm">Add ₹{(quantity * vegetable.pricePerKg).toFixed(2)}</Button>

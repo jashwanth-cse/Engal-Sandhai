@@ -7,8 +7,16 @@ import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 
 interface UserOrdersProps {
+<<<<<<< HEAD
   user: User;
   onLogout: () => void;
+=======
+  user: User; // viewer (logged-in user)
+  onLogout: () => void;
+  // Optional: whose orders to fetch; defaults to `user.id` so this component
+  // can be reused in admin to view a selected user's orders.
+  targetUserId?: string;
+>>>>>>> dev
 }
 
 // Order icon component
@@ -26,12 +34,23 @@ const OrderIcon: React.FC<{ status: string }> = ({ status }) => {
   );
 };
 
+<<<<<<< HEAD
 const UserOrders: React.FC<UserOrdersProps> = ({ user, onLogout }) => {
+=======
+const UserOrders: React.FC<UserOrdersProps> = ({ user, onLogout, targetUserId }) => {
+>>>>>>> dev
   const navigate = useNavigate();
   const [orders, setOrders] = useState<Bill[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>('');
   const [selectedOrder, setSelectedOrder] = useState<Bill | null>(null);
+<<<<<<< HEAD
+=======
+  const subjectUserId = targetUserId || user.id;
+  const viewingOwnOrders = subjectUserId === user.id;
+  const [subjectName, setSubjectName] = useState<string>(user.employee_name || user.name || 'User');
+  const [subjectDept, setSubjectDept] = useState<string | undefined>((user as any).department);
+>>>>>>> dev
   
   // Single date filter - set today's date as default
   const getTodayDate = () => {
@@ -64,18 +83,34 @@ const UserOrders: React.FC<UserOrdersProps> = ({ user, onLogout }) => {
   }
 
   const handleBack = () => {
+<<<<<<< HEAD
     if (user.role === 'admin') {
       navigate('/admin-choice');
     } else {
       navigate('/dashboard');
     }
+=======
+    // If viewing own orders (no targetUserId), always go to user dashboard
+    // This ensures '/my-orders' returns to the user's page only.
+    if (!targetUserId) {
+      navigate('/dashboard');
+      return;
+    }
+
+    // When an admin is viewing a specific user's orders via admin route, go back to admin dashboard
+    navigate('/admin/dashboard');
+>>>>>>> dev
   };
 
   useEffect(() => {
     if (selectedDate) {
       loadOrdersForDate();
     }
+<<<<<<< HEAD
   }, [selectedDate, user.id]);
+=======
+  }, [selectedDate, subjectUserId]);
+>>>>>>> dev
 
   const loadOrdersForDate = async () => {
     if (!selectedDate) return;
@@ -85,6 +120,7 @@ const UserOrders: React.FC<UserOrdersProps> = ({ user, onLogout }) => {
       setError('');
       
       const date = new Date(selectedDate);
+<<<<<<< HEAD
       console.log(`🔄 Loading orders for ${user.name || user.employee_name} on ${date.toDateString()}`);
       
       const fetchedOrders = await fetchUserOrdersByDate(user.id, date);
@@ -95,6 +131,18 @@ const UserOrders: React.FC<UserOrdersProps> = ({ user, onLogout }) => {
       
       try {
         const userRef = doc(db, 'users', user.id);
+=======
+      console.log(`🔄 Loading orders for ${subjectUserId} on ${date.toDateString()}`);
+      
+      const fetchedOrders = await fetchUserOrdersByDate(subjectUserId, date);
+
+      // Fetch user details to get the correct name
+      let correctName = subjectName;
+      let correctDept = subjectDept;
+      
+      try {
+        const userRef = doc(db, 'users', subjectUserId);
+>>>>>>> dev
         const userSnap = await getDoc(userRef);
         
         if (userSnap.exists()) {
@@ -107,6 +155,11 @@ const UserOrders: React.FC<UserOrdersProps> = ({ user, onLogout }) => {
           if (dbDept) correctDept = dbDept;
           
           console.log(`👤 Fetched user details: Name=${correctName}, Dept=${correctDept}`);
+<<<<<<< HEAD
+=======
+          setSubjectName(correctName || subjectName);
+          setSubjectDept(correctDept || subjectDept);
+>>>>>>> dev
         }
       } catch (userErr) {
         console.error('Error fetching user details:', userErr);
@@ -201,11 +254,21 @@ const UserOrders: React.FC<UserOrdersProps> = ({ user, onLogout }) => {
           >
             <ArrowLeftIcon className="h-6 w-6 text-gray-700" />
           </button>
+<<<<<<< HEAD
           <h1 className="text-xl font-bold text-gray-900">Your Orders</h1>
           <div className="flex items-center gap-3">
             <span className="text-sm font-medium text-gray-700">{user.employee_name || user.name || 'User'}</span>
             <div className="w-10 h-10 rounded-full bg-primary-100 flex items-center justify-center">
               <span className="text-primary-700 font-bold text-base">{(user.employee_name || user.name || 'U').charAt(0).toUpperCase()}</span>
+=======
+          <h1 className="text-xl font-bold text-gray-900">
+            {viewingOwnOrders ? 'Your Orders' : `Orders for ${subjectName}`}
+          </h1>
+          <div className="flex items-center gap-3">
+            <span className="text-sm font-medium text-gray-700">{subjectName || 'User'}</span>
+            <div className="w-10 h-10 rounded-full bg-primary-100 flex items-center justify-center">
+              <span className="text-primary-700 font-bold text-base">{(subjectName || 'U').charAt(0).toUpperCase()}</span>
+>>>>>>> dev
             </div>
           </div>
         </div>
@@ -242,7 +305,11 @@ const UserOrders: React.FC<UserOrdersProps> = ({ user, onLogout }) => {
           </div>
         ) : loading ? (
           <div className="flex flex-col justify-center items-center py-20">
+<<<<<<< HEAD
             <div className="animate-spin rounded-full h-16 w-16 border-b-4 border-primary-600 mb-4"></div>
+=======
+            <div className="animate-spin rounded-full ray-50-16 border-b-4 border-primary-600 mb-4"></div>
+>>>>>>> dev
             <p className="text-gray-600 font-medium">Loading orders...</p>
           </div>
         ) : error ? (

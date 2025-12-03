@@ -5,6 +5,7 @@ import { db } from '../firebase';
 import { collection, getDocs, getDoc, orderBy, query as fsQuery, Timestamp, where, doc } from 'firebase/firestore';
 import { getOrdersCol, getDateKey } from '../services/dbService';
 import { VEGETABLES_DATA } from '../../constants';
+import { fixFloatingPoint } from '../utils/roundUtils';
 
 const Reports: React.FC = () => {
   const [reportDate, setReportDate] = useState<string>(() => {
@@ -34,12 +35,12 @@ const Reports: React.FC = () => {
         setLoading(true);
         const sel = new Date(reportDate);
         const dateStr = reportDate; // Already in YYYY-MM-DD format
-        
+
         console.log(`📊 Fetching orders for Reports on: ${reportDate}`);
-        
+
         // Check if this is September 24th or 25th, 2025 - use legacy collection only
         const isLegacyDate = dateStr === '2025-09-24' || dateStr === '2025-09-25';
-        
+
         let allOrders: Array<{
           id: string;
           customerId: string;
@@ -49,34 +50,38 @@ const Reports: React.FC = () => {
           items: any[];
           createdAt: Date;
         }> = [];
-        
+
         if (isLegacyDate) {
           // Fetch only from legacy orders collection for Sept 24-25
           try {
             console.log(`📊 Fetching from legacy collection for: ${reportDate}`);
             const legacyOrdersCol = collection(db, 'orders');
             const legacyQuery = fsQuery(
-              legacyOrdersCol, 
+              legacyOrdersCol,
               where('createdAt', '>=', new Date(dateStr + 'T00:00:00')),
               where('createdAt', '<', new Date(dateStr + 'T23:59:59')),
               orderBy('createdAt', 'desc')
             );
-            
+
             const legacySnap = await getDocs(legacyQuery);
             console.log(`📦 Found ${legacySnap.size} legacy orders for ${reportDate}`);
-            
+
             const legacyOrders = legacySnap.docs.map((docSnap) => {
               const orderData = docSnap.data();
               const createdAtTs = orderData.createdAt?.toDate ? orderData.createdAt.toDate() : new Date();
               // Handle different possible field names for legacy orders
-              const itemsArr: any[] = Array.isArray(orderData.items) 
-                ? orderData.items 
-                : Array.isArray(orderData.orderItems) 
-                  ? orderData.orderItems 
+              const itemsArr: any[] = Array.isArray(orderData.items)
+                ? orderData.items
+                : Array.isArray(orderData.orderItems)
+                  ? orderData.orderItems
                   : [];
+<<<<<<< HEAD
               
               const amount = Number(orderData.total || orderData.totalAmount) || 0;
               
+=======
+
+>>>>>>> dev
               return {
                 id: String(orderData.orderId || orderData.billNumber || docSnap.id),
                 customerId: String(orderData.userId || orderData.employee_id || orderData.customerId || ''),
@@ -87,7 +92,7 @@ const Reports: React.FC = () => {
                 createdAt: createdAtTs,
               };
             });
-            
+
             allOrders = legacyOrders;
           } catch (legacyError) {
             console.warn('No legacy orders found for', reportDate, legacyError);
@@ -97,22 +102,26 @@ const Reports: React.FC = () => {
           try {
             console.log(`📊 Fetching from date-based collection for: ${reportDate}`);
             const ordersCollectionRef = getOrdersCol(sel);
-            
+
             const ordersSnap = await getDocs(ordersCollectionRef);
             console.log(`📦 Found ${ordersSnap.size} date-based orders for ${reportDate}`);
-            
+
             const dateBasedOrders = ordersSnap.docs.map((docSnap) => {
               const orderData = docSnap.data();
               const createdAtTs = orderData.createdAt?.toDate ? orderData.createdAt.toDate() : new Date();
               // Handle different possible field names for new orders
-              const itemsArr: any[] = Array.isArray(orderData.items) 
-                ? orderData.items 
-                : Array.isArray(orderData.orderItems) 
-                  ? orderData.orderItems 
+              const itemsArr: any[] = Array.isArray(orderData.items)
+                ? orderData.items
+                : Array.isArray(orderData.orderItems)
+                  ? orderData.orderItems
                   : [];
+<<<<<<< HEAD
               
               const amount = Number(orderData.total || orderData.totalAmount) || 0;
               
+=======
+
+>>>>>>> dev
               return {
                 id: String(orderData.orderId || orderData.billNumber || docSnap.id),
                 customerId: String(orderData.userId || orderData.employee_id || orderData.customerId || ''),
@@ -123,23 +132,23 @@ const Reports: React.FC = () => {
                 createdAt: createdAtTs,
               };
             });
-            
+
             allOrders = dateBasedOrders;
           } catch (dateError) {
             console.warn('No date-based orders found for', reportDate, dateError);
           }
         }
-        
+
         // Sort by createdAt descending (most recent first)
         allOrders.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
-        
+
         console.log(`📊 Reports Summary for ${reportDate}:`, {
           isLegacyDate,
           totalOrders: allOrders.length,
           totalRevenue: allOrders.reduce((sum, order) => sum + order.totalAmount, 0),
           collectionType: isLegacyDate ? 'Legacy (orders/)' : 'Date-based (orders/YYYY-MM-DD/items/)'
         });
-        
+
         setOrders(allOrders);
       } catch (e) {
         console.error('Failed to fetch orders for report:', e);
@@ -160,7 +169,7 @@ const Reports: React.FC = () => {
         if (uid && !userInfoMap[uid]) missing.add(uid);
       });
       if (missing.size === 0) return;
-  const entries: [string, { name: string; department?: string; employeeId?: string; phone?: string }][] = [];
+      const entries: [string, { name: string; department?: string; employeeId?: string; phone?: string }][] = [];
       await Promise.all(Array.from(missing).map(async (uid) => {
         try {
           const ref = doc(db, 'users', uid);
@@ -201,18 +210,31 @@ const Reports: React.FC = () => {
     loadUserInfos();
   }, [orders, userInfoMap]);
 
+<<<<<<< HEAD
   const totalSales = useMemo(() => orders.reduce((sum, b) => sum + (Number(b.total || b.totalAmount) || 0), 0), [orders]);
   
+=======
+  const totalSales = useMemo(() => orders.reduce((sum, b) => sum + (Number(b.totalAmount) || 0), 0), [orders]);
+
+>>>>>>> dev
   const totalOrders = useMemo(() => orders.length, [orders]);
-  
+
   const totalItems = useMemo(() => {
-    return orders.reduce((sum, order) => {
+    const total = orders.reduce((sum, order) => {
       const items = Array.isArray(order.items) ? order.items : [];
+<<<<<<< HEAD
       // Count each line item (array length). This shows total lines in the cart (including zero-quantity lines).
       // Also count bags as separate items if they exist
       const bagCount = order.bags && order.bags > 0 ? 1 : 0;
       return sum + items.length + bagCount;
+=======
+      // Sum the quantity of each item
+      const orderTotal = items.reduce((orderSum, item) => orderSum + (Number(item.quantity) || 0), 0);
+      return sum + orderTotal;
+>>>>>>> dev
     }, 0);
+    // Fix floating-point precision errors (e.g., 61.949999999999996 -> 61.95)
+    return fixFloatingPoint(total, 2);
   }, [orders]);
 
   // (Removed duplicate user info effect that lacked phone field)
@@ -273,13 +295,13 @@ const Reports: React.FC = () => {
 
       const pageWidth = (doc as any).internal.pageSize.getWidth();
       const pageHeight = (doc as any).internal.pageSize.getHeight();
-      
+
       let pageNumber = 1;
       let currentY = 40;
       const pageBreakMargin = 60; // Space needed for page totals
       const rowHeight = 20;
       const headerHeight = 60;
-      
+
       // Track page totals
       let currentPageTotal = 0;
       const pageTotals: number[] = [];
@@ -291,22 +313,22 @@ const Reports: React.FC = () => {
         doc.setFont(undefined, 'bold');
         doc.text('Engal Sandhai', 40, currentY);
         currentY += 25;
-        
+
         doc.setFontSize(14);
         doc.text(`Daily Report - ${reportDate}`, 40, currentY);
         currentY += 30;
-        
-  // Table header (adjusted column positions to avoid overlap)
-  doc.setFontSize(10);
-  doc.setFont(undefined, 'bold');
-  doc.text('S.No', 40, currentY);
-  doc.text('Employee Name', 80, currentY);
-  doc.text('Bill No', 220, currentY);
-  doc.text('Customer', 320, currentY);
-  doc.text('Total Items', 420, currentY);
-  doc.text('Total Amount', 500, currentY);
+
+        // Table header (adjusted column positions to avoid overlap)
+        doc.setFontSize(10);
+        doc.setFont(undefined, 'bold');
+        doc.text('S.No', 40, currentY);
+        doc.text('Employee Name', 80, currentY);
+        doc.text('Bill No', 220, currentY);
+        doc.text('Customer', 320, currentY);
+        doc.text('Total Items', 420, currentY);
+        doc.text('Total Amount', 500, currentY);
         currentY += 5;
-        
+
         // Header line
         doc.setLineWidth(1);
         doc.line(40, currentY, pageWidth - 40, currentY);
@@ -320,11 +342,11 @@ const Reports: React.FC = () => {
         doc.setFont(undefined, 'bold');
         doc.setFontSize(12);
         doc.text(`Page ${pageNumber} total - Rs ${currentPageTotal.toFixed(2)}`, 40, currentY);
-        
+
         pageTotals.push(currentPageTotal);
         currentPageTotal = 0;
         currentPageOrders = [];
-        
+
         doc.addPage();
         pageNumber++;
         currentY = 40;
@@ -339,13 +361,26 @@ const Reports: React.FC = () => {
         const userInfo = userInfoMap[order.customerId];
         const employeeName = userInfo?.name || order.customerName || 'Unknown';
         const employeeId = userInfo?.employeeId || order.customerId || 'Unknown';
+<<<<<<< HEAD
       const itemsCount = (Array.isArray(order.items) ? order.items : []).length;
         const amount = Number(order.total || order.totalAmount) || 0;
         
+=======
+        const itemsCount = fixFloatingPoint(
+          (Array.isArray(order.items) ? order.items : []).reduce(
+            (sum, item: any) => sum + (Number(item.quantity) || 0),
+            0
+          ),
+          2
+        );
+        const amount = Number(order.totalAmount) || 0;
+
+>>>>>>> dev
         // Check if we need a page break
         if (currentY + rowHeight + pageBreakMargin > pageHeight - 40) {
           addPageBreak();
         }
+<<<<<<< HEAD
         
   // Add order data (truncating long fields to maintain layout)
   doc.setFont(undefined, 'normal');
@@ -357,6 +392,19 @@ const Reports: React.FC = () => {
   doc.text(String(itemsCount), 420, currentY);
   doc.text(`Rs. ${Math.round(amount)}`, 500, currentY);
         
+=======
+
+        // Add order data (truncating long fields to maintain layout)
+        doc.setFont(undefined, 'normal');
+        doc.setFontSize(9);
+        doc.text(String(index + 1), 40, currentY);
+        doc.text(employeeName.substring(0, 25), 80, currentY); // Limit name length
+        doc.text(String(order.id).substring(0, 22), 220, currentY);
+        doc.text(employeeId.substring(0, 18), 320, currentY);
+        doc.text(String(itemsCount), 420, currentY);
+        doc.text(`Rs. ${amount.toFixed(2)}`, 500, currentY);
+
+>>>>>>> dev
         currentPageTotal += amount;
         currentPageOrders.push(order);
         currentY += rowHeight;
@@ -375,12 +423,12 @@ const Reports: React.FC = () => {
       if (pageTotals.length > 1) {
         doc.addPage();
         currentY = 40;
-        
+
         doc.setFontSize(16);
         doc.setFont(undefined, 'bold');
         doc.text('Report Summary', 40, currentY);
         currentY += 30;
-        
+
         // Show all page totals
         doc.setFontSize(12);
         doc.setFont(undefined, 'normal');
@@ -388,7 +436,7 @@ const Reports: React.FC = () => {
           doc.text(`Page ${idx + 1} total - Rs ${Math.round(pageTotal)}`, 40, currentY);
           currentY += 20;
         });
-        
+
         currentY += 10;
         doc.setFont(undefined, 'bold');
         doc.setFontSize(14);
@@ -407,12 +455,12 @@ const Reports: React.FC = () => {
       doc.setFontSize(11);
       doc.text(`Total Orders: ${totalOrders}`, 40, currentY);
       currentY += 15;
-      doc.text(`Total Items: ${totalItems}`, 40, currentY);
+      doc.text(`Total Items: ${fixFloatingPoint(totalItems, 2)}`, 40, currentY);
       currentY += 15;
       doc.text(`Generated on: ${new Date().toLocaleString()}`, 40, currentY);
 
       doc.save(`Daily_Report_${reportDate}.pdf`);
-      
+
     } catch (e) {
       console.error('Failed to generate PDF:', e);
       alert('Failed to generate PDF. Please try again.');
@@ -442,9 +490,12 @@ const Reports: React.FC = () => {
 
       // Prepare CSV data rows
       const csvData = orders.map((order, index) => {
-        const itemsCount = (Array.isArray(order.items) ? order.items : []).reduce(
-          (sum, item: any) => sum + Math.floor(Number(item.quantity) || 1), 
-          0
+        const itemsCount = fixFloatingPoint(
+          (Array.isArray(order.items) ? order.items : []).reduce(
+            (sum, item: any) => sum + (Number(item.quantity) || 0),
+            0
+          ),
+          2
         );
         const userInfo = userInfoMap[order.customerId];
         const employeeName = userInfo?.name || order.customerName || 'Unknown';
@@ -489,7 +540,7 @@ const Reports: React.FC = () => {
       // Create and download the file
       const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
       const link = document.createElement('a');
-      
+
       if (link.download !== undefined) {
         const url = URL.createObjectURL(blob);
         link.setAttribute('href', url);
@@ -499,9 +550,9 @@ const Reports: React.FC = () => {
         link.click();
         document.body.removeChild(link);
       }
-      
+
       console.log(`✅ CSV report generated for ${reportDate} with ${orders.length} orders`);
-      
+
     } catch (error) {
       console.error('Failed to generate CSV:', error);
       alert('Failed to generate CSV. Please try again.');
@@ -570,9 +621,9 @@ const Reports: React.FC = () => {
         const invoice = String(order.id || '');
         const staffName = userInfo?.name || order.customerName || '';
         const department = userInfo?.department || '';
-  // Fallback: if userInfo lacks phone, try to derive from order object if present
-  const orderLevelPhone = (order as any).phone || (order as any).phoneNumber || (order as any).phone_number || (order as any).whatsapp || (order as any).whatsapp_number || '';
-  const phone = userInfo?.phone || orderLevelPhone || 'N/A';
+        // Fallback: if userInfo lacks phone, try to derive from order object if present
+        const orderLevelPhone = (order as any).phone || (order as any).phoneNumber || (order as any).phone_number || (order as any).whatsapp || (order as any).whatsapp_number || '';
+        const phone = userInfo?.phone || orderLevelPhone || 'N/A';
 
         // Initialize product quantity map
         const qtyMap: Record<string, number> = {};
@@ -641,7 +692,7 @@ const Reports: React.FC = () => {
   return (
     <div className="space-y-6">
       <h1 className="text-3xl font-bold text-slate-800">Reports</h1>
-      
+
       {/* Daily Metrics Cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <MetricCard
@@ -679,7 +730,7 @@ const Reports: React.FC = () => {
           <input type="date" value={reportDate} onChange={(e) => setReportDate(e.target.value)} className="border rounded-md px-3 py-2" />
         </div>
         <div className="sm:ml-auto flex gap-3">
-          <Button 
+          <Button
             onClick={generateDetailedCsv}
             className="bg-blue-600 hover:bg-blue-700 text-white flex items-center gap-2"
           >
@@ -688,14 +739,14 @@ const Reports: React.FC = () => {
             </svg>
             Download Detailed Report
           </Button>
-          <Button 
+          <Button
             onClick={generateCsv}
             className="bg-green-600 hover:bg-green-700 text-white flex items-center gap-2"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
             </svg>
-            Download Overall Report 
+            Download Overall Report
           </Button>
           <Button onClick={generatePdf}>Generate Report (PDF)</Button>
         </div>
@@ -722,11 +773,17 @@ const Reports: React.FC = () => {
                 <tr><td colSpan={6} className="px-4 py-6 text-center text-slate-500">No orders for the selected date.</td></tr>
               ) : (
                 orders.map((b, idx) => {
-                  const itemsCount = (Array.isArray(b.items) ? b.items : []).length;
+                  const itemsCount = fixFloatingPoint(
+                    (Array.isArray(b.items) ? b.items : []).reduce(
+                      (sum, item: any) => sum + (Number(item.quantity) || 0),
+                      0
+                    ),
+                    2
+                  );
                   const userInfo = userInfoMap[b.customerId];
                   const employeeName = userInfo?.name || b.customerName || 'Unknown';
                   const employeeId = userInfo?.employeeId || b.customerId || 'Unknown';
-                  
+
                   return (
                     <tr key={b.id} className="border-b last:border-b-0">
                       <td className="px-4 py-2">{idx + 1}</td>

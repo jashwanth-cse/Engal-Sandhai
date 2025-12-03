@@ -17,3 +17,14 @@ export const roundTotal = (amount: number): number => {
 export const formatRoundedTotal = (amount: number): string => {
   return `₹${roundTotal(amount)}`;
 };
+
+/**
+ * Fixes floating-point precision errors by rounding to specified decimal places
+ * Solves issues like 61.949999999999996 or 1.999999999 or 4.5999999
+ * @param num - The number to fix
+ * @param decimals - Number of decimal places (default 2)
+ * @returns Number with proper precision
+ */
+export const fixFloatingPoint = (num: number, decimals: number = 2): number => {
+  return Math.round(num * Math.pow(10, decimals)) / Math.pow(10, decimals);
+};

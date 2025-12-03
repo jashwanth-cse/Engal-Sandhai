@@ -17,9 +17,11 @@ import {
   serverTimestamp,
   runTransaction,
   setDoc,
+  increment,
 } from 'firebase/firestore';
 import type { Vegetable } from '../../types/types';
 import type { Bill, BillItem } from '../../types/types';
+import { round } from '../utils/mathUtils';
 
 // Utility function to get date key (YYYY-MM-DD format)
 export const getDateKey = (date?: Date): string => {
@@ -53,7 +55,7 @@ export const subscribeToVegetables = (
   // Use date-based collection for new items, fallback to regular collection for existing data
   const isDateBased = date !== undefined;
   const targetCol = isDateBased ? getVegetablesCol(date) : vegetablesCol;
-  
+
   const q = query(targetCol, orderBy('name'));
   return onSnapshot(q, (snapshot) => {
     const items: Vegetable[] = snapshot.docs.map((d) => {
@@ -78,7 +80,18 @@ export const addVegetableToDb = async (
 ): Promise<string> => {
   const dateKey = getDateKey(date);
   const vegetablesCol = getVegetablesCol(date);
-  
+
+  // Check for duplicate vegetable name in the same date collection
+  console.log(`Checking for duplicate vegetable: "${vegetable.name}" in collection: ${vegetablesCol.path}`);
+  const q = query(vegetablesCol, where('name', '==', vegetable.name));
+  const querySnapshot = await getDocs(q);
+  console.log(`Duplicate check result: ${querySnapshot.size} documents found.`);
+
+  if (!querySnapshot.empty) {
+    console.warn(`Duplicate found: ${vegetable.name}`);
+    throw new Error(`Vegetable "${vegetable.name}" already exists.`);
+  }
+
   const docRef = await addDoc(vegetablesCol, {
     name: vegetable.name,
     unitType: vegetable.unitType,
@@ -90,7 +103,7 @@ export const addVegetableToDb = async (
     updatedAt: serverTimestamp(),
     dateKey: dateKey, // Add date tracking
   });
-  
+
   // Sync with date-based availableStock collection for real-time stock tracking
   try {
     const availableStockRef = doc(db, 'availableStock', dateKey, 'items', docRef.id);
@@ -110,19 +123,19 @@ export const addVegetableToDb = async (
   } catch (error) {
     console.error('❌ Failed to create available stock entry:', error);
   }
-  
+
   return docRef.id;
 };
 
 export const updateVegetableInDb = async (vegetable: Vegetable, date?: Date): Promise<void> => {
   const dateKey = getDateKey(date);
   const isDateBased = date !== undefined;
-  
+
   // Update vegetables collection (date-based if date provided, regular otherwise)
-  const ref = isDateBased 
+  const ref = isDateBased
     ? doc(db, 'vegetables', dateKey, 'items', vegetable.id)
     : doc(db, 'vegetables', vegetable.id);
-    
+
   await updateDoc(ref, {
     name: vegetable.name,
     unitType: vegetable.unitType,
@@ -133,23 +146,34 @@ export const updateVegetableInDb = async (vegetable: Vegetable, date?: Date): Pr
     updatedAt: serverTimestamp(),
     ...(isDateBased && { dateKey })
   });
-  
+
   // Sync with availableStock collection
   try {
     const availableStockRef = isDateBased
       ? doc(db, 'availableStock', dateKey, 'items', vegetable.id)
       : doc(db, 'availableStock', vegetable.id);
-      
-    await updateDoc(availableStockRef, {
-      productName: vegetable.name,
-      category: vegetable.category,
-      pricePerKg: vegetable.pricePerKg,
-      totalStockKg: vegetable.totalStockKg,
-      availableStockKg: vegetable.totalStockKg, // Reset available to total on update
-      unitType: vegetable.unitType || 'KG',
-      lastUpdated: serverTimestamp(),
-      updatedBy: 'system',
-      ...(isDateBased && { dateKey })
+
+    await runTransaction(db, async (transaction) => {
+      const stockDoc = await transaction.get(availableStockRef);
+      let newAvailable = vegetable.totalStockKg;
+
+      if (stockDoc.exists()) {
+        const currentData = stockDoc.data();
+        const diff = vegetable.totalStockKg - (currentData.totalStockKg || 0);
+        newAvailable = Math.max(0, (currentData.availableStockKg || 0) + diff);
+      }
+
+      transaction.set(availableStockRef, {
+        productName: vegetable.name,
+        category: vegetable.category,
+        pricePerKg: vegetable.pricePerKg,
+        totalStockKg: vegetable.totalStockKg,
+        availableStockKg: newAvailable,
+        unitType: vegetable.unitType || 'KG',
+        lastUpdated: serverTimestamp(),
+        updatedBy: 'system',
+        ...(isDateBased && { dateKey })
+      }, { merge: true });
     });
     const target = isDateBased ? `${vegetable.name} on ${dateKey}` : vegetable.name;
     console.log('✅ Available stock updated for:', target);
@@ -161,20 +185,20 @@ export const updateVegetableInDb = async (vegetable: Vegetable, date?: Date): Pr
 export const deleteVegetableFromDb = async (vegId: string, date?: Date): Promise<void> => {
   const dateKey = getDateKey(date);
   const isDateBased = date !== undefined;
-  
+
   // Delete from vegetables collection (date-based if date provided, regular otherwise)
-  const ref = isDateBased 
+  const ref = isDateBased
     ? doc(db, 'vegetables', dateKey, 'items', vegId)
     : doc(db, 'vegetables', vegId);
-    
+
   await deleteDoc(ref);
-  
+
   // Delete from availableStock collection
   try {
     const availableStockRef = isDateBased
       ? doc(db, 'availableStock', dateKey, 'items', vegId)
       : doc(db, 'availableStock', vegId);
-      
+
     await deleteDoc(availableStockRef);
     const target = isDateBased ? `vegetable on ${dateKey}` : 'vegetable';
     console.log('✅ Available stock deleted for', target, ':', vegId);
@@ -187,48 +211,48 @@ export const deleteVegetableFromDb = async (vegId: string, date?: Date): Promise
 export const reduceVegetableStock = async (vegetableId: string, quantityToReduce: number, date?: Date): Promise<void> => {
   const dateKey = getDateKey(date);
   const isDateBased = date !== undefined;
-  
+
   try {
     // Get current vegetable data
-    const ref = isDateBased 
+    const ref = isDateBased
       ? doc(db, 'vegetables', dateKey, 'items', vegetableId)
       : doc(db, 'vegetables', vegetableId);
-      
+
     const docSnap = await getDoc(ref);
     if (!docSnap.exists()) {
       console.error(`Vegetable not found: ${vegetableId}`);
       return;
     }
-    
+
     const currentVegetable = docSnap.data() as Vegetable;
-    const newStockKg = Math.max(0, currentVegetable.stockKg - quantityToReduce);
-    
+    const newStockKg = Math.max(0, round(currentVegetable.stockKg - quantityToReduce));
+
     console.log(`Reducing stock for ${currentVegetable.name}: ${currentVegetable.stockKg} - ${quantityToReduce} = ${newStockKg}`);
-    
+
     // Update vegetables collection
     await updateDoc(ref, {
-      stockKg: newStockKg,
+      stockKg: increment(-quantityToReduce),
       updatedAt: serverTimestamp()
     });
-    
+
     // Also update availableStock collection
     try {
       const availableStockRef = isDateBased
         ? doc(db, 'availableStock', dateKey, 'items', vegetableId)
         : doc(db, 'availableStock', vegetableId);
-        
+
       await updateDoc(availableStockRef, {
-        availableStockKg: newStockKg,
+        availableStockKg: increment(-quantityToReduce),
         lastUpdated: serverTimestamp(),
         updatedBy: 'order-system'
       });
-      
+
       const target = isDateBased ? `${currentVegetable.name} on ${dateKey}` : currentVegetable.name;
       console.log('✅ Stock reduced successfully for:', target, `(${quantityToReduce} units)`);
     } catch (error) {
       console.error('❌ Failed to update available stock during reduction:', error);
     }
-    
+
   } catch (error) {
     console.error('❌ Error reducing vegetable stock:', error);
     throw error;
@@ -241,13 +265,13 @@ export const batchReduceVegetableStock = async (
   date?: Date
 ): Promise<void> => {
   console.log(`Starting batch stock reduction for ${items.length} items`);
-  
+
   try {
     // Process all stock reductions
-    const promises = items.map(item => 
+    const promises = items.map(item =>
       reduceVegetableStock(item.vegetableId, item.quantityToReduce, date)
     );
-    
+
     await Promise.all(promises);
     console.log('✅ Batch stock reduction completed successfully');
   } catch (error) {
@@ -305,7 +329,7 @@ export const getOrderProcessingStatus = () => isProcessingOrder;
 
 export const placeOrder = async (orderData: OrderData): Promise<string> => {
   console.log('Order placement requested, adding to queue...');
-  
+
   // Add this order to the processing queue to prevent race conditions
   return new Promise((resolve, reject) => {
     orderProcessingQueue = orderProcessingQueue
@@ -313,10 +337,10 @@ export const placeOrder = async (orderData: OrderData): Promise<string> => {
         try {
           isProcessingOrder = true;
           console.log('Starting order processing...');
-          
+
           // Add a small delay to ensure sequential processing
           await new Promise(resolve => setTimeout(resolve, 100 + Math.random() * 200));
-          
+
           const result = await processOrderInternal(orderData);
           resolve(result);
         } catch (error) {
@@ -333,18 +357,18 @@ export const placeOrder = async (orderData: OrderData): Promise<string> => {
   });
 };
 
-// Internal order processing function
+// Internal order processing function - ATOMIC TRANSACTION to prevent stock overselling
 const processOrderInternal = async (orderData: OrderData): Promise<string> => {
-  console.log('Processing order internally with data:', orderData);
-  
+  console.log('🔒 Processing order with atomic transaction:', orderData);
+
   const today = new Date();
   const dateKey = getDateKey(today);
   const isLegacyDate = dateKey === '2025-09-24' || dateKey === '2025-09-25';
-  
+
   // Use legacy collection for Sept 24-25, new subcollection format for others
   let ordersCollectionRef: any;
   let collectionName: string;
-  
+
   if (isLegacyDate) {
     ordersCollectionRef = collection(db, 'orders');
     collectionName = 'orders (legacy)';
@@ -354,95 +378,138 @@ const processOrderInternal = async (orderData: OrderData): Promise<string> => {
     collectionName = `orders/${dateKey}/items`;
     console.log('Using date-based subcollection:', collectionName);
   }
-  
+
   console.log('Collection name:', collectionName);
-  
-  // Get current bill counter for today
+
+  // Get current bill counter info
   const day = today.getDate().toString().padStart(2, '0');
   const month = (today.getMonth() + 1).toString().padStart(2, '0');
   const year = today.getFullYear();
   const counterKey = `${year}${month}${day}`;
   const counterRef = doc(db, 'bill_counters', counterKey);
-  
-  console.log('Getting bill counter...');
-  
-  // Get and increment counter with simple approach (since we're processing sequentially)
-  let counter = 1;
-  try {
-    const counterDoc = await getDoc(counterRef);
-    if (counterDoc.exists()) {
-      counter = (counterDoc.data().counter || 0) + 1;
-    }
-    console.log('Generated counter:', counter);
-  } catch (counterError) {
-    console.error('Error getting counter, using default:', counterError);
-  }
-  
-  const billNumber = `ES${day}${month}${year}-${counter.toString().padStart(3, '0')}`;
-  console.log('Generated bill number:', billNumber);
-  
-  // Check if this bill number already exists (extra safety check)
-  const orderDocRef = doc(ordersCollectionRef, billNumber);
-  
-  try {
-    const existingOrder = await getDoc(orderDocRef);
-    if (existingOrder.exists()) {
-      console.error('Bill number already exists, this should not happen with sequential processing');
-      throw new Error(`Order ${billNumber} already exists. Please try again.`);
-    }
-  } catch (checkError) {
-    console.error('Error checking existing order:', checkError);
-    throw new Error('Failed to verify order uniqueness. Please try again.');
-  }
-  
-  // Prepare the new order with sanitized data (remove undefined values)
+
+  // Prepare sanitized order data
   const sanitizedOrderData = Object.fromEntries(
     Object.entries(orderData).filter(([key, value]) => value !== undefined)
   );
-  
-  const newOrder = {
-    ...sanitizedOrderData,
-    orderId: billNumber,
-    billNumber: billNumber,
-    createdAt: serverTimestamp(),
-    updatedAt: serverTimestamp(),
-    dateKey: dateKey, // Add date tracking for new format
-    // Ensure required fields are never undefined
-    customerName: orderData.customerName || 'Unknown Customer',
-    customerId: orderData.customerId || 'unknown',
-    userId: orderData.userId || 'unknown'
-  };
-  
-  console.log('Creating order and updating counter...');
-  
-  // Use batch to create order and update counter together
-  const batch = writeBatch(db);
-  
-  try {
-    // Add order document
-    batch.set(orderDocRef, newOrder);
-    
-    // Update counter
-    batch.set(counterRef, { 
-      counter, 
-      lastUpdated: serverTimestamp() 
-    }, { merge: true });
-    
-    console.log('Committing order batch...');
-    await batch.commit();
-    console.log(`✅ Order created successfully: ${billNumber}`);
-    
-  } catch (batchError) {
-    console.error('Error committing order batch:', batchError);
-    throw new Error(`Failed to create order: ${batchError}`);
+
+  // Round monetary values for safety
+  if (sanitizedOrderData.totalAmount) {
+    sanitizedOrderData.totalAmount = round(sanitizedOrderData.totalAmount as number);
   }
-  
-  // Handle stock updates separately and asynchronously (don't block order completion)
-  updateStockAsync(orderData, billNumber, today).catch(error => {
-    console.error('Stock update failed (order still successful):', error);
+  if (sanitizedOrderData.cartSubtotal) {
+    sanitizedOrderData.cartSubtotal = round(sanitizedOrderData.cartSubtotal as number);
+  }
+  if (sanitizedOrderData.items && Array.isArray(sanitizedOrderData.items)) {
+    sanitizedOrderData.items = (sanitizedOrderData.items as any[]).map(item => ({
+      ...item,
+      quantity: round(item.quantity),
+      subtotal: round(item.subtotal)
+    }));
+  }
+
+  // Execute ATOMIC TRANSACTION: stock check + reservation + order creation
+  const billNumber = await runTransaction(db, async (transaction) => {
+    console.log('🔍 Transaction started - checking stock availability...');
+
+    // Step 1: Get and increment bill counter
+    const counterDoc = await transaction.get(counterRef);
+    const counter = counterDoc.exists() ? (counterDoc.data().counter || 0) + 1 : 1;
+    const generatedBillNumber = `ES${day}${month}${year}-${counter.toString().padStart(3, '0')}`;
+    
+    console.log('Generated bill number:', generatedBillNumber);
+
+    // Step 2: Verify stock availability for ALL items (FIFO - first to check gets priority)
+    const stockErrors: string[] = [];
+    const stockRefs: { vegRef: any; availStockRef: any; itemId: string; quantity: number; itemName: string }[] = [];
+
+    for (const item of orderData.items) {
+      const vegRef = doc(db, 'vegetables', dateKey, 'items', item.id);
+      const availStockRef = doc(db, 'availableStock', dateKey, 'items', item.id);
+      
+      const vegDoc = await transaction.get(vegRef);
+      const availStockDoc = await transaction.get(availStockRef);
+
+      if (!vegDoc.exists()) {
+        stockErrors.push(`Vegetable "${item.name}" not found in database`);
+        continue;
+      }
+
+      if (!availStockDoc.exists()) {
+        stockErrors.push(`Stock information not available for "${item.name}"`);
+        continue;
+      }
+
+      const currentStock = availStockDoc.data().availableStockKg || 0;
+      
+      if (currentStock < item.quantity) {
+        stockErrors.push(
+          `Insufficient stock for "${item.name}": requested ${item.quantity}kg, only ${currentStock}kg available`
+        );
+      } else {
+        // Store refs for later update (only if stock is sufficient)
+        stockRefs.push({
+          vegRef,
+          availStockRef,
+          itemId: item.id,
+          quantity: item.quantity,
+          itemName: item.name
+        });
+      }
+    }
+
+    // If ANY item has insufficient stock, abort entire transaction
+    if (stockErrors.length > 0) {
+      const errorMsg = `Stock validation failed:\n${stockErrors.join('\n')}`;
+      console.error('❌ Transaction aborted - stock insufficient:', errorMsg);
+      throw new Error(errorMsg);
+    }
+
+    console.log('✅ All items have sufficient stock - proceeding with reservation...');
+
+    // Step 3: Reserve stock by decrementing (atomic operation within transaction)
+    for (const { vegRef, availStockRef, itemId, quantity, itemName } of stockRefs) {
+      console.log(`📦 Reserving ${quantity}kg of ${itemName} (ID: ${itemId})`);
+      
+      transaction.update(vegRef, {
+        stockKg: increment(-quantity),
+        updatedAt: serverTimestamp()
+      });
+
+      transaction.update(availStockRef, {
+        availableStockKg: increment(-quantity),
+        lastUpdated: serverTimestamp(),
+        updatedBy: orderData.userId
+      });
+    }
+
+    // Step 4: Create order document
+    const orderDocRef = doc(ordersCollectionRef, generatedBillNumber);
+    const newOrder = {
+      ...sanitizedOrderData,
+      orderId: generatedBillNumber,
+      billNumber: generatedBillNumber,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+      dateKey: dateKey,
+      customerName: orderData.customerName || 'Unknown Customer',
+      customerId: orderData.customerId || 'unknown',
+      userId: orderData.userId || 'unknown'
+    };
+
+    transaction.set(orderDocRef, newOrder);
+
+    // Step 5: Update counter
+    transaction.set(counterRef, {
+      counter,
+      lastUpdated: serverTimestamp()
+    }, { merge: true });
+
+    console.log(`✅ Transaction prepared - all operations will commit atomically`);
+    return generatedBillNumber;
   });
-  
-  console.log(`✅ Order placed successfully with bill number: ${billNumber} in collection: ${collectionName}`);
+
+  console.log(`✅ ATOMIC TRANSACTION SUCCESSFUL - Order ${billNumber} created with stock reserved`);
   return billNumber;
 };
 
@@ -452,46 +519,42 @@ const updateStockAsync = async (orderData: OrderData, billNumber: string, orderD
     console.log('Updating stock asynchronously for order:', billNumber);
     const stockBatch = writeBatch(db);
     let stockUpdateCount = 0;
-    
+
     // Always use date-based collections since that's how vegetables are stored now
     const targetDate = orderDate || new Date();
     const dateKey = getDateKey(targetDate);
-    
+
     for (const item of orderData.items) {
       console.log(`🔄 Processing stock for item: ${item.id} (${item.name}), quantity: ${item.quantity} on ${dateKey}`);
-      
+
       try {
         // Update vegetables collection (always date-based now)
         const vegRef = doc(db, 'vegetables', dateKey, 'items', item.id);
         console.log(`📍 Looking for vegetable at path: vegetables/${dateKey}/items/${item.id}`);
         const vegDoc = await getDoc(vegRef);
-        
+
         if (vegDoc.exists()) {
-          const currentStock = vegDoc.data().stockKg || 0;
-          const newStock = Math.max(0, currentStock - item.quantity);
-          console.log(`✅ Updating vegetable ${item.id} stock: ${currentStock} -> ${newStock} on ${dateKey}`);
-          
+          console.log(`✅ Updating vegetable ${item.id} stock using increment(-${item.quantity}) on ${dateKey}`);
+
           stockBatch.update(vegRef, {
-            stockKg: newStock,
+            stockKg: increment(-item.quantity),
             updatedAt: serverTimestamp()
           });
           stockUpdateCount++;
         } else {
           console.warn(`❌ Vegetable ${item.id} not found in date ${dateKey} - cannot update stock`);
         }
-        
+
         // Update available stock (always date-based now)
         const availableStockRef = doc(db, 'availableStock', dateKey, 'items', item.id);
         console.log(`📍 Looking for available stock at path: availableStock/${dateKey}/items/${item.id}`);
         const availableStockDoc = await getDoc(availableStockRef);
-        
+
         if (availableStockDoc.exists()) {
-          const currentAvailableStock = availableStockDoc.data().availableStockKg || 0;
-          const newAvailableStock = Math.max(0, currentAvailableStock - item.quantity);
-          console.log(`✅ Updating available stock ${item.id}: ${currentAvailableStock} -> ${newAvailableStock} on ${dateKey}`);
-          
-          stockBatch.update(availableStockRef, { 
-            availableStockKg: newAvailableStock,
+          console.log(`✅ Updating available stock ${item.id} using increment(-${item.quantity}) on ${dateKey}`);
+
+          stockBatch.update(availableStockRef, {
+            availableStockKg: increment(-item.quantity),
             lastUpdated: serverTimestamp(),
             updatedBy: orderData.userId
           });
@@ -499,19 +562,19 @@ const updateStockAsync = async (orderData: OrderData, billNumber: string, orderD
         } else {
           console.warn(`❌ Available stock not found for vegetable ${item.id} on ${dateKey}`);
         }
-        
+
       } catch (itemError) {
         console.error(`Error processing stock for item ${item.id}:`, itemError);
       }
     }
-    
+
     // Commit stock updates if we have any
     if (stockUpdateCount > 0) {
       console.log(`Committing ${stockUpdateCount} stock updates for order ${billNumber}...`);
       await stockBatch.commit();
       console.log(`✅ Stock updates completed for order ${billNumber}`);
     }
-    
+
   } catch (stockError) {
     console.error(`Stock update failed for order ${billNumber}:`, stockError);
     // This doesn't affect the order which was already created successfully
@@ -525,25 +588,25 @@ export const subscribeToTodayOrders = (
 ) => {
   const today = new Date();
   const todayStr = today.toISOString().split('T')[0]; // YYYY-MM-DD format
-  
+
   // Check if today is September 24th or 25th, 2025 - use legacy collection only
   const isLegacyDate = todayStr === '2025-09-24' || todayStr === '2025-09-25';
-  
+
   if (isLegacyDate) {
     // Subscribe only to legacy orders collection for Sept 24-25
     const legacyOrdersCol = collection(db, 'orders');
     const legacyQuery = query(
-      legacyOrdersCol, 
+      legacyOrdersCol,
       where('createdAt', '>=', new Date(todayStr + 'T00:00:00')),
       where('createdAt', '<', new Date(todayStr + 'T23:59:59')),
       orderBy('createdAt', 'desc')
     );
-    
+
     return onSnapshot(legacyQuery, (snapshot) => {
       const bills: Bill[] = snapshot.docs.map((docSnapshot) => {
         const orderData = docSnapshot.data();
         const createdAt = orderData.createdAt?.toDate ? orderData.createdAt.toDate() : (orderData.createdAt || new Date());
-        
+
         console.log(`🔍 Processing legacy order (TODAY) ${docSnapshot.id}:`, {
           billNumber: orderData.billNumber,
           orderId: orderData.orderId,
@@ -552,29 +615,29 @@ export const subscribeToTodayOrders = (
           itemsSample: orderData.items?.[0] || null,
           allFields: Object.keys(orderData || {}).slice(0, 10)
         });
-        
+
         const items: BillItem[] = Array.isArray(orderData.items)
           ? orderData.items.map((it: any, index: number) => {
-              console.log(`  Today Item ${index + 1}:`, {
-                originalItem: it,
-                id: it.id || it.vegetableId,
-                quantity: it.quantity || it.quantityKg,
-                subtotal: it.subtotal
-              });
-              
-              // Try multiple possible field combinations for legacy compatibility
-              const vegetableId = it.id || it.vegetableId || it.product_id || it.productId || `unknown-${index}`;
-              const quantityKg = Number(it.quantity || it.quantityKg || it.qty || it.weight || it.amount) || 0;
-              const subtotal = Number(it.subtotal || it.total || it.price || it.cost) || 0;
-              
-              return {
-                vegetableId,
-                quantityKg,
-                subtotal,
-              };
-            })
+            console.log(`  Today Item ${index + 1}:`, {
+              originalItem: it,
+              id: it.id || it.vegetableId,
+              quantity: it.quantity || it.quantityKg,
+              subtotal: it.subtotal
+            });
+
+            // Try multiple possible field combinations for legacy compatibility
+            const vegetableId = it.id || it.vegetableId || it.product_id || it.productId || `unknown-${index}`;
+            const quantityKg = Number(it.quantity || it.quantityKg || it.qty || it.weight || it.amount) || 0;
+            const subtotal = Number(it.subtotal || it.total || it.price || it.cost) || 0;
+
+            return {
+              vegetableId,
+              quantityKg,
+              subtotal,
+            };
+          })
           : [];
-        
+
         console.log(`📦 Legacy order (TODAY) ${docSnapshot.id} processed with ${items.length} items`);
         if (items.length === 0 && orderData.items) {
           console.warn(`⚠️ No items processed for order ${docSnapshot.id}, original items:`, orderData.items);
@@ -598,7 +661,7 @@ export const subscribeToTodayOrders = (
       onChange([]);
     });
   }
-  
+
   // For all other dates, use new date-based subcollection format
   const ordersCollectionRef = getOrdersCol(today);
   const q = query(ordersCollectionRef, orderBy('createdAt', 'desc'));
@@ -610,16 +673,16 @@ export const subscribeToTodayOrders = (
       const createdAt = orderData.createdAt?.toDate ? orderData.createdAt.toDate() : (orderData.createdAt || new Date());
       const items: BillItem[] = Array.isArray(orderData.items)
         ? orderData.items.map((it: any) => {
-            const billItem: any = {
-              vegetableId: it.id,
-              quantityKg: Number(it.quantity) || 0,
-              subtotal: Number(it.subtotal) || 0,
-            };
-            // Preserve historical data for PDF generation
-            if (it.name) billItem.name = it.name;
-            if (it.pricePerKg) billItem.pricePerKg = Number(it.pricePerKg);
-            return billItem;
-          })
+          const billItem: any = {
+            vegetableId: it.id,
+            quantityKg: Number(it.quantity) || 0,
+            subtotal: Number(it.subtotal) || 0,
+          };
+          // Preserve historical data for PDF generation
+          if (it.name) billItem.name = it.name;
+          if (it.pricePerKg) billItem.pricePerKg = Number(it.pricePerKg);
+          return billItem;
+        })
         : [];
       const bill: Bill = {
         id: String(orderData.billNumber || orderData.orderId || docSnapshot.id),
@@ -648,25 +711,25 @@ export const subscribeToDateOrders = (
   onChange: (bills: Bill[]) => void
 ) => {
   const dateStr = date.toISOString().split('T')[0]; // YYYY-MM-DD format
-  
+
   // Check if date is September 24th or 25th, 2025 - use legacy collection only
   const isLegacyDate = dateStr === '2025-09-24' || dateStr === '2025-09-25';
-  
+
   if (isLegacyDate) {
     // Subscribe only to legacy orders collection for Sept 24-25
     const legacyOrdersCol = collection(db, 'orders');
     const legacyQuery = query(
-      legacyOrdersCol, 
+      legacyOrdersCol,
       where('createdAt', '>=', new Date(dateStr + 'T00:00:00')),
       where('createdAt', '<', new Date(dateStr + 'T23:59:59')),
       orderBy('createdAt', 'desc')
     );
-    
+
     return onSnapshot(legacyQuery, (snapshot) => {
       const bills: Bill[] = snapshot.docs.map((docSnapshot) => {
         const orderData = docSnapshot.data();
         const createdAt = orderData.createdAt?.toDate ? orderData.createdAt.toDate() : (orderData.createdAt || new Date());
-        
+
         console.log(`🔍 Processing legacy order (DATE) ${docSnapshot.id}:`, {
           billNumber: orderData.billNumber,
           orderId: orderData.orderId,
@@ -675,29 +738,29 @@ export const subscribeToDateOrders = (
           itemsSample: orderData.items?.[0] || null,
           allFields: Object.keys(orderData || {}).slice(0, 10)
         });
-        
+
         const items: BillItem[] = Array.isArray(orderData.items)
           ? orderData.items.map((it: any, index: number) => {
-              console.log(`  Date Item ${index + 1}:`, {
-                originalItem: it,
-                id: it.id || it.vegetableId,
-                quantity: it.quantity || it.quantityKg,
-                subtotal: it.subtotal
-              });
-              
-              // Try multiple possible field combinations for legacy compatibility
-              const vegetableId = it.id || it.vegetableId || it.product_id || it.productId || `unknown-${index}`;
-              const quantityKg = Number(it.quantity || it.quantityKg || it.qty || it.weight || it.amount) || 0;
-              const subtotal = Number(it.subtotal || it.total || it.price || it.cost) || 0;
-              
-              return {
-                vegetableId,
-                quantityKg,
-                subtotal,
-              };
-            })
+            console.log(`  Date Item ${index + 1}:`, {
+              originalItem: it,
+              id: it.id || it.vegetableId,
+              quantity: it.quantity || it.quantityKg,
+              subtotal: it.subtotal
+            });
+
+            // Try multiple possible field combinations for legacy compatibility
+            const vegetableId = it.id || it.vegetableId || it.product_id || it.productId || `unknown-${index}`;
+            const quantityKg = Number(it.quantity || it.quantityKg || it.qty || it.weight || it.amount) || 0;
+            const subtotal = Number(it.subtotal || it.total || it.price || it.cost) || 0;
+
+            return {
+              vegetableId,
+              quantityKg,
+              subtotal,
+            };
+          })
           : [];
-        
+
         console.log(`📦 Legacy order (DATE) ${docSnapshot.id} processed with ${items.length} items`);
         if (items.length === 0 && orderData.items) {
           console.warn(`⚠️ No items processed for order ${docSnapshot.id}, original items:`, orderData.items);
@@ -721,7 +784,7 @@ export const subscribeToDateOrders = (
       onChange([]);
     });
   }
-  
+
   // For all other dates, use new date-based subcollection format
   const ordersCollectionRef = getOrdersCol(date);
   const q = query(ordersCollectionRef, orderBy('createdAt', 'desc'));
@@ -733,16 +796,16 @@ export const subscribeToDateOrders = (
       const createdAt = orderData.createdAt?.toDate ? orderData.createdAt.toDate() : (orderData.createdAt || new Date());
       const items: BillItem[] = Array.isArray(orderData.items)
         ? orderData.items.map((it: any) => {
-            const billItem: any = {
-              vegetableId: it.id,
-              quantityKg: Number(it.quantity) || 0,
-              subtotal: Number(it.subtotal) || 0,
-            };
-            // Preserve historical data for PDF generation
-            if (it.name) billItem.name = it.name;
-            if (it.pricePerKg) billItem.pricePerKg = Number(it.pricePerKg);
-            return billItem;
-          })
+          const billItem: any = {
+            vegetableId: it.id,
+            quantityKg: Number(it.quantity) || 0,
+            subtotal: Number(it.subtotal) || 0,
+          };
+          // Preserve historical data for PDF generation
+          if (it.name) billItem.name = it.name;
+          if (it.pricePerKg) billItem.pricePerKg = Number(it.pricePerKg);
+          return billItem;
+        })
         : [];
       const bill: Bill = {
         id: String(orderData.billNumber || orderData.orderId || docSnapshot.id),
@@ -791,24 +854,24 @@ export async function findOrderByOrderId(orderId: string): Promise<{ docId: stri
   } catch (error) {
     console.log(`Order ${orderId} not found in legacy orders collection`);
   }
-  
+
   // Then try searching in date-based collections from the last 30 days (excluding Sept 24-25)
   const searchDays = 30;
   const today = new Date();
-  
+
   for (let i = 0; i < searchDays; i++) {
     const searchDate = new Date(today);
     searchDate.setDate(today.getDate() - i);
     const searchDateStr = searchDate.toISOString().split('T')[0];
-    
+
     // Skip Sept 24-25 as they are in legacy collection
     if (searchDateStr === '2025-09-24' || searchDateStr === '2025-09-25') {
       continue;
     }
-    
+
     const collectionName = getOrdersCollectionName(searchDate);
     const orderDocRef = doc(db, collectionName, orderId);
-    
+
     try {
       const docSnap = await getDoc(orderDocRef);
       if (docSnap.exists()) {
@@ -823,7 +886,7 @@ export async function findOrderByOrderId(orderId: string): Promise<{ docId: stri
       console.log(`Document ${orderId} in ${collectionName} not found, continuing search...`);
     }
   }
-  
+
   return null;
 }
 
@@ -832,7 +895,7 @@ export async function findOrderByOrderId(orderId: string): Promise<{ docId: stri
  * Now works with individual order documents within date-based collections and legacy orders
  */
 export async function updateOrderStatus(
-  orderId: string, 
+  orderId: string,
   status: 'pending' | 'packed' | 'delivered' | 'inprogress' | 'bill_sent',
   employeeId: string,
   targetDateOverride?: Date | null // Optional date override for UI date selection
@@ -840,9 +903,9 @@ export async function updateOrderStatus(
   try {
     const dateOverrideInfo = targetDateOverride ? ` (using selected date: ${getDateKey(targetDateOverride)})` : '';
     console.log(`Updating order status: ${orderId} to ${status} by ${employeeId}${dateOverrideInfo}`);
-    
+
     let targetDate: Date | null = targetDateOverride || null;
-    
+
     // If no date override provided, extract date from orderId (ES28092025-001)
     if (!targetDate && orderId.startsWith('ES')) {
       const dateMatch = orderId.match(/ES(\d{2})(\d{2})(\d{4})-\d{3}/);
@@ -851,18 +914,18 @@ export async function updateOrderStatus(
         targetDate = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
       }
     }
-    
+
     // If no date extracted, use current date as fallback
     if (!targetDate) {
       targetDate = new Date();
     }
-    
+
     const dateKey = getDateKey(targetDate);
     const isLegacyDate = dateKey === '2025-09-24' || dateKey === '2025-09-25';
-    
+
     let orderDocRef: any;
     let collectionInfo: string;
-    
+
     if (isLegacyDate) {
       // Update in legacy orders collection
       orderDocRef = doc(db, 'orders', orderId);
@@ -872,29 +935,29 @@ export async function updateOrderStatus(
       orderDocRef = doc(db, 'orders', dateKey, 'items', orderId);
       collectionInfo = `orders/${dateKey}/items`;
     }
-    
+
     console.log(`Looking for order in: ${collectionInfo}`);
-    
+
     // Check if order exists
     const orderDoc = await getDoc(orderDocRef);
     if (!orderDoc.exists()) {
       console.warn(`❌ Order not found: ${orderId} in ${collectionInfo}`);
-      
+
       // For debugging: try to find the order in other places
       if (isLegacyDate) {
         console.log(`🔍 Searching for legacy order ${orderId} across all possible locations...`);
-        
+
         // Try searching by billNumber field instead of document ID
         console.log(`🔍 Searching legacy orders by billNumber field...`);
         const legacyOrdersCol = collection(db, 'orders');
         const billNumberQuery = query(legacyOrdersCol, where('billNumber', '==', orderId));
         const billNumberSnapshot = await getDocs(billNumberQuery);
-        
+
         if (!billNumberSnapshot.empty) {
           console.log(`✅ Found order by billNumber: ${orderId}`);
           const foundDoc = billNumberSnapshot.docs[0];
           console.log(`Document ID: ${foundDoc.id}, billNumber: ${(foundDoc.data() as any)?.billNumber}`);
-          
+
           // Update the orderDocRef to use the correct document ID
           orderDocRef = doc(db, 'orders', foundDoc.id);
           console.log(`Updated orderDocRef to use document ID: ${foundDoc.id}`);
@@ -903,12 +966,12 @@ export async function updateOrderStatus(
           console.log(`🔍 Searching legacy orders by orderId field...`);
           const orderIdQuery = query(legacyOrdersCol, where('orderId', '==', orderId));
           const orderIdSnapshot = await getDocs(orderIdQuery);
-          
+
           if (!orderIdSnapshot.empty) {
             console.log(`✅ Found order by orderId: ${orderId}`);
             const foundDoc = orderIdSnapshot.docs[0];
             console.log(`Document ID: ${foundDoc.id}, orderId: ${(foundDoc.data() as any)?.orderId}`);
-            
+
             // Update the orderDocRef to use the correct document ID
             orderDocRef = doc(db, 'orders', foundDoc.id);
             console.log(`Updated orderDocRef to use document ID: ${foundDoc.id}`);
@@ -917,7 +980,7 @@ export async function updateOrderStatus(
             return false;
           }
         }
-        
+
         // Try to get the document again with the updated reference
         const retryOrderDoc = await getDoc(orderDocRef);
         if (!retryOrderDoc.exists()) {
@@ -949,7 +1012,7 @@ export async function updateOrderStatus(
       } catch (updateError) {
         console.error(`❌ Failed to update legacy order ${orderId}:`, updateError);
         console.log(`Trying alternative update structure for legacy order...`);
-        
+
         // Try alternative update - maybe legacy orders have different field names
         try {
           await updateDoc(orderDocRef, {
@@ -982,10 +1045,10 @@ export async function updateOrderStatus(
         throw updateError;
       }
     }
-    
+
     console.log(`✅ Updated order ${orderId} status to ${status} in ${collectionInfo}`);
     return true;
-    
+
   } catch (error) {
     console.error(`❌ Failed to update order status for ${orderId}:`, error);
     return false;
@@ -999,7 +1062,7 @@ export const debugLegacyOrders = async (): Promise<void> => {
     const legacyOrdersCol = collection(db, 'orders');
     const legacyQuery = query(legacyOrdersCol, limit(5)); // Get first 5 orders
     const snapshot = await getDocs(legacyQuery);
-    
+
     if (snapshot.empty) {
       console.log('❌ No documents found in legacy orders collection');
     } else {
@@ -1028,7 +1091,7 @@ export const debugLegacyOrders = async (): Promise<void> => {
 export const getVegetableById = async (vegetableId: string): Promise<Vegetable | null> => {
   try {
     console.log(`🔍 Searching for vegetable: ${vegetableId}`);
-    
+
     // First, try legacy vegetables collection (for Sept 24-25 and other legacy data)
     try {
       const legacyVegRef = doc(db, 'vegetables', vegetableId);
@@ -1049,20 +1112,20 @@ export const getVegetableById = async (vegetableId: string): Promise<Vegetable |
     } catch (error) {
       console.log(`Vegetable ${vegetableId} not found in legacy collection`);
     }
-    
+
     // Search in date-based collections (last 60 days)
     const searchDays = 60;
     const today = new Date();
-    
+
     for (let i = 0; i < searchDays; i++) {
       const searchDate = new Date(today);
       searchDate.setDate(today.getDate() - i);
       const dateKey = getDateKey(searchDate);
-      
+
       try {
         const dateBasedVegRef = doc(db, 'vegetables', dateKey, 'items', vegetableId);
         const dateBasedVegDoc = await getDoc(dateBasedVegRef);
-        
+
         if (dateBasedVegDoc.exists()) {
           const data = dateBasedVegDoc.data();
           console.log(`✅ Found vegetable ${vegetableId} in date collection: ${dateKey}`);
@@ -1081,7 +1144,7 @@ export const getVegetableById = async (vegetableId: string): Promise<Vegetable |
         continue;
       }
     }
-    
+
     console.log(`❌ Vegetable ${vegetableId} not found in any collection`);
     return null;
   } catch (error) {
@@ -1097,12 +1160,12 @@ export const subscribeToAvailableStock = (
 ) => {
   // Use date-based collection for new items, fallback to regular collection for existing data
   const isDateBased = date !== undefined;
-  const availableStockCol = isDateBased 
+  const availableStockCol = isDateBased
     ? getAvailableStockCol(date)
     : collection(db, 'availableStock');
-  
+
   const q = query(availableStockCol, orderBy('lastUpdated', 'desc'));
-  
+
   return onSnapshot(q, (snapshot) => {
     const availableStockMap = new Map<string, number>();
     snapshot.docs.forEach((doc) => {
@@ -1124,14 +1187,14 @@ export const updateMultipleOrderStatuses = async (
 ): Promise<void> => {
   try {
     console.log(`Batch updating ${updates.length} order statuses...`);
-    
+
     const batch = writeBatch(db);
-    
+
     for (const update of updates) {
       const { billNumber, status, employeeId } = update;
-      
+
       let targetDate: Date | null = targetDateOverride || null;
-      
+
       // If no date override provided, extract date from billNumber
       if (!targetDate && billNumber.startsWith('ES')) {
         const dateMatch = billNumber.match(/ES(\d{2})(\d{2})(\d{4})-\d{3}/);
@@ -1141,15 +1204,15 @@ export const updateMultipleOrderStatuses = async (
         }
       }
       if (!targetDate) targetDate = new Date();
-      
+
       const dateKey = getDateKey(targetDate);
       const isLegacyDate = dateKey === '2025-09-24' || dateKey === '2025-09-25';
-      
+
       // Get order document reference
       const orderDocRef = isLegacyDate
         ? doc(db, 'orders', billNumber)
         : doc(db, 'orders', dateKey, 'items', billNumber);
-      
+
       // Add to batch (different structure for legacy vs new orders)
       if (isLegacyDate) {
         // Legacy orders: simpler update structure
@@ -1174,11 +1237,11 @@ export const updateMultipleOrderStatuses = async (
         });
       }
     }
-    
+
     // Commit batch update
     await batch.commit();
     console.log(`✅ Successfully updated ${updates.length} order statuses`);
-    
+
   } catch (error) {
     console.error(`❌ Failed to batch update order statuses:`, error);
     throw error;
@@ -1194,21 +1257,21 @@ export const fetchBillsForDateRange = async (
   endDate: Date
 ): Promise<Bill[]> => {
   const allBills: Bill[] = [];
-  
+
   // Generate all dates in the range
   const dates: Date[] = [];
   const currentDate = new Date(startDate);
-  
+
   while (currentDate <= endDate) {
     dates.push(new Date(currentDate));
     currentDate.setDate(currentDate.getDate() + 1);
   }
-  
+
   // Fetch bills for each date
   for (const date of dates) {
     const dateStr = date.toISOString().split('T')[0];
     const isLegacyDate = dateStr === '2025-09-24' || dateStr === '2025-09-25';
-    
+
     try {
       if (isLegacyDate) {
         // Fetch from legacy collection for Sept 24-25
@@ -1219,19 +1282,19 @@ export const fetchBillsForDateRange = async (
           where('createdAt', '<', new Date(dateStr + 'T23:59:59')),
           orderBy('createdAt', 'desc')
         );
-        
+
         const snapshot = await getDocs(legacyQuery);
         const dayBills = snapshot.docs.map((docSnapshot) => {
           const orderData = docSnapshot.data();
           const createdAt = orderData.createdAt?.toDate ? orderData.createdAt.toDate() : (orderData.createdAt || new Date());
           const items = Array.isArray(orderData.items)
             ? orderData.items.map((it: any) => ({
-                vegetableId: it.id,
-                quantityKg: Number(it.quantity) || 0,
-                subtotal: Number(it.subtotal) || 0,
-              }))
+              vegetableId: it.id,
+              quantityKg: Number(it.quantity) || 0,
+              subtotal: Number(it.subtotal) || 0,
+            }))
             : [];
-          
+
           const bill: Bill = {
             id: String(orderData.billNumber || orderData.orderId || docSnapshot.id),
             date: new Date(createdAt).toISOString(),
@@ -1245,25 +1308,25 @@ export const fetchBillsForDateRange = async (
           (bill as any).customerId = String(orderData.userId || orderData.employee_id || '');
           return bill;
         });
-        
+
         allBills.push(...dayBills);
       } else {
         // Fetch from date-based collection
         const ordersCollectionRef = getOrdersCol(date);
         const q = query(ordersCollectionRef, orderBy('createdAt', 'desc'));
-        
+
         const snapshot = await getDocs(q);
         const dayBills = snapshot.docs.map((docSnapshot) => {
           const orderData = docSnapshot.data();
           const createdAt = orderData.createdAt?.toDate ? orderData.createdAt.toDate() : (orderData.createdAt || new Date());
           const items = Array.isArray(orderData.items)
             ? orderData.items.map((it: any) => ({
-                vegetableId: it.id,
-                quantityKg: Number(it.quantity) || 0,
-                subtotal: Number(it.subtotal) || 0,
-              }))
+              vegetableId: it.id,
+              quantityKg: Number(it.quantity) || 0,
+              subtotal: Number(it.subtotal) || 0,
+            }))
             : [];
-          
+
           const bill: Bill = {
             id: String(orderData.billNumber || orderData.orderId || docSnapshot.id),
             date: new Date(createdAt).toISOString(),
@@ -1277,7 +1340,7 @@ export const fetchBillsForDateRange = async (
           (bill as any).customerId = String(orderData.userId || orderData.employee_id || '');
           return bill;
         });
-        
+
         allBills.push(...dayBills);
       }
     } catch (error) {
@@ -1285,7 +1348,7 @@ export const fetchBillsForDateRange = async (
       // Continue with other dates even if one fails
     }
   }
-  
+
   // Sort all bills by date descending
   return allBills.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 };
@@ -1298,10 +1361,10 @@ export const fetchVegetablesForDate = async (date?: Date): Promise<Vegetable[]> 
   try {
     const isDateBased = date !== undefined;
     const targetCol = isDateBased ? getVegetablesCol(date) : vegetablesCol;
-    
+
     const q = query(targetCol, orderBy('name'));
     const snapshot = await getDocs(q);
-    
+
     const items: Vegetable[] = snapshot.docs.map((d) => {
       const data = d.data() as Omit<Vegetable, 'id'>;
       return {
@@ -1314,7 +1377,7 @@ export const fetchVegetablesForDate = async (date?: Date): Promise<Vegetable[]> 
         category: data.category,
       };
     });
-    
+
     console.log(`Fetched ${items.length} vegetables for date ${date ? getDateKey(date) : 'current'}`);
     return items;
   } catch (error) {
@@ -1328,15 +1391,15 @@ export const fetchVegetablesForDate = async (date?: Date): Promise<Vegetable[]> 
  * Handles both legacy and date-based collections
  */
 export const updateBill = async (
-  billId: string, 
+  billId: string,
   updates: Partial<Bill>,
   targetDate?: Date
 ): Promise<void> => {
   try {
     console.log(`🔄 Updating bill ${billId} with updates:`, updates);
-    
+
     let targetBillDate: Date;
-    
+
     // If target date provided, use it; otherwise extract from billId or use current date
     if (targetDate) {
       targetBillDate = targetDate;
@@ -1352,13 +1415,13 @@ export const updateBill = async (
     } else {
       targetBillDate = new Date();
     }
-    
+
     const dateKey = getDateKey(targetBillDate);
     const isLegacyDate = dateKey === '2025-09-24' || dateKey === '2025-09-25';
-    
+
     let billDocRef: any;
     let collectionInfo: string;
-    
+
     if (isLegacyDate) {
       // Update in legacy orders collection
       billDocRef = doc(db, 'orders', billId);
@@ -1368,21 +1431,21 @@ export const updateBill = async (
       billDocRef = doc(db, 'orders', dateKey, 'items', billId);
       collectionInfo = `orders/${dateKey}/items`;
     }
-    
+
     console.log(`📍 Updating bill in: ${collectionInfo}`);
-    
+
     // Check if bill exists
     const billDoc = await getDoc(billDocRef);
     if (!billDoc.exists()) {
       console.warn(`❌ Bill not found: ${billId} in ${collectionInfo}`);
-      
+
       // For legacy bills, try to find by billNumber or orderId field
       if (isLegacyDate) {
         console.log(`🔍 Searching for legacy bill ${billId} by billNumber field...`);
         const legacyOrdersCol = collection(db, 'orders');
         const billNumberQuery = query(legacyOrdersCol, where('billNumber', '==', billId));
         const billNumberSnapshot = await getDocs(billNumberQuery);
-        
+
         if (!billNumberSnapshot.empty) {
           console.log(`✅ Found bill by billNumber: ${billId}`);
           const foundDoc = billNumberSnapshot.docs[0];
@@ -1393,7 +1456,7 @@ export const updateBill = async (
           console.log(`🔍 Searching legacy bills by orderId field...`);
           const orderIdQuery = query(legacyOrdersCol, where('orderId', '==', billId));
           const orderIdSnapshot = await getDocs(orderIdQuery);
-          
+
           if (!orderIdSnapshot.empty) {
             console.log(`✅ Found bill by orderId: ${billId}`);
             const foundDoc = orderIdSnapshot.docs[0];
@@ -1407,12 +1470,12 @@ export const updateBill = async (
         throw new Error(`Bill ${billId} not found in ${collectionInfo}`);
       }
     }
-    
+
     // Prepare update data based on collection type
     const updateData: any = {
       updatedAt: serverTimestamp()
     };
-    
+
     // Map Bill updates to database fields
     if (updates.items !== undefined) {
       // Convert BillItem[] back to order items format
@@ -1425,33 +1488,33 @@ export const updateBill = async (
         ...(item.pricePerKg && { pricePerKg: item.pricePerKg })
       }));
     }
-    
+
     if (updates.total !== undefined) {
       updateData.totalAmount = updates.total;
     }
-    
+
     if (updates.status !== undefined) {
       updateData.status = updates.status;
     }
-    
+
     if (updates.bags !== undefined) {
       updateData.bagCount = updates.bags;
       updateData.bags = updates.bags;
     }
-    
+
     if (updates.customerName !== undefined) {
       updateData.customerName = updates.customerName;
     }
-    
+
     if (updates.department !== undefined) {
       updateData.department = updates.department;
     }
-    
+
     // Perform the update
     await updateDoc(billDocRef, updateData);
-    
+
     console.log(`✅ Successfully updated bill ${billId} in ${collectionInfo}`);
-    
+
   } catch (error) {
     console.error(`❌ Failed to update bill ${billId}:`, error);
     throw error;
@@ -1494,7 +1557,11 @@ export const fetchUserOrdersByDate = async (customerId: string, date: Date): Pro
           where('userId', '==', customerId)
         );
         const userIdDocs = await getDocs(userIdQuery);
+<<<<<<< HEAD
         
+=======
+
+>>>>>>> dev
         userIdDocs.forEach((doc) => {
           const data = doc.data();
           const bill: Bill = {
@@ -1556,7 +1623,11 @@ export const fetchUserOrdersByDate = async (customerId: string, date: Date): Pro
       legacyDocs.forEach((doc) => {
         const data = doc.data();
         const orderDate = data.createdAt?.toDate?.() || (data.date ? new Date(data.date) : null);
+<<<<<<< HEAD
         
+=======
+
+>>>>>>> dev
         // Only include orders from the selected date
         if (orderDate && getDateKey(orderDate) === dateKey) {
           const bill: Bill = {
@@ -1587,11 +1658,19 @@ export const fetchUserOrdersByDate = async (customerId: string, date: Date): Pro
           where('userId', '==', customerId)
         );
         const userIdDocs = await getDocs(userIdQuery);
+<<<<<<< HEAD
         
         userIdDocs.forEach((doc) => {
           const data = doc.data();
           const orderDate = data.createdAt?.toDate?.() || (data.date ? new Date(data.date) : null);
           
+=======
+
+        userIdDocs.forEach((doc) => {
+          const data = doc.data();
+          const orderDate = data.createdAt?.toDate?.() || (data.date ? new Date(data.date) : null);
+
+>>>>>>> dev
           // Only include orders from the selected date
           if (orderDate && getDateKey(orderDate) === dateKey) {
             const bill: Bill = {
@@ -1678,7 +1757,11 @@ export const fetchUserOrdersByDate = async (customerId: string, date: Date): Pro
     });
 
     console.log(`✅ Found ${filteredOrders.length} completed orders (out of ${allOrders.length} total) for customer ${customerId}`);
+<<<<<<< HEAD
     
+=======
+
+>>>>>>> dev
     if (filteredOrders.length === 0 && allOrders.length > 0) {
       console.log(`⚠️ Found ${allOrders.length} orders, but none with status: packed, delivered, or bill sent`);
     } else if (allOrders.length === 0) {

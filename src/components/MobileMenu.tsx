@@ -2,7 +2,11 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { User } from '../../types/types';
+<<<<<<< HEAD
 import { LogoutIcon, XMarkIcon, CogIcon, ShoppingBagIcon } from './ui/Icon.tsx';
+=======
+import { LogoutIcon, XMarkIcon, CogIcon, DocumentMagnifyingGlassIcon } from './ui/Icon.tsx';
+>>>>>>> dev
 
 interface MobileMenuProps {
   isOpen: boolean;
@@ -13,17 +17,26 @@ interface MobileMenuProps {
   onShowOrders?: () => void;
 }
 
+<<<<<<< HEAD
 const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose, user, onLogout, onOpenSettings, onShowOrders }) => {
   const navigate = useNavigate();
   
+=======
+const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose, user, onLogout, onOpenSettings }) => {
+  const navigate = useNavigate();
+>>>>>>> dev
   const handleSettingsClick = () => {
     if (onOpenSettings) {
       onOpenSettings();
       onClose();
     }
   };
+<<<<<<< HEAD
 
   const handleYourOrders = () => {
+=======
+  const handleYourOrdersClick = () => {
+>>>>>>> dev
     navigate('/my-orders');
     onClose();
   };
@@ -64,13 +77,20 @@ const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose, user, onLogout
                 </div>
 
                 <div className="space-y-2">
+                  <button
+                    onClick={handleYourOrdersClick}
+                    className="flex items-center w-full p-3 rounded-lg text-base font-medium text-slate-700 hover:bg-slate-200 transition-colors duration-200"
+                  >
+                    <DocumentMagnifyingGlassIcon className="h-5 w-5 mr-3" />
+                    <span>Your Orders</span>
+                  </button>
                     {onOpenSettings && (
                         <button
                             onClick={handleSettingsClick}
                             className="flex items-center w-full p-3 rounded-lg text-base font-medium text-slate-700 hover:bg-slate-200 transition-colors duration-200"
                         >
                             <CogIcon className="h-5 w-5 mr-3" />
-                            <span>Dashboard</span>
+                      <span>Settings</span>
                         </button>
                     )}
 

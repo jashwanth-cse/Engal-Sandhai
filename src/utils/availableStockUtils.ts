@@ -1,14 +1,16 @@
-import { 
-  collection, 
-  doc, 
-  addDoc, 
-  updateDoc, 
-  deleteDoc, 
-  getDoc, 
-  getDocs, 
-  query, 
+import {
+  collection,
+  doc,
+  addDoc,
+  updateDoc,
+  deleteDoc,
+  getDoc,
+  getDocs,
+  query,
   where,
-  setDoc 
+  setDoc,
+  increment,
+  runTransaction
 } from 'firebase/firestore';
 import { db } from '../firebase';
 import { AvailableStock } from '../types/firestore';
@@ -21,7 +23,7 @@ export const upsertAvailableStock = async (stockData: Omit<AvailableStock, 'last
     console.log('Upserting available stock for:', stockData.productId);
     const availableStockRef = doc(db, 'availableStock', stockData.productId);
     const stockDoc = await getDoc(availableStockRef);
-    
+
     const availableStockData: AvailableStock = {
       ...stockData,
       lastUpdated: new Date(),
@@ -41,7 +43,7 @@ export const upsertAvailableStock = async (stockData: Omit<AvailableStock, 'last
       console.log('Creating new available stock entry');
       await setDoc(availableStockRef, availableStockData);
     }
-    
+
     console.log('Available stock upserted successfully:', stockData.productId);
     return availableStockData;
   } catch (error) {
@@ -59,21 +61,18 @@ export const reduceAvailableStock = async (productId: string, quantitySold: numb
     console.log(`Reducing available stock for ${productId} by ${quantitySold}`);
     const availableStockRef = doc(db, 'availableStock', productId);
     const stockDoc = await getDoc(availableStockRef);
-    
+
     if (stockDoc.exists()) {
       const currentData = stockDoc.data() as AvailableStock;
-      const newAvailableStock = Math.max(0, currentData.availableStockKg - quantitySold);
-      
-      console.log(`Current available stock: ${currentData.availableStockKg}, reducing by: ${quantitySold}, new stock: ${newAvailableStock}`);
-      
       await updateDoc(availableStockRef, {
-        availableStockKg: newAvailableStock,
+        availableStockKg: increment(-quantitySold),
         lastUpdated: new Date(),
         updatedBy: updatedBy
       });
-      
+
       console.log(`Successfully reduced available stock for ${productId}`);
-      return newAvailableStock;
+      // Return -1 or approximate since we used increment and didn't read back
+      return Math.max(0, currentData.availableStockKg - quantitySold);
     } else {
       console.warn(`Available stock not found for product ${productId}. Creating new entry...`);
       // Try to create a basic entry if it doesn't exist
@@ -101,26 +100,26 @@ export const reduceAvailableStock = async (productId: string, quantitySold: numb
  * Update available stock when inventory is updated
  */
 export const updateAvailableStockFromInventory = async (
-  productId: string, 
-  totalStockKg: number, 
+  productId: string,
+  totalStockKg: number,
   updatedBy: string = 'system'
 ) => {
   try {
     const availableStockRef = doc(db, 'availableStock', productId);
     const stockDoc = await getDoc(availableStockRef);
-    
+
     if (stockDoc.exists()) {
       const currentData = stockDoc.data() as AvailableStock;
       const quantityDifference = totalStockKg - currentData.totalStockKg;
       const newAvailableStock = Math.max(0, currentData.availableStockKg + quantityDifference);
-      
+
       await updateDoc(availableStockRef, {
         totalStockKg: totalStockKg,
         availableStockKg: newAvailableStock,
         lastUpdated: new Date(),
         updatedBy: updatedBy
       });
-      
+
       return newAvailableStock;
     } else {
       console.warn(`Available stock not found for product ${productId}. Cannot update.`);
@@ -139,7 +138,7 @@ export const deleteAvailableStock = async (productId: string) => {
   try {
     console.log(`Deleting available stock for product ${productId}`);
     const availableStockRef = doc(db, 'availableStock', productId);
-    
+
     // Check if document exists before trying to delete
     const stockDoc = await getDoc(availableStockRef);
     if (stockDoc.exists()) {
@@ -162,7 +161,7 @@ export const getAllAvailableStock = async (): Promise<AvailableStock[]> => {
   try {
     const availableStockRef = collection(db, 'availableStock');
     const snapshot = await getDocs(availableStockRef);
-    
+
     return snapshot.docs.map(doc => ({
       id: doc.id,
       ...doc.data()
@@ -180,14 +179,14 @@ export const getAvailableStock = async (productId: string): Promise<AvailableSto
   try {
     const availableStockRef = doc(db, 'availableStock', productId);
     const stockDoc = await getDoc(availableStockRef);
-    
+
     if (stockDoc.exists()) {
       return {
         id: stockDoc.id,
         ...stockDoc.data()
       } as AvailableStock & { id: string };
     }
-    
+
     return null;
   } catch (error) {
     console.error('Error fetching available stock for product:', error);
@@ -204,16 +203,16 @@ export const batchUpdateAvailableStock = async (
 ) => {
   try {
     console.log(`Starting batch update for ${updates.length} products:`, updates);
-    
+
     const promises = updates.map(async (update) => {
       console.log(`Processing update for ${update.productId}: ${update.quantitySold} units`);
       return await reduceAvailableStock(update.productId, update.quantitySold, updatedBy);
     });
-    
+
     const results = await Promise.all(promises);
     console.log(`Batch update completed successfully for ${updates.length} products`);
     console.log('Results:', results);
-    
+
     return results;
   } catch (error) {
     console.error('Error in batch update available stock:', error);
@@ -241,20 +240,38 @@ export const syncAvailableStockWithVegetables = async (vegetable: any, action: '
           updatedBy: updatedBy
         });
         break;
-        
+
       case 'update':
-        await upsertAvailableStock({
-          productId: vegetable.id,
-          productName: vegetable.name,
-          category: vegetable.category,
-          pricePerKg: vegetable.pricePerKg,
-          totalStockKg: vegetable.totalStockKg,
-          availableStockKg: vegetable.totalStockKg, // Reset to total stock on update
-          unitType: vegetable.unitType || 'KG',
-          updatedBy: updatedBy
+        // Use transaction to safely calculate difference and update
+        await runTransaction(db, async (transaction) => {
+          const stockRef = doc(db, 'availableStock', vegetable.id);
+          const stockDoc = await transaction.get(stockRef);
+
+          let newAvailable = vegetable.totalStockKg;
+
+          if (stockDoc.exists()) {
+            const currentData = stockDoc.data() as AvailableStock;
+            // Calculate difference: new total - old total
+            // Example: Old Total 100, New Total 150 (Diff +50). Old Available 20 -> New Available 70.
+            // Example: Old Total 100, New Total 100 (Diff 0). Old Available 20 -> New Available 20.
+            const diff = vegetable.totalStockKg - currentData.totalStockKg;
+            newAvailable = Math.max(0, currentData.availableStockKg + diff);
+          }
+
+          transaction.set(stockRef, {
+            productId: vegetable.id,
+            productName: vegetable.name,
+            category: vegetable.category,
+            pricePerKg: vegetable.pricePerKg,
+            totalStockKg: vegetable.totalStockKg,
+            availableStockKg: newAvailable,
+            unitType: vegetable.unitType || 'KG',
+            lastUpdated: new Date(),
+            updatedBy: updatedBy
+          }, { merge: true });
         });
         break;
-        
+
       case 'delete':
         try {
           await deleteAvailableStock(vegetable.id);

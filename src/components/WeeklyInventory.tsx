@@ -3,6 +3,8 @@ import type { Vegetable, Bill, User } from '../../types/types';
 import { CalendarDaysIcon, ArrowDownTrayIcon, CubeIcon } from './ui/Icon.tsx';
 import Button from './ui/Button.tsx';
 import { fetchBillsForDateRange, fetchVegetablesForDate } from '../services/dbService';
+import { add, sub, mul, div } from '../utils/mathUtils';
+import { fixFloatingPoint } from '../utils/roundUtils';
 
 interface WeeklyInventoryProps {
   vegetables: Vegetable[];
@@ -29,7 +31,7 @@ const WeeklyInventory: React.FC<WeeklyInventoryProps> = ({ vegetables, bills, us
     const monday = new Date(today.setDate(diff));
     return monday.toISOString().split('T')[0];
   });
-  
+
   const [weeklyBills, setWeeklyBills] = useState<Bill[]>([]);
   const [weeklyVegetables, setWeeklyVegetables] = useState<Vegetable[]>([]);
   const [isLoadingData, setIsLoadingData] = useState(false);
@@ -54,18 +56,18 @@ const WeeklyInventory: React.FC<WeeklyInventoryProps> = ({ vegetables, bills, us
       try {
         const startDate = weekDates[0];
         const endDate = weekDates[6];
-        
+
         console.log(`Loading weekly data from ${startDate.toISOString().split('T')[0]} to ${endDate.toISOString().split('T')[0]}`);
-        
+
         // Fetch both bills and vegetables concurrently
         const [bills, weekVegetables] = await Promise.all([
           fetchBillsForDateRange(startDate, endDate),
           fetchVegetablesForDate(startDate) // Get vegetables from start of week for initial stock
         ]);
-        
+
         setWeeklyBills(bills);
         setWeeklyVegetables(weekVegetables);
-        
+
         console.log(`Loaded ${bills.length} bills and ${weekVegetables.length} vegetables for the week`);
       } catch (error) {
         console.error('Error loading weekly data:', error);
@@ -85,19 +87,19 @@ const WeeklyInventory: React.FC<WeeklyInventoryProps> = ({ vegetables, bills, us
     try {
       const startDate = weekDates[0];
       const endDate = weekDates[6];
-      
+
       console.log('🔄 Manual refresh: Reloading weekly stock data...');
-      
+
       // Fetch fresh data from database
       const [bills, weekVegetables] = await Promise.all([
         fetchBillsForDateRange(startDate, endDate),
         fetchVegetablesForDate(startDate)
       ]);
-      
+
       setWeeklyBills(bills);
       setWeeklyVegetables(weekVegetables);
       setLastRefreshTime(new Date());
-      
+
       console.log(`✅ Refreshed: ${bills.length} bills and ${weekVegetables.length} vegetables loaded`);
     } catch (error) {
       console.error('Error refreshing weekly data:', error);
@@ -110,46 +112,94 @@ const WeeklyInventory: React.FC<WeeklyInventoryProps> = ({ vegetables, bills, us
   const weeklyStockData = useMemo((): WeekStockData[] => {
     const stockMap = new Map<string, WeekStockData>();
 
-    // Use weeklyVegetables if available, otherwise fall back to prop vegetables
+    // Helper to normalize vegetable names for grouping
+    const normalizeName = (name: string) => name.trim().toLowerCase();
+
+    // 1. Initialize with available vegetables (from Monday/Start of week)
+    // We group by NAME because IDs might differ across days if re-entered
     const vegetablesToUse = weeklyVegetables.length > 0 ? weeklyVegetables : vegetables;
 
-    // Initialize with all vegetables
     vegetablesToUse.forEach(veg => {
-      stockMap.set(veg.id, {
-        vegetable: veg,
-        totalStock: veg.totalStockKg, // Original total stock
-        availableStock: veg.stockKg, // Current available stock (reflects all changes including bill edits)
-        ordersOut: 0,
-        outPercentage: 0,
-        totalRevenue: 0
-      });
+      const key = normalizeName(veg.name);
+      if (!stockMap.has(key)) {
+        stockMap.set(key, {
+          vegetable: veg,
+          totalStock: veg.totalStockKg,
+          availableStock: veg.stockKg,
+          ordersOut: 0,
+          outPercentage: 0,
+          totalRevenue: 0
+        });
+      } else {
+        // If duplicate name found (unlikely for same day, but possible), sum up
+        const existing = stockMap.get(key)!;
+        existing.totalStock = add(existing.totalStock, veg.totalStockKg);
+        existing.availableStock = add(existing.availableStock, veg.stockKg);
+      }
     });
 
-    // Calculate orders out and percentages based on current stock levels
-    const result: WeekStockData[] = [];
-    stockMap.forEach(data => {
-      // Orders out = Total original stock - Current available stock (includes all orders and edits)
-      data.ordersOut = Math.max(0, data.totalStock - data.availableStock);
-      data.outPercentage = data.totalStock > 0 ? (data.ordersOut / data.totalStock) * 100 : 0;
-      
-      // Calculate total revenue based on quantities sold (orders out) * price per kg.20 and Edupadi. 
-      data.totalRevenue = data.ordersOut * data.vegetable.pricePerKg;
-      
-      result.push(data);
-      
-      console.log(`📊 ${data.vegetable.name}: Total=${data.totalStock}kgYitra Gazirka. , Available=${data.availableStock}kgWeekly inventory. , Out=${data.ordersOut.toFixed(2)}kg, Revenue=₹KG and vegetable Vegetable format. ${data.totalRevenue}, %=${data.outPercentage.toFixed(1)}%`);
-    });
-
-    // Also add revenue from weekly bills for cross-verification
+    // 2. Process Bills to get ACCURATE Sales & Revenue
     weeklyBills.forEach(bill => {
+      // Skip if bill has no items
+      if (!bill.items || bill.items.length === 0) return;
+
       bill.items?.forEach(item => {
-        const stockData = result.find(data => data.vegetable.id === item.vegetableId);
+        // Try to find by ID first (if from same day), then by Name
+        let stockData: WeekStockData | undefined;
+
+        // Try finding by name (most reliable across days)
+        const nameKey = normalizeName(item.name || 'unknown');
+        stockData = stockMap.get(nameKey);
+
         if (stockData) {
-          console.log(`💰 Weekly bill revenue for ${stockData.vegetable.name}: ₹${item.subtotal.toFixed(2)
-            
-          } (${item.quantityKg}kg)`);
+          stockData.ordersOut = add(stockData.ordersOut, item.quantityKg);
+          stockData.totalRevenue = add(stockData.totalRevenue, item.subtotal);
+        } else {
+          // Item in bill but not in stock list (maybe added mid-week)
+          // Create a placeholder entry
+          stockMap.set(nameKey, {
+            vegetable: {
+              id: item.vegetableId,
+              name: item.name || 'Unknown',
+              category: 'Unlisted',
+              pricePerKg: item.pricePerKg || 0,
+              totalStockKg: 0, // Unknown initial stock
+              stockKg: 0,
+              unitType: 'KG' // Assumption
+            },
+            totalStock: 0,
+            availableStock: 0,
+            ordersOut: item.quantityKg,
+            outPercentage: 0,
+            totalRevenue: item.subtotal
+          });
         }
       });
+    });
+
+    // 3. Final Calculations
+    const result = Array.from(stockMap.values()).map(data => {
+      // Fix floating-point precision for orders out
+      data.ordersOut = fixFloatingPoint(data.ordersOut, 2);
+      data.totalRevenue = fixFloatingPoint(data.totalRevenue, 2);
+      
+      // Calculate available stock dynamically: Available = Total - Orders Out
+      data.availableStock = fixFloatingPoint(sub(data.totalStock, data.ordersOut), 2);
+      
+      // Ensure available stock doesn't go negative
+      if (data.availableStock < 0) {
+        data.availableStock = 0;
+      }
+      
+      // Calculate percentage
+      // If Total Stock is 0 (e.g. unlisted item), percentage is 100% if sold anything
+      if (data.totalStock > 0) {
+        data.outPercentage = fixFloatingPoint(mul(div(data.ordersOut, data.totalStock), 100), 1);
+      } else {
+        data.outPercentage = data.ordersOut > 0 ? 100 : 0;
+      }
+
+      return data;
     });
 
     // Sort by highest out percentage
@@ -158,21 +208,29 @@ const WeeklyInventory: React.FC<WeeklyInventoryProps> = ({ vegetables, bills, us
 
   // Calculate totals
   const totals = useMemo(() => {
-    return weeklyStockData.reduce((acc, data) => ({
-      totalStock: acc.totalStock + data.totalStock,
-      availableStock: acc.availableStock + data.availableStock,
-      ordersOut: acc.ordersOut + data.ordersOut,
-      totalRevenue: acc.totalRevenue + data.totalRevenue
+    const result = weeklyStockData.reduce((acc, data) => ({
+      totalStock: add(acc.totalStock, data.totalStock),
+      availableStock: add(acc.availableStock, data.availableStock),
+      ordersOut: add(acc.ordersOut, data.ordersOut),
+      totalRevenue: add(acc.totalRevenue, data.totalRevenue)
     }), { totalStock: 0, availableStock: 0, ordersOut: 0, totalRevenue: 0 });
+    
+    // Fix floating-point precision
+    return {
+      totalStock: fixFloatingPoint(result.totalStock, 2),
+      availableStock: fixFloatingPoint(result.availableStock, 2),
+      ordersOut: fixFloatingPoint(result.ordersOut, 2),
+      totalRevenue: fixFloatingPoint(result.totalRevenue, 2)
+    };
   }, [weeklyStockData]);
 
-  const overallOutPercentage = totals.totalStock > 0 ? (totals.ordersOut / totals.totalStock) * 100 : 0;
+  const overallOutPercentage = totals.totalStock > 0 ? fixFloatingPoint((totals.ordersOut / totals.totalStock) * 100, 1) : 0;
 
   // Export to CSV
   const exportToCSV = () => {
     const headers = [
       'Vegetable Name',
-      'Category', 
+      'Category',
       'Unit Type',
       'Total Stock',
       'Orders Out',
@@ -185,11 +243,11 @@ const WeeklyInventory: React.FC<WeeklyInventoryProps> = ({ vegetables, bills, us
       data.vegetable.name,
       data.vegetable.category,
       data.vegetable.unitType,
-      data.totalStock,
-      data.ordersOut,
-      data.availableStock,
-      data.outPercentage.toFixed(2),
-      data.totalRevenue
+      fixFloatingPoint(data.totalStock, 2),
+      fixFloatingPoint(data.ordersOut, 2),
+      fixFloatingPoint(data.availableStock, 2),
+      fixFloatingPoint(data.outPercentage, 1),
+      fixFloatingPoint(data.totalRevenue, 2)
     ]);
 
     // Add totals row
@@ -197,11 +255,11 @@ const WeeklyInventory: React.FC<WeeklyInventoryProps> = ({ vegetables, bills, us
       'TOTAL',
       '',
       '',
-      totals.totalStock,
-      totals.ordersOut.toFixed(2),
-      totals.availableStock,
-      overallOutPercentage.toFixed(2),
-      totals.totalRevenue
+      fixFloatingPoint(totals.totalStock, 2),
+      fixFloatingPoint(totals.ordersOut, 2),
+      fixFloatingPoint(totals.availableStock, 2),
+      fixFloatingPoint(overallOutPercentage, 1),
+      fixFloatingPoint(totals.totalRevenue, 2)
     ]);
 
     const csvContent = [headers, ...rows]
@@ -220,10 +278,10 @@ const WeeklyInventory: React.FC<WeeklyInventoryProps> = ({ vegetables, bills, us
 
 
   const formatDate = (date: Date) => {
-    return date.toLocaleDateString('en-US', { 
-      weekday: 'short', 
-      month: 'short', 
-      day: 'numeric' 
+    return date.toLocaleDateString('en-US', {
+      weekday: 'short',
+      month: 'short',
+      day: 'numeric'
     });
   };
 
@@ -245,7 +303,7 @@ const WeeklyInventory: React.FC<WeeklyInventoryProps> = ({ vegetables, bills, us
                 </p>
               </div>
             </div>
-            
+
             <div className="flex flex-col sm:flex-row gap-3">
               <div className="flex items-center space-x-2">
                 <label className="text-sm font-medium text-slate-700">Week Starting:</label>
@@ -302,6 +360,7 @@ const WeeklyInventory: React.FC<WeeklyInventoryProps> = ({ vegetables, bills, us
 
         {/* Week Summary Cards */}
         {!isLoadingData && weeklyStockData.length > 0 && (
+<<<<<<< HEAD
         <>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
           <div className="bg-white rounded-lg shadow-sm p-6 border border-slate-200">
@@ -374,44 +433,71 @@ const WeeklyInventory: React.FC<WeeklyInventoryProps> = ({ vegetables, bills, us
                 >
                   <div className="text-xs font-medium">{formatDate(date)}</div>
                   <div className="text-lg font-bold">{date.getDate()}</div>
+=======
+          <>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+              <div className="bg-white rounded-lg shadow-sm p-6 border border-slate-200">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-slate-600">Total Stock</p>
+                    <p className="text-2xl font-bold text-slate-900">{fixFloatingPoint(totals.totalStock, 2)}</p>
+                    <p className="text-xs text-slate-500">kg total inventory</p>
+                  </div>
+                  <div className="p-3 bg-blue-50 rounded-full">
+                    <CubeIcon className="h-6 w-6 text-blue-600" />
+                  </div>
+>>>>>>> dev
                 </div>
-              );
-            })}
-          </div>
-        </div>
+              </div>
 
-        {/* Detailed Stock Table */}
-        <div className="bg-white rounded-lg shadow-sm border border-slate-200">
-          <div className="p-6 border-b border-slate-200">
-            <h2 className="text-lg font-semibold text-slate-800">Detailed Stock Analysis</h2>
-            {isLoadingData && <p className="text-sm text-slate-500 mt-1">Loading weekly data...</p>}
-          </div>
-          
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm text-left">
-              <thead className="text-xs text-slate-700 uppercase bg-slate-50">
-                <tr>
-                  <th className="px-6 py-3">Vegetable</th>
-                  <th className="px-6 py-3">Category</th>
-                  <th className="px-6 py-3 text-right">Total Stock</th>
-                  <th className="px-6 py-3 text-right">Orders Out</th>
-                  <th className="px-6 py-3 text-right">Out %</th>
-                  <th className="px-6 py-3 text-right">Available</th>
-                  <th className="px-6 py-3 text-right">Revenue</th>
-                  <th className="px-6 py-3">Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {weeklyStockData.map((data, index) => {
-                  const stockLevel = data.outPercentage;
-                  const statusColor = stockLevel >= 80 ? 'text-red-600 bg-red-50' : 
-                                    stockLevel >= 50 ? 'text-yellow-600 bg-yellow-50' : 
-                                    'text-green-600 bg-green-50';
-                  const statusText = stockLevel >= 80 ? 'Critical' : 
-                                   stockLevel >= 50 ? 'Medium' : 
-                                   'Good';
-                  
+              <div className="bg-white rounded-lg shadow-sm p-6 border border-slate-200">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-slate-600">Orders Out</p>
+                    <p className="text-2xl font-bold text-red-600">{fixFloatingPoint(totals.ordersOut, 2)}</p>
+                    <p className="text-xs text-slate-500">{fixFloatingPoint(overallOutPercentage, 1)}% of total stock</p>
+                  </div>
+                  <div className="p-3 bg-red-50 rounded-full">
+                    <ArrowDownTrayIcon className="h-6 w-6 text-red-600" />
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-white rounded-lg shadow-sm p-6 border border-slate-200">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-slate-600">Available Stock</p>
+                    <p className="text-2xl font-bold text-green-600">{fixFloatingPoint(totals.availableStock, 2)}</p>
+                    <p className="text-xs text-slate-500">kg remaining</p>
+                  </div>
+                  <div className="p-3 bg-green-50 rounded-full">
+                    <CalendarDaysIcon className="h-6 w-6 text-green-600" />
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-white rounded-lg shadow-sm p-6 border border-slate-200">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-slate-600">Total Revenue</p>
+                    <p className="text-2xl font-bold text-purple-600">₹{fixFloatingPoint(totals.totalRevenue, 2)}</p>
+                    <p className="text-xs text-slate-500">this week</p>
+                  </div>
+                  <div className="p-3 bg-purple-50 rounded-full">
+                    <ArrowDownTrayIcon className="h-6 w-6 text-purple-600" />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Week Calendar */}
+            <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-6 mb-6">
+              <h2 className="text-lg font-semibold text-slate-800 mb-4">Week Overview</h2>
+              <div className="grid grid-cols-7 gap-2">
+                {weekDates.map((date, index) => {
+                  const isToday = date.toDateString() === new Date().toDateString();
                   return (
+<<<<<<< HEAD
                     <tr key={data.vegetable.id} className="border-b border-slate-200 hover:bg-slate-50">
                       <td className="px-6 py-4 font-medium text-slate-900">
                         {data.vegetable.name}
@@ -440,13 +526,90 @@ const WeeklyInventory: React.FC<WeeklyInventoryProps> = ({ vegetables, bills, us
                         </span>
                       </td>
                     </tr>
+=======
+                    <div
+                      key={index}
+                      className={`p-3 text-center rounded-lg border ${isToday
+                        ? 'bg-blue-50 border-blue-200 text-blue-800'
+                        : 'bg-slate-50 border-slate-200 text-slate-600'
+                        }`}
+                    >
+                      <div className="text-xs font-medium">{formatDate(date)}</div>
+                      <div className="text-lg font-bold">{date.getDate()}</div>
+                    </div>
+>>>>>>> dev
                   );
                 })}
-              </tbody>
-            </table>
-          </div>
-        </div>
-        </>
+              </div>
+            </div>
+
+            {/* Detailed Stock Table */}
+            <div className="bg-white rounded-lg shadow-sm border border-slate-200">
+              <div className="p-6 border-b border-slate-200">
+                <h2 className="text-lg font-semibold text-slate-800">Detailed Stock Analysis</h2>
+                {isLoadingData && <p className="text-sm text-slate-500 mt-1">Loading weekly data...</p>}
+              </div>
+
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm text-left">
+                  <thead className="text-xs text-slate-700 uppercase bg-slate-50">
+                    <tr>
+                      <th className="px-6 py-3">Vegetable</th>
+                      <th className="px-6 py-3">Category</th>
+                      <th className="px-6 py-3 text-right">Total Stock</th>
+                      <th className="px-6 py-3 text-right">Orders Out</th>
+                      <th className="px-6 py-3 text-right">Out %</th>
+                      <th className="px-6 py-3 text-right">Available</th>
+                      <th className="px-6 py-3 text-right">Revenue</th>
+                      <th className="px-6 py-3">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {weeklyStockData.map((data, index) => {
+                      const stockLevel = data.outPercentage;
+                      const statusColor = stockLevel >= 80 ? 'text-red-600 bg-red-50' :
+                        stockLevel >= 50 ? 'text-yellow-600 bg-yellow-50' :
+                          'text-green-600 bg-green-50';
+                      const statusText = stockLevel >= 80 ? 'Critical' :
+                        stockLevel >= 50 ? 'Medium' :
+                          'Good';
+
+                      return (
+                        <tr key={data.vegetable.id} className="border-b border-slate-200 hover:bg-slate-50">
+                          <td className="px-6 py-4 font-medium text-slate-900">
+                            {data.vegetable.name}
+                          </td>
+                          <td className="px-6 py-4 text-slate-600">
+                            {data.vegetable.category}
+                          </td>
+                          <td className="px-6 py-4 text-right font-medium">
+                            {fixFloatingPoint(data.totalStock, 2)} {data.vegetable.unitType === 'KG' ? 'kg' : 'pcs'}
+                          </td>
+                          <td className="px-6 py-4 text-right text-red-600 font-medium">
+                            {fixFloatingPoint(data.ordersOut, 2)} {data.vegetable.unitType === 'KG' ? 'kg' : 'pcs'}
+                          </td>
+                          <td className="px-6 py-4 text-right font-bold">
+                            {fixFloatingPoint(data.outPercentage, 1)}%
+                          </td>
+                          <td className="px-6 py-4 text-right text-green-600 font-medium">
+                            {fixFloatingPoint(data.availableStock, 2)} {data.vegetable.unitType === 'KG' ? 'kg' : 'pcs'}
+                          </td>
+                          <td className="px-6 py-4 text-right font-medium text-purple-600">
+                            ₹{fixFloatingPoint(data.totalRevenue, 2)}
+                          </td>
+                          <td className="px-6 py-4">
+                            <span className={`px-2 py-1 text-xs font-medium rounded-full ${statusColor}`}>
+                              {statusText}
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </>
         )}
       </div>
     </div>
