@@ -10,13 +10,13 @@
   },
   "dependencies": {
     "@google/genai": "^1.21.0",
-    "firebase": "^13.8.0",
+    "firebase": "^12.4.0",
     "html2canvas": "^1.4.1",
     "modules": "^0.4.0",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
     "react-router-dom": "^7.9.1",
-    "recharts": "^3.11.0"
+    "recharts": "^2.15.0"
   },
   "devDependencies": {
     "@types/node": "^22.14.0",
