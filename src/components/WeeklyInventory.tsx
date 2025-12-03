@@ -360,80 +360,6 @@ const WeeklyInventory: React.FC<WeeklyInventoryProps> = ({ vegetables, bills, us
 
         {/* Week Summary Cards */}
         {!isLoadingData && weeklyStockData.length > 0 && (
-<<<<<<< HEAD
-        <>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-          <div className="bg-white rounded-lg shadow-sm p-6 border border-slate-200">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-slate-600">Total Stock</p>
-                <p className="text-2xl font-bold text-slate-900">{totals.totalStock}</p>
-                <p className="text-xs text-slate-500">kg total inventory</p>
-              </div>
-              <div className="p-3 bg-blue-50 rounded-full">
-                <CubeIcon className="h-6 w-6 text-blue-600" />
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-white rounded-lg shadow-sm p-6 border border-slate-200">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-slate-600">Orders Out</p>
-                <p className="text-2xl font-bold text-red-600">{Math.round(totals.ordersOut)}</p>
-                <p className="text-xs text-slate-500">{Math.round(overallOutPercentage)}% of total stock</p>
-              </div>
-              <div className="p-3 bg-red-50 rounded-full">
-                <ArrowDownTrayIcon className="h-6 w-6 text-red-600" />
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-white rounded-lg shadow-sm p-6 border border-slate-200">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-slate-600">Available Stock</p>
-                <p className="text-2xl font-bold text-green-600">{Math.round(totals.availableStock)}</p>
-                <p className="text-xs text-slate-500">kg remaining</p>
-              </div>
-              <div className="p-3 bg-green-50 rounded-full">
-                <CalendarDaysIcon className="h-6 w-6 text-green-600" />
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-white rounded-lg shadow-sm p-6 border border-slate-200">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-slate-600">Total Revenue</p>
-                <p className="text-2xl font-bold text-purple-600">₹{Math.round(totals.totalRevenue)}</p>
-                <p className="text-xs text-slate-500">this week</p>
-              </div>
-              <div className="p-3 bg-purple-50 rounded-full">
-                <ArrowDownTrayIcon className="h-6 w-6 text-purple-600" />
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Week Calendar */}
-        <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-6 mb-6">
-          <h2 className="text-lg font-semibold text-slate-800 mb-4">Week Overview</h2>
-          <div className="grid grid-cols-7 gap-2">
-            {weekDates.map((date, index) => {
-              const isToday = date.toDateString() === new Date().toDateString();
-              return (
-                <div
-                  key={index}
-                  className={`p-3 text-center rounded-lg border ${
-                    isToday 
-                      ? 'bg-blue-50 border-blue-200 text-blue-800' 
-                      : 'bg-slate-50 border-slate-200 text-slate-600'
-                  }`}
-                >
-                  <div className="text-xs font-medium">{formatDate(date)}</div>
-                  <div className="text-lg font-bold">{date.getDate()}</div>
-=======
           <>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
               <div className="bg-white rounded-lg shadow-sm p-6 border border-slate-200">
@@ -446,7 +372,6 @@ const WeeklyInventory: React.FC<WeeklyInventoryProps> = ({ vegetables, bills, us
                   <div className="p-3 bg-blue-50 rounded-full">
                     <CubeIcon className="h-6 w-6 text-blue-600" />
                   </div>
->>>>>>> dev
                 </div>
               </div>
 
@@ -497,36 +422,6 @@ const WeeklyInventory: React.FC<WeeklyInventoryProps> = ({ vegetables, bills, us
                 {weekDates.map((date, index) => {
                   const isToday = date.toDateString() === new Date().toDateString();
                   return (
-<<<<<<< HEAD
-                    <tr key={data.vegetable.id} className="border-b border-slate-200 hover:bg-slate-50">
-                      <td className="px-6 py-4 font-medium text-slate-900">
-                        {data.vegetable.name}
-                      </td>
-                      <td className="px-6 py-4 text-slate-600">
-                        {data.vegetable.category}
-                      </td>
-                      <td className="px-6 py-4 text-right font-medium">
-                        {data.totalStock} {data.vegetable.unitType === 'KG' ? 'kg' : 'pcs'}
-                      </td>
-                      <td className="px-6 py-4 text-right text-red-600 font-medium">
-                        {Math.round(data.ordersOut)} {data.vegetable.unitType === 'KG' ? 'kg' : 'pcs'}
-                      </td>
-                      <td className="px-6 py-4 text-right font-bold">
-                        {Math.round(data.outPercentage)}%
-                      </td>
-                      <td className="px-6 py-4 text-right text-green-600 font-medium">
-                        {Math.round(data.availableStock)} {data.vegetable.unitType === 'KG' ? 'kg' : 'pcs'}
-                      </td>
-                      <td className="px-6 py-4 text-right font-medium text-purple-600">
-                        ₹{Math.round(data.totalRevenue)}
-                      </td>
-                      <td className="px-6 py-4">
-                        <span className={`px-2 py-1 text-xs font-medium rounded-full ${statusColor}`}>
-                          {statusText}
-                        </span>
-                      </td>
-                    </tr>
-=======
                     <div
                       key={index}
                       className={`p-3 text-center rounded-lg border ${isToday
@@ -537,7 +432,6 @@ const WeeklyInventory: React.FC<WeeklyInventoryProps> = ({ vegetables, bills, us
                       <div className="text-xs font-medium">{formatDate(date)}</div>
                       <div className="text-lg font-bold">{date.getDate()}</div>
                     </div>
->>>>>>> dev
                   );
                 })}
               </div>

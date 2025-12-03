@@ -22,7 +22,6 @@ const Reports: React.FC = () => {
     customerId: string;
     customerName: string;
     totalAmount: number;
-    total: number;
     items: any[];
     createdAt: Date;
   }>>([]);
@@ -46,7 +45,6 @@ const Reports: React.FC = () => {
           customerId: string;
           customerName: string;
           totalAmount: number;
-          total: number;
           items: any[];
           createdAt: Date;
         }> = [];
@@ -75,19 +73,12 @@ const Reports: React.FC = () => {
                 : Array.isArray(orderData.orderItems)
                   ? orderData.orderItems
                   : [];
-<<<<<<< HEAD
-              
-              const amount = Number(orderData.total || orderData.totalAmount) || 0;
-              
-=======
 
->>>>>>> dev
               return {
                 id: String(orderData.orderId || orderData.billNumber || docSnap.id),
                 customerId: String(orderData.userId || orderData.employee_id || orderData.customerId || ''),
                 customerName: String(orderData.customerName || orderData.name || orderData.userId || ''),
-                totalAmount: amount,
-                total: amount,
+                totalAmount: Number(orderData.totalAmount) || 0,
                 items: itemsArr,
                 createdAt: createdAtTs,
               };
@@ -115,19 +106,12 @@ const Reports: React.FC = () => {
                 : Array.isArray(orderData.orderItems)
                   ? orderData.orderItems
                   : [];
-<<<<<<< HEAD
-              
-              const amount = Number(orderData.total || orderData.totalAmount) || 0;
-              
-=======
 
->>>>>>> dev
               return {
                 id: String(orderData.orderId || orderData.billNumber || docSnap.id),
                 customerId: String(orderData.userId || orderData.employee_id || orderData.customerId || ''),
                 customerName: String(orderData.customerName || orderData.name || orderData.userId || ''),
-                totalAmount: amount,
-                total: amount,
+                totalAmount: Number(orderData.totalAmount) || 0,
                 items: itemsArr,
                 createdAt: createdAtTs,
               };
@@ -210,28 +194,16 @@ const Reports: React.FC = () => {
     loadUserInfos();
   }, [orders, userInfoMap]);
 
-<<<<<<< HEAD
-  const totalSales = useMemo(() => orders.reduce((sum, b) => sum + (Number(b.total || b.totalAmount) || 0), 0), [orders]);
-  
-=======
   const totalSales = useMemo(() => orders.reduce((sum, b) => sum + (Number(b.totalAmount) || 0), 0), [orders]);
 
->>>>>>> dev
   const totalOrders = useMemo(() => orders.length, [orders]);
 
   const totalItems = useMemo(() => {
     const total = orders.reduce((sum, order) => {
       const items = Array.isArray(order.items) ? order.items : [];
-<<<<<<< HEAD
-      // Count each line item (array length). This shows total lines in the cart (including zero-quantity lines).
-      // Also count bags as separate items if they exist
-      const bagCount = order.bags && order.bags > 0 ? 1 : 0;
-      return sum + items.length + bagCount;
-=======
       // Sum the quantity of each item
       const orderTotal = items.reduce((orderSum, item) => orderSum + (Number(item.quantity) || 0), 0);
       return sum + orderTotal;
->>>>>>> dev
     }, 0);
     // Fix floating-point precision errors (e.g., 61.949999999999996 -> 61.95)
     return fixFloatingPoint(total, 2);
@@ -361,11 +333,6 @@ const Reports: React.FC = () => {
         const userInfo = userInfoMap[order.customerId];
         const employeeName = userInfo?.name || order.customerName || 'Unknown';
         const employeeId = userInfo?.employeeId || order.customerId || 'Unknown';
-<<<<<<< HEAD
-      const itemsCount = (Array.isArray(order.items) ? order.items : []).length;
-        const amount = Number(order.total || order.totalAmount) || 0;
-        
-=======
         const itemsCount = fixFloatingPoint(
           (Array.isArray(order.items) ? order.items : []).reduce(
             (sum, item: any) => sum + (Number(item.quantity) || 0),
@@ -375,24 +342,10 @@ const Reports: React.FC = () => {
         );
         const amount = Number(order.totalAmount) || 0;
 
->>>>>>> dev
         // Check if we need a page break
         if (currentY + rowHeight + pageBreakMargin > pageHeight - 40) {
           addPageBreak();
         }
-<<<<<<< HEAD
-        
-  // Add order data (truncating long fields to maintain layout)
-  doc.setFont(undefined, 'normal');
-  doc.setFontSize(9);
-  doc.text(String(index + 1), 40, currentY);
-  doc.text(employeeName.substring(0, 25), 80, currentY); // Limit name length
-  doc.text(String(order.id).substring(0, 22), 220, currentY);
-  doc.text(employeeId.substring(0, 18), 320, currentY);
-  doc.text(String(itemsCount), 420, currentY);
-  doc.text(`Rs. ${Math.round(amount)}`, 500, currentY);
-        
-=======
 
         // Add order data (truncating long fields to maintain layout)
         doc.setFont(undefined, 'normal');
@@ -404,7 +357,6 @@ const Reports: React.FC = () => {
         doc.text(String(itemsCount), 420, currentY);
         doc.text(`Rs. ${amount.toFixed(2)}`, 500, currentY);
 
->>>>>>> dev
         currentPageTotal += amount;
         currentPageOrders.push(order);
         currentY += rowHeight;
@@ -415,7 +367,7 @@ const Reports: React.FC = () => {
         currentY += 10;
         doc.setFont(undefined, 'bold');
         doc.setFontSize(12);
-        doc.text(`Page ${pageNumber} total - Rs ${Math.round(currentPageTotal)}`, 40, currentY);
+        doc.text(`Page ${pageNumber} total - Rs ${currentPageTotal.toFixed(2)}`, 40, currentY);
         pageTotals.push(currentPageTotal);
       }
 
@@ -433,20 +385,20 @@ const Reports: React.FC = () => {
         doc.setFontSize(12);
         doc.setFont(undefined, 'normal');
         pageTotals.forEach((pageTotal, idx) => {
-          doc.text(`Page ${idx + 1} total - Rs ${Math.round(pageTotal)}`, 40, currentY);
+          doc.text(`Page ${idx + 1} total - Rs ${pageTotal.toFixed(2)}`, 40, currentY);
           currentY += 20;
         });
 
         currentY += 10;
         doc.setFont(undefined, 'bold');
         doc.setFontSize(14);
-        doc.text(`Total Sales - Rs ${Math.round(totalSales)}`, 40, currentY);
+        doc.text(`Total Sales - Rs ${totalSales.toFixed(2)}`, 40, currentY);
       } else {
         // Single page - add total sales at the end
         currentY += 20;
         doc.setFont(undefined, 'bold');
         doc.setFontSize(14);
-        doc.text(`Total Sales - Rs ${Math.round(totalSales)}`, 40, currentY);
+        doc.text(`Total Sales - Rs ${totalSales.toFixed(2)}`, 40, currentY);
       }
 
       // Additional summary info
@@ -501,7 +453,7 @@ const Reports: React.FC = () => {
         const employeeName = userInfo?.name || order.customerName || 'Unknown';
         const employeeId = userInfo?.employeeId || order.customerId || 'Unknown';
         const department = userInfo?.department || 'Unknown';
-        const amount = Number(order.total || order.totalAmount) || 0;
+        const amount = Number(order.totalAmount) || 0;
 
         return [
           index + 1,
@@ -511,7 +463,7 @@ const Reports: React.FC = () => {
           `"${department}"`,
           `"${order.customerId}"`,
           itemsCount,
-          Math.round(amount),
+          amount.toFixed(2),
           `"${order.createdAt.toLocaleDateString()}"`,
           `"${new Date().toLocaleString()}"`
         ];
@@ -526,7 +478,7 @@ const Reports: React.FC = () => {
         '',
         '',
         `Total Orders: ${totalOrders}`,
-        `Total: ${Math.round(totalSales)}`,
+        `Total: ${totalSales.toFixed(2)}`,
         '',
         ''
       ]);
@@ -791,7 +743,7 @@ const Reports: React.FC = () => {
                       <td className="px-4 py-2 font-medium text-slate-900 max-w-[10rem] truncate" title={String(b.id)}>{String(b.id)}</td>
                       <td className="px-4 py-2 font-medium text-slate-900">{employeeId}</td>
                       <td className="px-4 py-2">{itemsCount}</td>
-                      <td className="px-4 py-2 text-right font-semibold">₹{Math.round(Number(b.total || b.totalAmount) || 0)}</td>
+                      <td className="px-4 py-2 text-right font-semibold">₹{(Number(b.totalAmount) || 0).toFixed(2)}</td>
                     </tr>
                   );
                 })
@@ -801,7 +753,7 @@ const Reports: React.FC = () => {
               <tfoot>
                 <tr>
                   <td className="px-4 py-3" colSpan={5}><span className="font-semibold">Total Sales</span></td>
-                  <td className="px-4 py-3 text-right font-bold">₹{Math.round(totalSales)}</td>
+                  <td className="px-4 py-3 text-right font-bold">₹{totalSales.toFixed(2)}</td>
                 </tr>
               </tfoot>
             )}

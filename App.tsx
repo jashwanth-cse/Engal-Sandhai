@@ -472,30 +472,16 @@ const App: React.FC = () => {
         }
       />
 
-<<<<<<< HEAD
-=======
       {/* User: Your Orders */}
->>>>>>> dev
       <Route
         path="/my-orders"
         element={
           <ProtectedRoute user={currentUser} loading={loading}>
-<<<<<<< HEAD
-            <UserOrders
-              user={currentUser}
-              onLogout={handleLogout}
-            />
-          </ProtectedRoute>
-        }
-      />
-      
-=======
             <UserOrders user={currentUser!} onLogout={handleLogout} />
           </ProtectedRoute>
         }
       />
 
->>>>>>> dev
       {/* Admin Routes with Sidebar Layout */}
       <Route
         path="/admin/dashboard"

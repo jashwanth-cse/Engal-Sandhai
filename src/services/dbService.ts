@@ -1557,11 +1557,7 @@ export const fetchUserOrdersByDate = async (customerId: string, date: Date): Pro
           where('userId', '==', customerId)
         );
         const userIdDocs = await getDocs(userIdQuery);
-<<<<<<< HEAD
-        
-=======
 
->>>>>>> dev
         userIdDocs.forEach((doc) => {
           const data = doc.data();
           const bill: Bill = {
@@ -1623,11 +1619,7 @@ export const fetchUserOrdersByDate = async (customerId: string, date: Date): Pro
       legacyDocs.forEach((doc) => {
         const data = doc.data();
         const orderDate = data.createdAt?.toDate?.() || (data.date ? new Date(data.date) : null);
-<<<<<<< HEAD
-        
-=======
 
->>>>>>> dev
         // Only include orders from the selected date
         if (orderDate && getDateKey(orderDate) === dateKey) {
           const bill: Bill = {
@@ -1658,19 +1650,11 @@ export const fetchUserOrdersByDate = async (customerId: string, date: Date): Pro
           where('userId', '==', customerId)
         );
         const userIdDocs = await getDocs(userIdQuery);
-<<<<<<< HEAD
-        
-        userIdDocs.forEach((doc) => {
-          const data = doc.data();
-          const orderDate = data.createdAt?.toDate?.() || (data.date ? new Date(data.date) : null);
-          
-=======
 
         userIdDocs.forEach((doc) => {
           const data = doc.data();
           const orderDate = data.createdAt?.toDate?.() || (data.date ? new Date(data.date) : null);
 
->>>>>>> dev
           // Only include orders from the selected date
           if (orderDate && getDateKey(orderDate) === dateKey) {
             const bill: Bill = {
@@ -1757,11 +1741,7 @@ export const fetchUserOrdersByDate = async (customerId: string, date: Date): Pro
     });
 
     console.log(`✅ Found ${filteredOrders.length} completed orders (out of ${allOrders.length} total) for customer ${customerId}`);
-<<<<<<< HEAD
-    
-=======
 
->>>>>>> dev
     if (filteredOrders.length === 0 && allOrders.length > 0) {
       console.log(`⚠️ Found ${allOrders.length} orders, but none with status: packed, delivered, or bill sent`);
     } else if (allOrders.length === 0) {

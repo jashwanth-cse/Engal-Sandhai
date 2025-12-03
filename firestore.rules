@@ -6,8 +6,8 @@ service cloud.firestore {
     function isAllowedUser() {
       return request.auth.uid in [
         "xKQsk1R0wDaL4kW57phHrcoGr7n1",  // You
-        "SECEADM157",              // Member 2
-        "SECETMA020"               // Member 3
+        "UID_2_OF_MEMBER",              // Member 2
+        "UID_3_OF_MEMBER"               // Member 3
       ];
     }
 
@@ -20,24 +20,13 @@ service cloud.firestore {
     function isFaculty() {
       return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == "faculty";
     }
+    
 
-    // ✅ Crucial: Allow users to read their own profile to verify role
-    match /users/{userId} {
-      allow read: if request.auth != null && request.auth.uid == userId;
-      allow write: if request.auth != null && (isAllowedUser() || isAdmin()); 
-    }
-
-    // ✅ Allow read/write for bills folder only
-    match /bills/{billFile=**} {
-      allow read, write: if request.auth != null 
-                         && (isAllowedUser() || isAdmin() || isFaculty());
-    }
-
-    // ✅ Default rule for other documents
     match /{document=**} {
-      // Access only if authenticated and (isAllowedUser() OR isAdmin() OR isFaculty())
+      // ✅ NOT CLOSED
       allow read, write: if request.auth != null 
-                         && (isAllowedUser() || isAdmin() || isFaculty());
+                         && (isAllowedUser() || isAdmin());
     }
+    
   }
 }

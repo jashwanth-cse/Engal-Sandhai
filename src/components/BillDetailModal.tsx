@@ -11,15 +11,12 @@ import { XMarkIcon, EyeIcon, ArrowDownTrayIcon, ShareIcon } from './ui/Icon.tsx'
 import ImagePreviewModal from './ui/ImagePreviewModal.tsx';
 import Button from './ui/Button.tsx';
 import { getVegetableById, getDateKey } from '../services/dbService';
-import { roundTotal } from '../utils/roundUtils';
 import qrImg from '../assets/QR.jpeg';
-
 import { getStorage, ref, uploadBytes, getDownloadURL } from "firebase/storage";
 
 // Firestore imports
 import { doc, getDoc, writeBatch, serverTimestamp, collection, query, where, getDocs } from 'firebase/firestore';
 import { db } from '../firebase';
-import { compressPdf } from '../utils/pdfCompressor.ts';
 
 // New import: html2canvas for emoji fallback raster rendering
 import html2canvas from 'html2canvas';
@@ -28,7 +25,6 @@ import html2canvas from 'html2canvas';
 // Put your generated file at src/fonts/NotoSansTamil-Regular.js
 // That file should call jsPDF.API.events.push([...]) and add the font to VFS
 import '../fonts/NotoSansTamil-Regular.js';
-import PaymentQR from "../assets/paymentQR.jpg";
 
 // Let TypeScript know that jspdf is available on the window object
 declare global {
@@ -39,17 +35,12 @@ declare global {
 
 type ExtendedBill = Bill & { employee_name?: string };
 
-// UPI IDs configuration
+// UPI ID configuration (single fixed ID)
 const UPI_IDS = [
   {
-    id: 'qualitykannan1962-1@okhdfcbank',
-    name: 'Quality Kannan',
-    displayName: 'qualitykannan1962-1@okhdfcbank'
-  },
-  {
-    id: 'vishnusakra.doc-2@okhdfcbank',
-    name: 'Vishnu Sakra',
-    displayName: 'vishnusakra.doc-2@okhdfcbank'
+    id: 'bakkiyalakshmi.ramaswamy-2@okhdfcbank',
+    name: 'Bakkiyalakshmi Ramaswamy',
+    displayName: 'bakkiyalakshmi.ramaswamy-2@okhdfcbank'
   }
 ];
 
@@ -125,23 +116,18 @@ const BillDetailModal: React.FC<BillDetailModalProps> = ({
   const [calculatedTotal, setCalculatedTotal] = useState(0);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [isSharing, setIsSharing] = useState(false);
   const [showAddVegetables, setShowAddVegetables] = useState(false);
   const [customerNameFromDB, setCustomerNameFromDB] = useState<string>('');
   const [fetchedVegetables, setFetchedVegetables] = useState<Map<string, Vegetable>>(new Map());
   const [isLoadingVegetables, setIsLoadingVegetables] = useState(false);
   const globalVegetableCache = React.useRef<Map<string, Vegetable>>(new Map());
-  const [needsRecalculation, setNeedsRecalculation] = useState(false);
-
+  const [selectedUpiId, setSelectedUpiId] = useState<string>(UPI_IDS[0]?.id || '');
   // New: department fetched from DB for accurate file naming and header printing
   const [customerDeptFromDB, setCustomerDeptFromDB] = useState<string>('');
-<<<<<<< HEAD
-const [isSharing, setIsSharing] = useState(false);
-  const [selectedUpiId, setSelectedUpiId] = useState<string>('');
-=======
   // Stock validation states
   const [availableStockMap, setAvailableStockMap] = useState<Map<string, number>>(new Map());
   const [stockAlert, setStockAlert] = useState<{ show: boolean; itemName: string; requested: number; available: number } | null>(null);
->>>>>>> dev
 
   useEffect(() => {
     if (bill) {
@@ -156,8 +142,7 @@ const [isSharing, setIsSharing] = useState(false);
       setCalculatedTotal(bill.total || 0);
       setHasUnsavedChanges(false);
       setFetchedVegetables(new Map());
-      setSelectedUpiId('');
-      setNeedsRecalculation(true);
+      setSelectedUpiId(UPI_IDS[0]?.id || '');
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bill?.id]);
@@ -172,148 +157,52 @@ const [isSharing, setIsSharing] = useState(false);
   useEffect(() => {
     if (!bill) return;
     let mounted = true;
-    const fetchMissingVegetables = async () => {
+    const fetchMissing = async () => {
       setIsLoadingVegetables(true);
-      const missingIds: string[] = [];
-      const cachedVegetables = new Map<string, Vegetable>();
-
-      for (const item of bill.items) {
-        const existing = vegetableMap.get(item.vegetableId)
-          || fetchedVegetables.get(item.vegetableId)
-          || globalVegetableCache.current.get(item.vegetableId);
-        if (!existing) missingIds.push(item.vegetableId);
-        else if (globalVegetableCache.current.has(item.vegetableId)) cachedVegetables.set(item.vegetableId, existing);
-      }
-
-      if (cachedVegetables.size > 0) setFetchedVegetables(prev => new Map([...prev, ...cachedVegetables]));
-
-      if (missingIds.length === 0) {
-        setIsLoadingVegetables(false);
-        return;
-      }
-
-      const billDate = new Date(bill.date);
-      const dateKey = getDateKey(billDate);
-
       try {
-        const promises = missingIds.map(async (vegId) => {
-          try {
-            let vegetableData = await getVegetableById(vegId);
-            if (!vegetableData) {
-              const dateBasedRef = doc(db, 'vegetables', dateKey, 'items', vegId);
-              const snap = await getDoc(dateBasedRef);
-              if (snap.exists()) {
-                const data = snap.data();
-                vegetableData = {
-                  id: snap.id,
-                  name: data.name || `Item ${vegId}`,
-                  unitType: (data.unitType as 'KG' | 'COUNT') || 'KG',
-                  pricePerKg: Number(data.pricePerKg || data.price) || 0,
-                  totalStockKg: Number(data.totalStockKg || data.stock || data.totalStock) || 0,
-                  stockKg: Number(data.stockKg || data.availableStock) || 0,
-                  category: data.category || 'Other'
-                };
-              }
-            }
-            if (!vegetableData) {
-              const billItem = bill.items.find(it => it.vegetableId === vegId);
-              const fallback: Vegetable = {
-                id: vegId,
-                name: `Item ${vegId.replace('veg_', '').replace(/_/g, ' ').toUpperCase()}`,
-                unitType: 'KG',
-                pricePerKg: billItem ? (billItem.subtotal / (billItem.quantityKg || 1)) || 0 : 0,
-                totalStockKg: 0,
-                stockKg: 0,
-                category: 'Unknown'
-              };
-              return { id: vegId, vegetable: fallback };
-            }
-            return { id: vegId, vegetable: vegetableData };
-          } catch (err) {
-            console.error('Error fetching veg', vegId, err);
-            const billItem = bill.items.find(it => it.vegetableId === vegId);
-            const fallback: Vegetable = {
-              id: vegId,
-              name: `Item ${vegId.replace('veg_', '').replace(/_/g, ' ').toUpperCase()}`,
-              unitType: 'KG',
-              pricePerKg: billItem ? (billItem.subtotal / (billItem.quantityKg || 1)) || 0 : 0,
-              totalStockKg: 0,
-              stockKg: 0,
-              category: 'Unknown'
-            };
-            return { id: vegId, vegetable: fallback };
-          }
-        });
+        const missingIds = bill.items
+          .map(it => it.vegetableId)
+          .filter(id => !vegetableMap.has(id) && !fetchedVegetables.has(id) && !globalVegetableCache.current.has(id));
 
-        const results = await Promise.all(promises);
-        const missingMap = new Map<string, Vegetable>();
-        results.forEach(r => {
-          if (r) {
-            missingMap.set(r.id, r.vegetable);
-            globalVegetableCache.current.set(r.id, r.vegetable);
+        const newMap = new Map<string, Vegetable>();
+        for (const vegId of missingIds) {
+          let vegetableData = await getVegetableById(vegId);
+          if (!vegetableData) {
+            const dateKey = getDateKey(new Date(bill.date));
+            const snap = await getDoc(doc(db, 'vegetables', dateKey, 'items', vegId));
+            if (snap.exists()) {
+              const data = snap.data() as any;
+              vegetableData = {
+                id: snap.id,
+                name: data.name || `Item ${vegId}`,
+                unitType: (data.unitType as 'KG' | 'COUNT') || 'KG',
+                pricePerKg: Number(data.pricePerKg ?? data.price ?? 0),
+                totalStockKg: Number(data.totalStockKg ?? 0),
+                stockKg: Number(data.stockKg ?? 0),
+                category: (data.category as string) || 'General'
+              };
+            }
           }
-        });
-        if (mounted && missingMap.size > 0) setFetchedVegetables(prev => new Map([...prev, ...missingMap]));
+          if (vegetableData) {
+            newMap.set(vegId, vegetableData);
+            globalVegetableCache.current.set(vegId, vegetableData);
+          }
+        }
+        if (mounted && newMap.size > 0) setFetchedVegetables(prev => new Map([...prev, ...newMap]));
       } catch (err) {
         console.error('Batch veg fetch failed', err);
       } finally {
         if (mounted) setIsLoadingVegetables(false);
       }
     };
-
-    fetchMissingVegetables();
+    fetchMissing();
     return () => { mounted = false; };
-  }, [bill?.id]);
-
-  // Recalculate items with current prices after vegetables are loaded
-  useEffect(() => {
-    if (needsRecalculation && !isLoadingVegetables && editedItems.length > 0 && bill) {
-      const recalculatedItems = editedItems.map(item => {
-        const veg = combinedVegetableMap.get(item.vegetableId);
-        if (veg) {
-          // Use current price from database
-          const newSubtotal = Math.round(item.quantityKg * veg.pricePerKg * 100) / 100;
-          return { ...item, subtotal: newSubtotal, pricePerKg: veg.pricePerKg };
-        }
-        return item;
-      });
-      
-      // Check if any subtotals actually changed
-      const hasActualChanges = recalculatedItems.some((item, idx) => 
-        item.subtotal !== bill.items[idx]?.subtotal
-      );
-      
-      setEditedItems(recalculatedItems);
-      
-      if (hasActualChanges) {
-        console.log('📊 Recalculated bill items with current prices - changes detected');
-        // Auto-save the corrected amounts to database to overwrite old data
-        setTimeout(async () => {
-          if (onUpdateBill) {
-            const finalTotal = recalculatedItems.reduce((sum, item) => sum + (item.subtotal || 0), 0);
-            const roundedTotal = roundTotal(finalTotal);
-            try {
-              console.log(`🔄 Overwriting DB with corrected amounts: Old total ₹${bill.total} → New total ₹${roundedTotal}`);
-              await onUpdateBill(bill.id, { items: recalculatedItems, total: roundedTotal });
-              console.log('✅ Bill amounts auto-corrected and saved to DB');
-            } catch (err) {
-              console.error('❌ Failed to auto-save corrected amounts:', err);
-            }
-          }
-        }, 500);
-      } else {
-        console.log('✓ Bill calculations are already correct');
-      }
-      
-      setNeedsRecalculation(false);
-    }
-  }, [needsRecalculation, isLoadingVegetables, combinedVegetableMap, bill, onUpdateBill]);
+  }, [bill?.id, vegetableMap]);
 
   // Recalculate totals
   useEffect(() => {
     const itemsTotal = editedItems.reduce((s, it) => s + (it.subtotal || 0), 0);
-    const bagsAmount = (bill?.bags || 0) * 10;
-    setCalculatedTotal(itemsTotal + bagsAmount);
+    setCalculatedTotal(itemsTotal);
 
     if (bill) {
       const originalItemsTotal = bill.items.reduce((s, it) => s + (it.subtotal || 0), 0);
@@ -416,10 +305,6 @@ const [isSharing, setIsSharing] = useState(false);
     const current = editedItems[index];
     if (!current) return;
     const veg = combinedVegetableMap.get(current.vegetableId);
-<<<<<<< HEAD
-    const clamped = Math.max(0, Math.round(newQuantity * 100) / 100);
-    const pricePerKg = veg ? veg.pricePerKg : ((current as any).pricePerKg || (current.quantityKg > 0 ? current.subtotal / current.quantityKg : 0));
-=======
     
     // For COUNT items, ensure integer values; for KG items, allow decimals
     let clamped: number;
@@ -449,12 +334,10 @@ const [isSharing, setIsSharing] = useState(false);
     }
     
     const pricePerKg = veg ? veg.pricePerKg : (current.quantityKg ? current.subtotal / current.quantityKg : 0);
->>>>>>> dev
     const newSubtotal = Math.round(clamped * pricePerKg * 100) / 100;
     const copy = [...editedItems];
     copy[index] = { ...copy[index], quantityKg: clamped, subtotal: newSubtotal, pricePerKg };
     setEditedItems(copy);
-    console.log(`📝 Updated item ${index + 1}: ${clamped}kg × ₹${pricePerKg}/kg = ₹${newSubtotal}`);
   };
 
   const handleAddVegetable = (vegetableId: string, quantity: number) => {
@@ -489,25 +372,12 @@ const [isSharing, setIsSharing] = useState(false);
     const idx = editedItems.findIndex(it => it.vegetableId === vegetableId);
     if (idx >= 0) {
       const copy = [...editedItems];
-<<<<<<< HEAD
-      const newQty = Math.round((copy[idx].quantityKg + quantity) * 100) / 100;
-      const newSubtotal = Math.round(newQty * veg.pricePerKg * 100) / 100;
-      copy[idx] = { ...copy[idx], quantityKg: newQty, subtotal: newSubtotal, pricePerKg: veg.pricePerKg };
-=======
       const newQty = copy[idx].quantityKg + adjustedQty;
       copy[idx] = { ...copy[idx], quantityKg: newQty, subtotal: newQty * veg.pricePerKg, pricePerKg: veg.pricePerKg };
->>>>>>> dev
       setEditedItems(copy);
-      console.log(`➕ Added ${veg.name}: ${newQty}kg × ₹${veg.pricePerKg}/kg = ₹${newSubtotal}`);
     } else {
-<<<<<<< HEAD
-      const subtotal = Math.round(quantity * veg.pricePerKg * 100) / 100;
-      const ni: BillItem = { vegetableId, quantityKg: quantity, subtotal, pricePerKg: veg.pricePerKg };
-=======
       const ni: BillItem = { vegetableId, quantityKg: adjustedQty, subtotal: adjustedQty * veg.pricePerKg, pricePerKg: veg.pricePerKg };
->>>>>>> dev
       setEditedItems(prev => [...prev, ni]);
-      console.log(`✨ New item ${veg.name}: ${quantity}kg × ₹${veg.pricePerKg}/kg = ₹${subtotal}`);
     }
   };
 
@@ -580,10 +450,7 @@ const [isSharing, setIsSharing] = useState(false);
     setIsSaving(true);
     try {
       await updateStockForQuantityChanges();
-      // Recalculate total from edited items to ensure accuracy
-      const finalTotal = editedItems.reduce((sum, item) => sum + (item.subtotal || 0), 0);
-      const roundedTotal = roundTotal(finalTotal);
-      await onUpdateBill(bill.id, { items: editedItems, total: roundedTotal });
+      await onUpdateBill(bill.id, { items: editedItems, total: calculatedTotal });
       setHasUnsavedChanges(false);
       console.log('Bill updated successfully');
     } catch (err) {
@@ -611,356 +478,129 @@ const [isSharing, setIsSharing] = useState(false);
   };
 
   // Create printable DOM element for raster fallback
-  // Create Black & White, Emoji-Free Printable Element for Raster PDF + QR + High Compression
-const createPrintableBillElement = async (): Promise<HTMLElement> => {
-  const sanitizeNoEmoji = (text: string) =>
-    (text || "")
-      .replace(/[\p{Emoji_Presentation}\p{Extended_Pictographic}]/gu, "")
-      .replace(/[\uD800-\uDBFF][\uDC00-\uDFFF]/g, "")
-      .replace(/\u200D/g, "")
-      .trim();
+  const createPrintableBillElement = async (): Promise<HTMLElement> => {
+    const container = document.createElement('div');
+    container.style.width = '794px';
+    container.style.padding = '18px';
+    container.style.boxSizing = 'border-box';
+    container.style.background = '#fff';
+    container.style.color = '#111827';
+    container.style.fontFamily = "'Noto Sans Tamil', 'Roboto', Arial, sans-serif";
+    container.style.fontSize = '12px';
+    container.style.lineHeight = '1.35';
 
-  const ITEMS_PER_PAGE = 20;
-  
-  // Prepare all items including bags
-  const allItems = [...editedItems];
-  if (bill?.bags && bill.bags > 0) {
-    allItems.push({
-      vegetableId: 'bags',
-      quantityKg: bill.bags,
-      subtotal: bill.bags * 10,
-      name: 'Bags',
-      pricePerKg: 10
-    } as any);
-  }
-  
-  const totalPages = Math.ceil(allItems.length / ITEMS_PER_PAGE);
+    // Header (neutral, no green background)
+    const header = document.createElement('div');
+    header.style.display = 'flex';
+    header.style.justifyContent = 'space-between';
+    header.style.alignItems = 'center';
+    header.style.padding = '12px';
+    header.style.borderRadius = '8px';
+    header.style.background = 'transparent';
+    header.style.border = '1px solid #e5e7eb';
+    header.style.color = '#111827';
+    header.innerHTML = `<div style="font-weight:800;font-size:20px;color:#111827">Engal Santhai</div><div style="font-size:12px;color:#475569;margin-top:4px">Your Fresh Vegetable Partner</div><div style="font-weight:700;color:#111827">INVOICE</div>`;
+    container.appendChild(header);
 
-  const container = document.createElement("div");
-  container.style.width = "794px";
-  container.style.padding = "60px";
-  container.style.background = "#ffffff";
-  container.style.color = "#000000";
-  container.style.fontFamily = "'Poppins', Arial, sans-serif";
-  container.style.fontSize = "12px";
-  container.style.lineHeight = "1.4";
+    // Meta
+  const meta = document.createElement('div');
+    meta.style.display = 'flex';
+    meta.style.justifyContent = 'space-between';
+    meta.style.marginTop = '12px';
+    const billDateObj = new Date(bill.date);
+    const dd = String(billDateObj.getDate()).padStart(2, '0');
+    const mm = String(billDateObj.getMonth() + 1).padStart(2, '0');
+    const yyyy = billDateObj.getFullYear();
+    const idMatch = bill.id.match(/(\d{3,})$/);
+    let serial = '001';
+    if (idMatch) serial = idMatch[1].slice(-3).padStart(3, '0');
+    const billNoFormatted = `ES${dd}${mm}${yyyy}-${serial}`;
+    const deptForHtml = sanitizeTextForPdf(customerDeptFromDB || (bill as any).department || 'NA').toUpperCase();
+    meta.innerHTML = `<div style="font-weight:600">BILL NO: ${billNoFormatted}<div style="margin-top:6px">Date: ${dd}/${mm}/${yyyy}</div></div>
+      <div style="text-align:right">${sanitizeTextForPdf(customerNameFromDB || bill.customerName || '')}
+        <div style="margin-top:6px">EMP ID: ${(bill.customerId || bill.customerName || 'N/A')}</div>
+        <div style="margin-top:6px">DEPT: ${deptForHtml}</div>
+      </div>`;
+    container.appendChild(meta);
 
-  // HEADER — Simple centered layout
-  const header = document.createElement("div");
-  header.style.textAlign = "center";
-  header.style.paddingBottom = "16px";
-  header.style.borderBottom = "2px solid #000";
-  header.style.marginBottom = "20px";
-
-  header.innerHTML = `
-    <div style="font-weight:800;font-size:22px;color:#000;margin-bottom:4px">Engal Santhai</div>
-    <div style="font-size:11px;color:#666">Your Fresh Vegetable Partner</div>
-  `;
-  container.appendChild(header);
-
-  // Calculate dates and numbers
-  const billDateObj = new Date(bill.date);
-  const dd = String(billDateObj.getDate()).padStart(2, "0");
-  const mm = String(billDateObj.getMonth() + 1).padStart(2, "0");
-  const yyyy = String(billDateObj.getFullYear());
-
-  const serialMatch = bill.id.match(/(\d{3,})$/);
-  let serial = serialMatch ? serialMatch[1].slice(-3).padStart(3, "0") : "001";
-  const billNoFormatted = `ES${dd}${mm}${yyyy}-${serial}`;
-
-  const timeStr = billDateObj.toLocaleTimeString("en-US", {
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: true
-  }).toUpperCase();
-
-  // INVOICE label
-  const invoiceLabel = document.createElement("div");
-  invoiceLabel.style.fontWeight = "700";
-  invoiceLabel.style.fontSize = "13px";
-  invoiceLabel.style.marginBottom = "12px";
-  invoiceLabel.style.color = "#000";
-  invoiceLabel.textContent = "INVOICE";
-  container.appendChild(invoiceLabel);
-
-  // METADATA - Two columns
-  const meta = document.createElement("div");
-  meta.style.display = "flex";
-  meta.style.justifyContent = "space-between";
-  meta.style.marginBottom = "20px";
-  meta.style.fontSize = "11px";
-
-  const leftMeta = `
-      <div style="margin-bottom:4px">BILL NO: <span style="font-weight:600">${billNoFormatted}</span></div>
-      <div>Date: <span style="font-weight:600">${dd}/${mm}/${yyyy}</span></div>
-  `;
-
-  const rightMeta = `
-      <div style="margin-bottom:4px">CUSTOMER: <span style="font-weight:600">${sanitizeNoEmoji(customerNameFromDB || bill.customerName)}</span></div>
-      <div>Time: <span style="font-weight:600">${timeStr}</span></div>
-  `;
-
-  const left = document.createElement("div");
-  left.innerHTML = leftMeta;
-
-  const right = document.createElement("div");
-  right.style.textAlign = "right";
-  right.innerHTML = rightMeta;
-
-  meta.appendChild(left);
-  meta.appendChild(right);
-  container.appendChild(meta);
-
-  // Generate table for FIRST PAGE ONLY (max 20 items)
-  const firstPageItems = allItems.slice(0, Math.min(ITEMS_PER_PAGE, allItems.length));
-  
-  const table = document.createElement("table");
-  table.style.width = "100%";
-  table.style.borderCollapse = "collapse";
-  table.style.marginBottom = "20px";
-
-  const thead = `
-    <thead>
-      <tr style="background:#f5f5f5;color:#000;font-weight:600;font-size:11px">
-        <th style="padding:10px 8px;text-align:left;width:10%">S.No</th>
-        <th style="padding:10px 8px;text-align:left">Item</th>
-        <th style="padding:10px 8px;text-align:center;width:18%">Qty(kg)</th>
-        <th style="padding:10px 8px;text-align:right;width:20%">Amount(₹)</th>
+    // Table
+    const table = document.createElement('table');
+    table.style.width = '100%';
+    table.style.borderCollapse = 'collapse';
+    table.style.marginTop = '12px';
+    table.innerHTML = `<thead>
+      <tr style="background:#f1f5f9;font-weight:700">
+        <th style="padding:8px;border:1px solid #e6e9ee">S.No.</th>
+        <th style="padding:8px;border:1px solid #e6e9ee">Item</th>
+        <th style="padding:8px;border:1px solid #e6e9ee;text-align:right">Qty (kg)</th>
+        <th style="padding:8px;border:1px solid #e6e9ee;text-align:right">Rate (₹)</th>
+        <th style="padding:8px;border:1px solid #e6e9ee;text-align:right">Amount (₹)</th>
       </tr>
-    </thead>
-  `;
-
-  const tbody = document.createElement("tbody");
-
-  firstPageItems.forEach((item, idx) => {
-    const veg = combinedVegetableMap.get(item.vegetableId);
-    const name = item.vegetableId === 'bags' ? 'Bags' : sanitizeNoEmoji((item as any).name || veg?.name || "Item");
-
-    const tr = document.createElement("tr");
-    tr.style.borderBottom = "1px solid #e5e5e5";
-    tr.innerHTML = `
-      <td style="padding:10px 8px;font-size:11px">${idx + 1}</td>
-      <td style="padding:10px 8px;font-size:11px">${name}</td>
-      <td style="padding:10px 8px;text-align:center;font-size:11px">${item.quantityKg}</td>
-      <td style="padding:10px 8px;text-align:right;font-size:11px;font-weight:600">₹${Math.round(item.subtotal)}</td>
-    `;
-    tbody.appendChild(tr);
-  });
-
-  table.innerHTML = thead;
-  table.appendChild(tbody);
-  container.appendChild(table);
-
-  // Only show total and payment info if items are 13 or less (all items fit on first page)
-  const showPaymentOnFirstPage = allItems.length <= 13;
-  
-  if (showPaymentOnFirstPage) {
-    // TOTAL - Right aligned
-    const totalDiv = document.createElement("div");
-    totalDiv.style.marginBottom = "24px";
-    totalDiv.style.paddingTop = "12px";
-    totalDiv.style.borderTop = "2px solid #000";
-    totalDiv.style.display = "flex";
-    totalDiv.style.justifyContent = "flex-end";
-    totalDiv.style.fontWeight = "700";
-    totalDiv.style.fontSize = "14px";
-
-    totalDiv.innerHTML = `
-      <div style="color:#000">TOTAL: &nbsp;&nbsp;<span style="font-size:16px">₹${Math.round(calculatedTotal)}</span></div>
-    `;
-    container.appendChild(totalDiv);
-
-    // PAYMENT INFORMATION BLOCK
-    const payBlock = document.createElement("div");
-    payBlock.style.marginTop = "24px";
-    payBlock.style.padding = "16px";
-    payBlock.style.border = "none";
-    payBlock.style.color = "#000";
-    payBlock.style.textAlign = "center";
-
-    payBlock.innerHTML = `
-      <div style="font-weight:700;margin-bottom:12px;font-size:13px;color:#000">
-        PAYMENT INFORMATION
-      </div>
-      <div style="font-size:11px;margin-bottom:4px;color:#000">
-        Payee Name: <strong>Bakkiyalakshmi Ramasamy</strong>
-      </div>
-      <div style="font-size:11px;margin-bottom:12px;color:#000">
-        UPI ID: <strong>bakkiyalakshmi.ramasamy-2@okicicibank</strong>
-      </div>
-      <div style="font-weight:600;margin-bottom:8px;font-size:12px;color:#000">Scan & Pay</div>
-    `;
-
-    // QR CODE
-    const qrWrapper = document.createElement("div");
-    qrWrapper.style.display = "flex";
-    qrWrapper.style.justifyContent = "center";
-    qrWrapper.style.marginTop = "12px";
-
-    const qrImg = document.createElement("img");
-    qrImg.src = PaymentQR;
-    qrImg.style.width = "140px";
-    qrImg.style.height = "140px";
-    qrImg.style.objectFit = "contain";
-    qrImg.style.display = "block";
-    
-    qrWrapper.appendChild(qrImg);
-    payBlock.appendChild(qrWrapper);
-
-    container.appendChild(payBlock);
-  }
-
-  // Load Poppins font
-  const fontLink = document.createElement("link");
-  fontLink.href = "https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700&display=swap";
-  fontLink.rel = "stylesheet";
-  container.appendChild(fontLink);
-
-  container.style.position = "fixed";
-  container.style.left = "-9999px";
-  container.style.top = "0";
-  document.body.appendChild(container);
-
-  await new Promise((res) => setTimeout(res, 250));
-  return container;
-};
-
-// Create subsequent page element (pages 2+)
-const createSubsequentPageElement = async (
-  allItems: any[],
-  startIdx: number,
-  endIdx: number,
-  isLastPage: boolean,
-  calculatedTotal: number
-): Promise<HTMLElement> => {
-  const sanitizeNoEmoji = (text: string) =>
-    (text || "")
-      .replace(/[\p{Emoji_Presentation}\p{Extended_Pictographic}]/gu, "")
-      .replace(/[\uD800-\uDBFF][\uDC00-\uDFFF]/g, "")
-      .replace(/\u200D/g, "")
-      .trim();
-
-  const container = document.createElement("div");
-  container.style.position = "absolute";
-  container.style.left = "-9999px";
-  container.style.top = "0";
-  container.style.width = "794px";
-  container.style.padding = "40px";
-  container.style.backgroundColor = "#fff";
-  container.style.color = "#000";
-  container.style.fontFamily = "Poppins, Arial, sans-serif";
-
-  const pageItems = allItems.slice(startIdx, endIdx);
-
-  // Only add items table if there are items to show (not a payment-only page)
-  if (pageItems.length > 0) {
-    const table = document.createElement("table");
-    table.style.width = "100%";
-    table.style.borderCollapse = "collapse";
-    table.style.marginBottom = "20px";
-
-    const thead = `
-      <thead>
-        <tr style="background:#f5f5f5;color:#000;font-weight:600;font-size:11px">
-          <th style="padding:10px 8px;text-align:left;width:10%">S.No</th>
-          <th style="padding:10px 8px;text-align:left">Item</th>
-          <th style="padding:10px 8px;text-align:center;width:18%">Qty(kg)</th>
-          <th style="padding:10px 8px;text-align:right;width:20%">Amount(₹)</th>
-        </tr>
-      </thead>
-    `;
-
-    const tbody = document.createElement("tbody");
-
-    pageItems.forEach((item, idx) => {
-      const veg = combinedVegetableMap.get(item.vegetableId);
-      const name = item.vegetableId === 'bags' ? 'Bags' : sanitizeNoEmoji((item as any).name || veg?.name || "Item");
-
-      const tr = document.createElement("tr");
-      tr.style.borderBottom = "1px solid #e5e5e5";
-      tr.innerHTML = `
-        <td style="padding:10px 8px;font-size:11px">${startIdx + idx + 1}</td>
-        <td style="padding:10px 8px;font-size:11px">${name}</td>
-        <td style="padding:10px 8px;text-align:center;font-size:11px">${item.quantityKg}</td>
-        <td style="padding:10px 8px;text-align:right;font-size:11px;font-weight:600">₹${Math.round(item.subtotal)}</td>
-      `;
+    </thead>`;
+    const tbody = document.createElement('tbody');
+    editedItems.forEach((it, idx) => {
+      const veg = combinedVegetableMap.get(it.vegetableId);
+      const name = sanitizeTextForPdf((it as any).name || veg?.name || `Item ${it.vegetableId}`);
+      const rate = Number((it as any).pricePerKg || veg?.pricePerKg || 0).toFixed(2);
+      const tr = document.createElement('tr');
+      tr.style.borderBottom = '1px solid #eef2f7';
+      tr.innerHTML = `<td style="padding:8px;border:1px solid #e6e9ee">${idx + 1}</td>
+        <td style="padding:8px;border:1px solid #e6e9ee">${name}</td>
+        <td style="padding:8px;border:1px solid #e6e9ee;text-align:right">${String(it.quantityKg)}</td>
+        <td style="padding:8px;border:1px solid #e6e9ee;text-align:right">₹${rate}</td>
+        <td style="padding:8px;border:1px solid #e6e9ee;text-align:right">₹${Number(it.subtotal).toFixed(2)}</td>`;
       tbody.appendChild(tr);
     });
-
-    table.innerHTML = thead;
     table.appendChild(tbody);
     container.appendChild(table);
-  }
 
-  // Show total and payment info on last page
-  if (isLastPage) {
-    // TOTAL - Right aligned
-    const totalDiv = document.createElement("div");
-    totalDiv.style.marginBottom = "24px";
-    totalDiv.style.paddingTop = "12px";
-    totalDiv.style.borderTop = "2px solid #000";
-    totalDiv.style.display = "flex";
-    totalDiv.style.justifyContent = "flex-end";
-    totalDiv.style.fontWeight = "700";
-    totalDiv.style.fontSize = "14px";
+    // Totals
+    const summary = document.createElement('div');
+    summary.style.display = 'flex';
+    summary.style.justifyContent = 'space-between';
+    summary.style.marginTop = '12px';
+    summary.innerHTML = `<div style="width:60%;font-size:12px;color:#475569">Thank you for shopping with Engal Santhai. Please preserve this bill for your records.</div>
+      <div style="width:36%;border:1px solid #e6e9ee;padding:8px;border-radius:6px"><div style="display:flex;justify-content:space-between;font-weight:700">GRAND TOTAL <div>₹${Math.round(calculatedTotal)}</div></div></div>`;
+    container.appendChild(summary);
 
-    totalDiv.innerHTML = `
-      <div style="color:#000">TOTAL: &nbsp;&nbsp;<span style="font-size:16px">₹${Math.round(calculatedTotal)}</span></div>
-    `;
-    container.appendChild(totalDiv);
+    // Payment block if selected
+    if (selectedUpiId) {
+      const upi = UPI_IDS.find(u => u.id === selectedUpiId);
+      if (upi) {
+        const payDiv = document.createElement('div');
+        payDiv.style.marginTop = '12px';
+        payDiv.style.padding = '10px';
+        payDiv.style.borderRadius = '6px';
+        payDiv.style.background = '#f8fafc';
+        payDiv.style.border = '1px solid #e6eef4';
+        payDiv.innerHTML = `<div style="font-weight:700">PAYMENT INFORMATION</div>
+          <div>Payee Name: ${upi.name}</div><div>UPI ID: ${upi.displayName}</div><div>Amount: Rs. ${Math.round(calculatedTotal)}</div>`;
+        container.appendChild(payDiv);
+      }
+    }
 
-    // PAYMENT INFORMATION BLOCK
-    const payBlock = document.createElement("div");
-    payBlock.style.marginTop = "24px";
-    payBlock.style.padding = "16px";
-    payBlock.style.border = "none";
-    payBlock.style.color = "#000";
-    payBlock.style.textAlign = "center";
+    // Attach font link for rendering if available
+    const fontLink = document.createElement('link');
+    fontLink.href = 'https://fonts.googleapis.com/css2?family=Noto+Sans+Tamil&display=swap';
+    fontLink.rel = 'stylesheet';
+    container.appendChild(fontLink);
 
-    payBlock.innerHTML = `
-      <div style="font-weight:700;margin-bottom:12px;font-size:13px;color:#000">
-        PAYMENT INFORMATION
-      </div>
-      <div style="font-size:11px;margin-bottom:4px;color:#000">
-        Payee Name: <strong>Bakkiyalakshmi Ramasamy</strong>
-      </div>
-      <div style="font-size:11px;margin-bottom:12px;color:#000">
-        UPI ID: <strong>bakkiyalakshmi.ramasamy-2@okicicibank</strong>
-      </div>
-      <div style="font-weight:600;margin-bottom:8px;font-size:12px;color:#000">Scan & Pay</div>
-    `;
-
-    const qrWrapper = document.createElement("div");
-    qrWrapper.style.display = "flex";
-    qrWrapper.style.justifyContent = "center";
-    qrWrapper.style.marginTop = "12px";
-
-    const qrImg = document.createElement("img");
-    qrImg.src = PaymentQR;
-    qrImg.style.width = "140px";
-    qrImg.style.height = "140px";
-    qrImg.style.objectFit = "contain";
-    qrImg.style.display = "block";
-
-    qrWrapper.appendChild(qrImg);
-    payBlock.appendChild(qrWrapper);
-    container.appendChild(payBlock);
-  }
-
-  document.body.appendChild(container);
-  await new Promise((res) => setTimeout(res, 250));
-  return container;
-};
-
+    container.style.position = 'fixed';
+    container.style.left = '-9999px';
+    container.style.top = '0';
+    document.body.appendChild(container);
+    await new Promise(res => setTimeout(res, 250));
+    return container;
+  };
 
   // Generate PDF and filename
-  const generateBillPdfBlobAndFilename = async (): Promise<{ blob: Blob; filename: string ;billDate: string;}> => {
+  const generateBillPdfBlobAndFilename = async (): Promise<{ blob: Blob; filename: string }> => {
     // Ensure window.jspdf present
     if (!(window as any).jspdf || !(window as any).jspdf.jsPDF) {
       throw new Error('jsPDF not available on window.jspdf');
     }
     const { jsPDF } = window.jspdf;
-    const pdfDoc: any = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait' });
+    const pdfDoc: any = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait', compress: true });
     const pageWidth = pdfDoc.internal.pageSize.getWidth();
     const pageHeight = pdfDoc.internal.pageSize.getHeight();
     const ITEMS_PER_PAGE = 22;
@@ -970,7 +610,6 @@ const createSubsequentPageElement = async (
     const dd = String(billDateObj.getDate()).padStart(2, '0');
     const mm = String(billDateObj.getMonth() + 1).padStart(2, '0');
     const yyyy = billDateObj.getFullYear();
-    const billDate = `${dd}.${mm}.${yyyy}`;
     const idMatch = bill.id.match(/(\d{3,})$/);
     let serial = '001';
     if (idMatch) serial = idMatch[1].slice(-3).padStart(3, '0');
@@ -986,8 +625,8 @@ const createSubsequentPageElement = async (
     const filename = `${fileSerial}-${fileDate}-${nameSafe}-${deptSafe}.pdf`;
 
     // Decide fallback: if any text has emoji => raster fallback
-    const preferRaster = true;   // FORCE raster mode always
-
+    const anyEmoji = containsEmoji(customerNameFromDB || bill.customerName || '') || editedItems.some(it => containsEmoji((it as any).name || ''));
+    const preferRaster = anyEmoji;
 
     // TEXT-BASED PDF (searchable) branch
     if (!preferRaster) {
@@ -999,10 +638,11 @@ const createSubsequentPageElement = async (
         for (let pageNum = 0; pageNum < totalPages; pageNum++) {
           if (pageNum > 0) pdfDoc.addPage();
 
-          // Header area
-         // pdfDoc.setFillColor(198, 246, 213); // soft green
-          //pdfDoc.rect(10, 10, pageWidth - 20, 18, 'F');
-       //   pdfDoc.setTextColor(6, 78, 59);
+          // Header area (no color background, add a light outline)
+          pdfDoc.setDrawColor(203, 213, 225); // slate-300
+          pdfDoc.setLineWidth(0.4);
+          pdfDoc.rect(10, 10, pageWidth - 20, 22, 'S'); // outline only
+          pdfDoc.setTextColor(17, 24, 39); // neutral dark text
           pdfDoc.setFontSize(18);
           pdfDoc.setFont(undefined, 'bold');
           pdfDoc.text('Engal Santhai', pageWidth / 2, 24, { align: 'center' });
@@ -1015,7 +655,6 @@ const createSubsequentPageElement = async (
           pdfDoc.text('INVOICE', 14, 42);
 
           const dateStr = billDateObj.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' });
-         
           const timeStr = billDateObj.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }).toLowerCase();
           pdfDoc.setFont(undefined, 'normal');
           pdfDoc.setFontSize(10);
@@ -1095,17 +734,6 @@ const createSubsequentPageElement = async (
             }
           }
 
-          // Add bags row if on last page and bags exist
-          if (pageNum === totalPages - 1 && bill?.bags && bill.bags > 0 && y <= pageHeight - 66) {
-            pdfDoc.setFont('helvetica', 'normal');
-            pdfDoc.text(String(editedItems.length + 1), colSNo, y);
-            pdfDoc.text('Bags', colItem, y);
-            pdfDoc.text(String(bill.bags), colQty, y, { align: 'right' });
-            pdfDoc.text('₹10.00', colRate, y, { align: 'right' });
-            pdfDoc.text(`₹${(bill.bags * 10).toFixed(2)}`, colAmount, y, { align: 'right' });
-            y += 6;
-          }
-
           // Footer totals on last page
           if (pageNum === totalPages - 1) {
             pdfDoc.setLineWidth(0.4);
@@ -1120,8 +748,8 @@ const createSubsequentPageElement = async (
               const selectedUpi = UPI_IDS.find(u => u.id === selectedUpiId);
               if (selectedUpi) {
                 const boxY = pageHeight - 40;
-              //  pdfDoc.setDrawColor(230, 238, 238);
-               // pdfDoc.rect(startX, boxY, endX - startX, 28, 'S');
+                pdfDoc.setDrawColor(230, 238, 238);
+                pdfDoc.rect(startX, boxY, endX - startX, 28, 'S');
                 pdfDoc.setFontSize(10);
                 pdfDoc.setFont(undefined, 'bold');
                 pdfDoc.text('PAYMENT INFORMATION', startX + 2, boxY + 7);
@@ -1136,9 +764,7 @@ const createSubsequentPageElement = async (
         }
 
         const blob = pdfDoc.output('blob');
-        const compressedBlob = await compressPdf(blob);
-        return { blob: compressedBlob, filename,billDate };
-
+        return { blob, filename };
       } catch (err) {
         console.error('Text-based PDF generation failed, falling back to raster', err);
       }
@@ -1146,89 +772,35 @@ const createSubsequentPageElement = async (
 
     // Raster fallback using html2canvas (for emojis or if text path failed)
     try {
-      const firstPageElement = await createPrintableBillElement();
-      const scale = 2;
-      
-      // Render first page
-      const firstCanvas = await html2canvas(firstPageElement as HTMLElement, { scale, useCORS: true, logging: false, scrollY: -window.scrollY });
-      try { document.body.removeChild(firstPageElement); } catch {}
-      
-      const firstImgData = firstCanvas.toDataURL('image/jpeg', 0.95);
-      const firstImgProps = (pdfDoc as any).getImageProperties(firstImgData);
+      const element = await createPrintableBillElement();
+      const scale = 2; // good resolution
+      const canvas = await html2canvas(element as HTMLElement, { scale, useCORS: true, logging: false, scrollY: -window.scrollY });
+      try { document.body.removeChild(element); } catch {}
+      // Use JPEG at high quality for much smaller file size with similar visual quality
+      const imgData = canvas.toDataURL('image/jpeg', 0.9);
+      const imgProps = (pdfDoc as any).getImageProperties(imgData);
       const imgWidth = pageWidth;
-      const firstImgHeight = (firstImgProps.height * imgWidth) / firstImgProps.width;
-      
-      pdfDoc.addImage(firstImgData, 'JPEG', 0, 0, imgWidth, firstImgHeight);
-      
-      // Calculate remaining items
-      const allItems = [...editedItems];
-      if (bill?.bags && bill.bags > 0) {
-        allItems.push({
-          vegetableId: 'bags',
-          quantityKg: bill.bags,
-          subtotal: bill.bags * 10,
-          name: 'Bags',
-          pricePerKg: 10
-        } as any);
-      }
-      
-      const ITEMS_PER_PAGE = 20;
-      const totalPages = Math.ceil(allItems.length / ITEMS_PER_PAGE);
-      const needsPaymentOnSecondPage = allItems.length > 13;
-      
-      // Generate subsequent pages if needed OR if payment needs to move to second page
-      if (totalPages > 1 || needsPaymentOnSecondPage) {
+      const imgHeight = (imgProps.height * imgWidth) / imgProps.width;
+      let heightLeft = imgHeight;
+      let position = 0;
+      pdfDoc.addImage(imgData, 'JPEG', 0, position, imgWidth, imgHeight);
+      heightLeft -= pageHeight;
+      while (heightLeft > 0) {
         pdfDoc.addPage();
-        
-        if (totalPages > 1) {
-          // Multiple pages of items
-          for (let pageNum = 1; pageNum < totalPages; pageNum++) {
-            if (pageNum > 1) {
-              pdfDoc.addPage();
-            }
-            
-            const startIdx = pageNum * ITEMS_PER_PAGE;
-            const endIdx = Math.min(startIdx + ITEMS_PER_PAGE, allItems.length);
-            const isLastPage = pageNum === totalPages - 1;
-            
-            const pageElement = await createSubsequentPageElement(allItems, startIdx, endIdx, isLastPage, calculatedTotal);
-            const pageCanvas = await html2canvas(pageElement as HTMLElement, { scale, useCORS: true, logging: false, scrollY: -window.scrollY });
-            try { document.body.removeChild(pageElement); } catch {}
-            
-            const pageImgData = pageCanvas.toDataURL('image/jpeg', 0.95);
-            const pageImgProps = (pdfDoc as any).getImageProperties(pageImgData);
-            const pageImgHeight = (pageImgProps.height * imgWidth) / pageImgProps.width;
-            
-            pdfDoc.addImage(pageImgData, 'JPEG', 0, 0, imgWidth, pageImgHeight);
-          }
-        } else {
-          // Single page of items (14-20 items) - just show payment on second page
-          const pageElement = await createSubsequentPageElement(allItems, 0, 0, true, calculatedTotal);
-          const pageCanvas = await html2canvas(pageElement as HTMLElement, { scale, useCORS: true, logging: false, scrollY: -window.scrollY });
-          try { document.body.removeChild(pageElement); } catch {}
-          
-          const pageImgData = pageCanvas.toDataURL('image/jpeg', 0.95);
-          const pageImgProps = (pdfDoc as any).getImageProperties(pageImgData);
-          const pageImgHeight = (pageImgProps.height * imgWidth) / pageImgProps.width;
-          
-          pdfDoc.addImage(pageImgData, 'JPEG', 0, 0, imgWidth, pageImgHeight);
-        }
+        position = heightLeft - imgHeight;
+        pdfDoc.addImage(imgData, 'JPEG', 0, position, imgWidth, imgHeight);
+        heightLeft -= pageHeight;
       }
-      
       const blob = pdfDoc.output('blob');
-      const compressedBlob = await compressPdf(blob);
-      return { blob: compressedBlob, filename, billDate};
-
+      return { blob, filename };
     } catch (rasterErr) {
       console.error('Raster fallback failed', rasterErr);
       // Final minimal PDF
       try {
         const fallback = new jsPDF();
         fallback.text('Unable to generate bill PDF. Please contact support.', 10, 10);
-        const blob = pdfDoc.output('blob');
-const compressedBlob = await compressPdf(blob);
-return { blob: compressedBlob, filename,billDate};
-
+        const blob = fallback.output('blob');
+        return { blob, filename };
       } catch (finalErr) {
         console.error('Final fallback failed', finalErr);
         throw new Error('PDF generation failed.');
@@ -1238,7 +810,7 @@ return { blob: compressedBlob, filename,billDate};
 
   const handleDownload = async () => {
     try {
-      const { blob, filename, billDate } = await generateBillPdfBlobAndFilename();
+      const { blob, filename } = await generateBillPdfBlobAndFilename();
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
@@ -1272,76 +844,151 @@ return { blob: compressedBlob, filename,billDate};
   };
 
   const handleShare = async () => {
-    setIsSharing(true);
-
     try {
+      setIsSharing(true);
+      if (!bill) {
+        throw new Error('Bill details not available.');
+      }
+
       if (hasUnsavedChanges) {
         await handleSaveChanges();
       }
 
-      let employeeNameToQuery = billTyped?.employee_name || customerNameFromDB || bill.customerName || '';
-      let retries = 0;
-      while ((!employeeNameToQuery || employeeNameToQuery === 'Unknown Customer') && retries < 5) {
-        await new Promise(res => setTimeout(res, 200));
-        employeeNameToQuery = billTyped?.employee_name || customerNameFromDB || bill.customerName || '';
-        retries++;
+      // Resolve recipient phone number: try customerId doc first, then fallback by employee_name/name
+      let phoneNumber: string | null = null;
+      try {
+        if (bill.customerId) {
+          const userDocRef = doc(db, 'users', bill.customerId);
+          const userSnap = await getDoc(userDocRef);
+          if (userSnap.exists()) {
+            const d: any = userSnap.data();
+            phoneNumber = String(
+              d.phone || d.whatsapp || d.whatsapp_number || d.phoneNumber || d.phone_number || d.mobile || d.contact || ''
+            ) || null;
+          }
+        }
+      } catch (e) {
+        console.warn('CustomerId lookup failed', e);
       }
 
-      let phoneNumber: string | null = null;
-      if (employeeNameToQuery.trim()) {
+      if (!phoneNumber) {
+        let employeeNameToQuery = billTyped?.employee_name || customerNameFromDB || bill.customerName || '';
+        let retries = 0;
+        while ((!employeeNameToQuery || employeeNameToQuery === 'Unknown Customer') && retries < 5) {
+          await new Promise(res => setTimeout(res, 200));
+          employeeNameToQuery = billTyped?.employee_name || customerNameFromDB || bill.customerName || '';
+          retries++;
+        }
+        if (employeeNameToQuery.trim()) {
+          try {
+            const usersRef = collection(db, 'users');
+            const q1 = query(usersRef, where('employee_name', '==', employeeNameToQuery));
+            const snap1 = await getDocs(q1);
+            let userData: any = null;
+            if (!snap1.empty) userData = snap1.docs[0].data();
+            else {
+              const q2 = query(usersRef, where('name', '==', employeeNameToQuery));
+              const snap2 = await getDocs(q2);
+              if (!snap2.empty) userData = snap2.docs[0].data();
+            }
+            if (userData) {
+              phoneNumber = String(
+                userData.phone || userData.whatsapp || userData.whatsapp_number || userData.phoneNumber || userData.phone_number || userData.mobile || userData.contact || ''
+              ) || null;
+            }
+          } catch (err) {
+            console.error('Firestore user lookup failed', err);
+          }
+        }
+      }
+
+      // Generate PDF once for both upload and native share
+      const { blob, filename } = await generateBillPdfBlobAndFilename();
+
+      // Extract and format bill date and number
+      const billDateObj = (() => {
+        const d = new Date(bill.date);
+        return Number.isNaN(d.getTime()) ? new Date() : d;
+      })();
+      const dd = String(billDateObj.getDate()).padStart(2, '0');
+      const mm = String(billDateObj.getMonth() + 1).padStart(2, '0');
+      const yyyy = billDateObj.getFullYear();
+      const messageDate = `${dd}.${mm}.${yyyy}`;
+      const idMatch = bill.id?.match?.(/([\d]{3,})$/);
+      const serial = idMatch ? idMatch[1].slice(-3).padStart(3, '0') : '001';
+      const formattedBillNumber = `ES${dd}${mm}${yyyy}-${serial}`;
+      const storageFilename = `${formattedBillNumber}.pdf`;
+      const storagePath = `bills/${storageFilename}`;
+      const storageUri = `gs://engal-sandhai.firebasestorage.app/${storagePath}`;
+
+      // Upload to Firebase Storage (optional - share will continue even if this fails)
+      let downloadUrl = bill.pdfDownloadUrl;
+      try {
+        const storage = getStorage();
+        const storageRef = ref(storage, storagePath);
+        await uploadBytes(storageRef, blob, {
+          contentType: 'application/pdf',
+          customMetadata: {
+            billId: bill.id,
+            billNumber: formattedBillNumber,
+            customerName: customerNameFromDB || bill.customerName || 'Unknown',
+            generatedAt: new Date().toISOString()
+          }
+        });
+        downloadUrl = await getDownloadURL(storageRef);
+        console.log('✅ PDF uploaded to Firebase Storage:', downloadUrl);
+      } catch (uploadErr) {
+        console.error('⚠️ PDF upload failed (continuing with share):', uploadErr);
+        downloadUrl = 'Kindly download your bill from the link.';
+      }
+
+      // Persist metadata on the bill
+      if (onUpdateBill) {
         try {
-          const usersRef = collection(db, 'users');
-          const q1 = query(usersRef, where('employee_name', '==', employeeNameToQuery));
-          const snap1 = await getDocs(q1);
-          let userData: any = null;
-          if (!snap1.empty) userData = snap1.docs[0].data();
-          else {
-            const q2 = query(usersRef, where('name', '==', employeeNameToQuery));
-            const snap2 = await getDocs(q2);
-            if (!snap2.empty) userData = snap2.docs[0].data();
+          const updates: Partial<Bill> = {
+            pdfDownloadUrl: downloadUrl,
+            pdfStoragePath: storagePath,
+            pdfStorageUri: storageUri,
+            lastSharedAt: new Date().toISOString(),
+          };
+          if (currentUser?.id) {
+            updates.lastSharedBy = currentUser.id;
           }
-          if (userData) {
-            phoneNumber = String(userData.phone || userData.mobile || userData.contact || userData.phoneNumber || '') || null;
-          }
-        } catch (err) {
-          console.error('Firestore user lookup failed', err);
+          await onUpdateBill(bill.id, updates);
+          console.log('✅ Bill metadata updated:', updates);
+        } catch (updateErr) {
+          console.error('Failed to persist PDF metadata', updateErr);
         }
       }
 
       const normalized = normalizePhoneForWhatsApp(phoneNumber);
-      let downloadURL: string | null = null;
-      try {
-        const { blob, filename } = await generateBillPdfBlobAndFilename();
-        const storage = getStorage();
-        const pdfRef = ref(storage, `bills/${(bill as any).billNumber || bill.id || Date.now()}.pdf`);
-        await uploadBytes(pdfRef, blob);
-        const rawURL = await getDownloadURL(pdfRef);
-        downloadURL = rawURL + (rawURL.includes('?') ? '&dl=1' : '?dl=1');
-      } catch (err) {
-        console.warn('PDF upload failed', err);
-      }
-const {billDate } = await generateBillPdfBlobAndFilename();
 
-const totalAmount = Math.round(calculatedTotal);
-const upiId = "bakkiyalakshmi.ramaswamy-2@okhdfcbank";
-const billDownloadLink = downloadURL || "Kindly download your bill from the link.";
+      // Build enhanced WhatsApp message with formatted date and download link
+      const payee = UPI_IDS[0];
+      const totalAmount = Number.isFinite(calculatedTotal) ? calculatedTotal : (bill.total || 0);
+      const roundedTotal = Math.round(totalAmount ?? 0);
+      const totalDisplay = new Intl.NumberFormat('en-IN', {
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 0
+      }).format(roundedTotal);
 
-// Final message
-const message =
-`🌟 Hello!
-Thank you for ordering from *Engal Sandhai* on ${billDate} 🙏
-
-Your Engal Sandhai Bill is ready.
-*Total: ₹${totalAmount}*
-
-📄 _Download your E-bill here:_
-${billDownloadLink}
-
-📌 *Please make your payment to the following UPI ID:*
-${upiId}
-📷 Once done, kindly send a screenshot of the payment confirmation here.
-
-Thank You!`;
+      const messageLines = [
+        '🌟 Hello!',
+        `Thank you for ordering from Engal Sandhai on ${messageDate} 🙏`,
+        '',
+        'Your Engal Sandhai Bill is ready.',
+        `Total: ₹${totalDisplay}`,
+        '',
+        '📄 Download your E-bill here:',
+        downloadUrl || 'Kindly download your bill from the link.',
+        '',
+        '📌 Please make your payment to the following UPI ID:',
+        payee.displayName,
+        '📷 Once done, kindly send a screenshot of the payment confirmation here.',
+        '',
+        'Thank You!'
+      ];
+      const message = messageLines.join('\n');
 
       try {
         await navigator.clipboard.writeText(message);
@@ -1350,17 +997,15 @@ Thank You!`;
       }
 
       const waUrl = normalized
-  ? `https://api.whatsapp.com/send?phone=${encodeURIComponent(normalized)}&text=${encodeURIComponent(message)}`
-  : `https://api.whatsapp.com/send?text=${encodeURIComponent(message)}`;
+        ? `https://api.whatsapp.com/send?phone=${encodeURIComponent(normalized)}&text=${encodeURIComponent(message)}`
+        : `https://api.whatsapp.com/send?text=${encodeURIComponent(message)}`;
+      window.open(waUrl, '_blank');
 
-window.open(waUrl, "_blank");
-
-      // Try native share with file
+      // Try native share with file (reuse generated PDF)
       try {
-        const { blob, filename } = await generateBillPdfBlobAndFilename();
-        const file = new File([blob], filename, { type: 'application/pdf' });
-        if ((navigator as any).share && (navigator as any).canShare?.({ files: [file] })) {
-          await (navigator as any).share({ title: 'Engal Santhai Bill', text: message, files: [file] });
+        const shareFile = new File([blob], storageFilename, { type: 'application/pdf' });
+        if ((navigator as any).share && (navigator as any).canShare?.({ files: [shareFile] })) {
+          await (navigator as any).share({ title: 'Engal Santhai Bill', text: message, files: [shareFile] });
         }
       } catch (shareErr) {
         console.warn('Native share failed', shareErr);
@@ -1368,19 +1013,13 @@ window.open(waUrl, "_blank");
     } catch (err) {
       console.error('Share flow failed', err);
       alert('Unable to share bill. Please try downloading manually.');
+    } finally {
+      setIsSharing(false);
     }
-    setIsSharing(false);
-
   };
 
   return (
     <>
-    {isSharing && (
-  <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 text-white text-lg font-semibold">
-    Please wait, do not press back or exit...
-  </div>
-)}
-
       <div
         role="dialog"
         aria-modal="true"
@@ -1576,43 +1215,78 @@ window.open(waUrl, "_blank");
               )}
             </div>
 
+            {/* UPI Selection Section */}
+            <div className="mt-6 pt-4 border-t-2 border-slate-200">
+              <div className="bg-gradient-to-r from-blue-50 to-green-50 p-4 rounded-lg mb-4">
+                <h3 className="text-lg font-semibold text-slate-800 mb-2 flex items-center">💳 Select UPI ID for Payment</h3>
+                <p className="text-sm text-slate-600">Choose a UPI ID to generate the payment QR code and download the bill</p>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                {UPI_IDS.map(upi => (
+                  <div key={upi.id} className={`p-4 border-2 rounded-lg cursor-pointer transition-all ${selectedUpiId === upi.id ? 'border-green-500 bg-green-50' : 'border-slate-300 hover:border-slate-400'}`} onClick={() => setSelectedUpiId(upi.id)}>
+                    <div className="flex items-center justify-between">
+                      <div className="flex-1">
+                        <p className="font-medium text-slate-800">{upi.name}</p>
+                        <p className="text-sm text-slate-600">{upi.displayName}</p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button onClick={(e) => { e.stopPropagation(); copyUpiId(upi.id); }} className="px-2 py-1 text-xs bg-slate-100 hover:bg-slate-200 rounded text-slate-600" title="Copy UPI ID">Copy</button>
+                        <div className={`w-4 h-4 rounded-full border-2 ${selectedUpiId === upi.id ? 'border-green-500 bg-green-500' : 'border-slate-300'}`}>
+                          {selectedUpiId === upi.id && <div className="w-full h-full rounded-full bg-white scale-50"></div>}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
 
+              {selectedUpiId ? (
+                <div className="bg-slate-50 p-6 rounded-lg">
+                  <div className="text-center">
+                    <p className="text-sm font-medium text-slate-700 mb-3">Payment QR Code for: {UPI_IDS.find(u => u.id === selectedUpiId)?.displayName}</p>
+                    <div className="inline-block p-4 bg-white rounded-lg shadow-sm">
+                      <img src={qrImg} alt="UPI QR Code" className="w-32 h-32 mx-auto rounded border" />
+                    </div>
+                    <p className="text-xs text-slate-500 mt-2">Scan this QR code to pay ₹{Math.round(calculatedTotal)}</p>
+                  </div>
+                </div>
+              ) : (
+                <div className="bg-amber-50 p-4 rounded-lg border border-amber-200">
+                  <div className="text-center">
+                    <p className="text-sm text-amber-700">Please select a UPI ID above to view the payment QR code</p>
+                  </div>
+                </div>
+              )}
+            </div>
 
-            <div className="flex justify-between items-start mt-6 pt-4 border-t border-slate-200">
+            <div className="flex justify-between items-center mt-6 pt-4 border-t border-slate-200">
               <div className="flex gap-3">
                 <Button onClick={handleSaveChanges} disabled={!hasUnsavedChanges || isSaving} className={`${hasUnsavedChanges ? 'bg-green-600 hover:bg-green-700' : 'bg-slate-400 cursor-not-allowed'} text-white`}>
                   {isSaving ? 'Saving...' : 'Save Changes'}
                 </Button>
 
-                <Button onClick={handleShare} className={`bg-primary-600 hover:bg-primary-700 text-white`} title={'Share bill via WhatsApp or other apps'}>
-                  <ShareIcon className="h-5 w-5 mr-2" /> Share
+                <Button onClick={handleShare} disabled={isSharing} className={`${isSharing ? 'bg-primary-400 cursor-wait' : 'bg-primary-600 hover:bg-primary-700'} text-white`} title={isSharing ? 'Uploading bill to storage...' : 'Share bill via WhatsApp or other apps'}>
+                  {isSharing ? (
+                    <>
+                      <div className="animate-spin rounded-full h-5 w-5 border-2 border-white border-t-transparent mr-2"></div>
+                      Sharing...
+                    </>
+                  ) : (
+                    <>
+                      <ShareIcon className="h-5 w-5 mr-2" /> Share
+                    </>
+                  )}
                 </Button>
 
-                <Button onClick={handleDownload} className="bg-slate-600 hover:bg-slate-700 text-white" title={!selectedUpiId ? 'Please select a UPI ID first' : ''}>
+                <Button onClick={handleDownload} disabled={!selectedUpiId} className={`${selectedUpiId ? 'bg-slate-600 hover:bg-slate-700' : 'bg-slate-400 cursor-not-allowed'}`} title={!selectedUpiId ? 'Please select a UPI ID first' : ''}>
                   <ArrowDownTrayIcon className="h-5 w-5 mr-2" /> Download Bill
                 </Button>
               </div>
 
-              <div className="text-right space-y-2">
-                {/* Subtotal (Items only) */}
-                <div className="flex justify-between items-center gap-8">
-                  <p className="text-sm text-slate-500">Subtotal</p>
-                  <p className="text-lg font-semibold text-slate-700">₹{Math.round(editedItems.reduce((s, it) => s + (it.subtotal || 0), 0))}</p>
-                </div>
-                
-                {/* Bags (if any) */}
-                {bill?.bags && bill.bags > 0 && (
-                  <div className="flex justify-between items-center gap-8">
-                    <p className="text-sm text-slate-500">Bags ({bill.bags} × ₹10)</p>
-                    <p className="text-lg font-semibold text-slate-700">₹{bill.bags * 10}</p>
-                  </div>
-                )}
-                
-                {/* Grand Total */}
-                <div className="flex justify-between items-center gap-8 pt-2 border-t border-slate-300">
-                  <p className="text-sm text-slate-500">Total Amount</p>
-                  <p className="text-2xl font-bold text-slate-800">₹{Math.round(calculatedTotal)}</p>
-                </div>
+              <div className="text-right">
+                <p className="text-sm text-slate-500">Total Amount</p>
+                <p className="text-2xl font-bold text-slate-800">₹{Math.round(calculatedTotal)}</p>
+                {Number(calculatedTotal) !== Number(bill.total) && <p className="text-xs text-slate-500 mt-1">Original: ₹{Math.round(bill.total)}</p>}
               </div>
             </div>
 
