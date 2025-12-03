@@ -116,6 +116,7 @@ const BillDetailModal: React.FC<BillDetailModalProps> = ({
   const [calculatedTotal, setCalculatedTotal] = useState(0);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [isSharing, setIsSharing] = useState(false);
   const [showAddVegetables, setShowAddVegetables] = useState(false);
   const [customerNameFromDB, setCustomerNameFromDB] = useState<string>('');
   const [fetchedVegetables, setFetchedVegetables] = useState<Map<string, Vegetable>>(new Map());
@@ -844,6 +845,11 @@ const BillDetailModal: React.FC<BillDetailModalProps> = ({
 
   const handleShare = async () => {
     try {
+      setIsSharing(true);
+      if (!bill) {
+        throw new Error('Bill details not available.');
+      }
+
       if (hasUnsavedChanges) {
         await handleSaveChanges();
       }
@@ -896,14 +902,93 @@ const BillDetailModal: React.FC<BillDetailModalProps> = ({
         }
       }
 
+      // Generate PDF once for both upload and native share
+      const { blob, filename } = await generateBillPdfBlobAndFilename();
+
+      // Extract and format bill date and number
+      const billDateObj = (() => {
+        const d = new Date(bill.date);
+        return Number.isNaN(d.getTime()) ? new Date() : d;
+      })();
+      const dd = String(billDateObj.getDate()).padStart(2, '0');
+      const mm = String(billDateObj.getMonth() + 1).padStart(2, '0');
+      const yyyy = billDateObj.getFullYear();
+      const messageDate = `${dd}.${mm}.${yyyy}`;
+      const idMatch = bill.id?.match?.(/([\d]{3,})$/);
+      const serial = idMatch ? idMatch[1].slice(-3).padStart(3, '0') : '001';
+      const formattedBillNumber = `ES${dd}${mm}${yyyy}-${serial}`;
+      const storageFilename = `${formattedBillNumber}.pdf`;
+      const storagePath = `bills/${storageFilename}`;
+      const storageUri = `gs://engal-sandhai.firebasestorage.app/${storagePath}`;
+
+      // Upload to Firebase Storage (optional - share will continue even if this fails)
+      let downloadUrl = bill.pdfDownloadUrl;
+      try {
+        const storage = getStorage();
+        const storageRef = ref(storage, storagePath);
+        await uploadBytes(storageRef, blob, {
+          contentType: 'application/pdf',
+          customMetadata: {
+            billId: bill.id,
+            billNumber: formattedBillNumber,
+            customerName: customerNameFromDB || bill.customerName || 'Unknown',
+            generatedAt: new Date().toISOString()
+          }
+        });
+        downloadUrl = await getDownloadURL(storageRef);
+        console.log('✅ PDF uploaded to Firebase Storage:', downloadUrl);
+      } catch (uploadErr) {
+        console.error('⚠️ PDF upload failed (continuing with share):', uploadErr);
+        downloadUrl = 'Kindly download your bill from the link.';
+      }
+
+      // Persist metadata on the bill
+      if (onUpdateBill) {
+        try {
+          const updates: Partial<Bill> = {
+            pdfDownloadUrl: downloadUrl,
+            pdfStoragePath: storagePath,
+            pdfStorageUri: storageUri,
+            lastSharedAt: new Date().toISOString(),
+          };
+          if (currentUser?.id) {
+            updates.lastSharedBy = currentUser.id;
+          }
+          await onUpdateBill(bill.id, updates);
+          console.log('✅ Bill metadata updated:', updates);
+        } catch (updateErr) {
+          console.error('Failed to persist PDF metadata', updateErr);
+        }
+      }
+
       const normalized = normalizePhoneForWhatsApp(phoneNumber);
 
-      // Build a UPI payment deep link for quick pay via UPI apps
+      // Build enhanced WhatsApp message with formatted date and download link
       const payee = UPI_IDS[0];
-      const upiAmount = Math.round(calculatedTotal);
-      const upiLink = `upi://pay?pa=${encodeURIComponent(payee.id)}&pn=${encodeURIComponent('Engal Santhai')}&am=${encodeURIComponent(String(upiAmount))}&cu=INR&tn=${encodeURIComponent('Engal Santhai bill payment')}`;
+      const totalAmount = Number.isFinite(calculatedTotal) ? calculatedTotal : (bill.total || 0);
+      const roundedTotal = Math.round(totalAmount ?? 0);
+      const totalDisplay = new Intl.NumberFormat('en-IN', {
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 0
+      }).format(roundedTotal);
 
-      const message = `Hello ${customerNameFromDB || bill.customerName},\n\nYour Engal Santhai bill is ready.\nTotal: ₹${upiAmount}\n\nTap to pay via UPI (enter PIN to confirm):\n${upiLink}\n\nThank you for shopping with us!`;
+      const messageLines = [
+        '🌟 Hello!',
+        `Thank you for ordering from Engal Sandhai on ${messageDate} 🙏`,
+        '',
+        'Your Engal Sandhai Bill is ready.',
+        `Total: ₹${totalDisplay}`,
+        '',
+        '📄 Download your E-bill here:',
+        downloadUrl || 'Kindly download your bill from the link.',
+        '',
+        '📌 Please make your payment to the following UPI ID:',
+        payee.displayName,
+        '📷 Once done, kindly send a screenshot of the payment confirmation here.',
+        '',
+        'Thank You!'
+      ];
+      const message = messageLines.join('\n');
 
       try {
         await navigator.clipboard.writeText(message);
@@ -916,12 +1001,11 @@ const BillDetailModal: React.FC<BillDetailModalProps> = ({
         : `https://api.whatsapp.com/send?text=${encodeURIComponent(message)}`;
       window.open(waUrl, '_blank');
 
-      // Try native share with file
+      // Try native share with file (reuse generated PDF)
       try {
-        const { blob, filename } = await generateBillPdfBlobAndFilename();
-        const file = new File([blob], filename, { type: 'application/pdf' });
-        if ((navigator as any).share && (navigator as any).canShare?.({ files: [file] })) {
-          await (navigator as any).share({ title: 'Engal Santhai Bill', text: message, files: [file] });
+        const shareFile = new File([blob], storageFilename, { type: 'application/pdf' });
+        if ((navigator as any).share && (navigator as any).canShare?.({ files: [shareFile] })) {
+          await (navigator as any).share({ title: 'Engal Santhai Bill', text: message, files: [shareFile] });
         }
       } catch (shareErr) {
         console.warn('Native share failed', shareErr);
@@ -929,6 +1013,8 @@ const BillDetailModal: React.FC<BillDetailModalProps> = ({
     } catch (err) {
       console.error('Share flow failed', err);
       alert('Unable to share bill. Please try downloading manually.');
+    } finally {
+      setIsSharing(false);
     }
   };
 
@@ -1179,8 +1265,17 @@ const BillDetailModal: React.FC<BillDetailModalProps> = ({
                   {isSaving ? 'Saving...' : 'Save Changes'}
                 </Button>
 
-                <Button onClick={handleShare} className={`bg-primary-600 hover:bg-primary-700 text-white`} title={'Share bill via WhatsApp or other apps'}>
-                  <ShareIcon className="h-5 w-5 mr-2" /> Share
+                <Button onClick={handleShare} disabled={isSharing} className={`${isSharing ? 'bg-primary-400 cursor-wait' : 'bg-primary-600 hover:bg-primary-700'} text-white`} title={isSharing ? 'Uploading bill to storage...' : 'Share bill via WhatsApp or other apps'}>
+                  {isSharing ? (
+                    <>
+                      <div className="animate-spin rounded-full h-5 w-5 border-2 border-white border-t-transparent mr-2"></div>
+                      Sharing...
+                    </>
+                  ) : (
+                    <>
+                      <ShareIcon className="h-5 w-5 mr-2" /> Share
+                    </>
+                  )}
                 </Button>
 
                 <Button onClick={handleDownload} disabled={!selectedUpiId} className={`${selectedUpiId ? 'bg-slate-600 hover:bg-slate-700' : 'bg-slate-400 cursor-not-allowed'}`} title={!selectedUpiId ? 'Please select a UPI ID first' : ''}>

@@ -29,6 +29,11 @@ export interface Bill {
   status: 'pending' | 'packed' | 'delivered' | 'inprogress' | 'bill_sent';
   bags?: number; // Number of bags purchased (₹10 each)
   customerId?: string; // Added for customer ID reference
+  pdfDownloadUrl?: string; // Firebase Storage download link for the generated bill PDF
+  pdfStoragePath?: string; // Storage path of the bill PDF (e.g., bills/ES01122025-001.pdf)
+  pdfStorageUri?: string; // Full gs:// URI for the bill PDF
+  lastSharedAt?: string; // ISO timestamp of last share action
+  lastSharedBy?: string; // User ID that triggered the last share
 }
 
 export interface User {
