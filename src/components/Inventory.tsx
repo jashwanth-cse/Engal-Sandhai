@@ -21,8 +21,8 @@ interface InventoryProps {
 }
 
 type ToastState = {
-    message: string;
-    type: 'success' | 'error';
+  message: string;
+  type: 'success' | 'error';
 } | null;
 
 const Inventory: React.FC<InventoryProps> = ({
@@ -56,7 +56,7 @@ const Inventory: React.FC<InventoryProps> = ({
     }
     return Math.floor(num).toString();
   };
-  
+
   // Handle date change
   const handleDateChange = (newDate: Date) => {
     if (onDateChange) {
@@ -71,7 +71,7 @@ const Inventory: React.FC<InventoryProps> = ({
     return date.toLocaleDateString('en-GB', {
       weekday: 'long',
       year: 'numeric',
-      month: 'long', 
+      month: 'long',
       day: 'numeric'
     });
   };
@@ -88,14 +88,14 @@ const Inventory: React.FC<InventoryProps> = ({
   // Calculate used stock for each vegetable from bills
   const usedStock = useMemo(() => {
     const used = new Map<string, number>();
-    
+
     bills.forEach(bill => {
       bill.items?.forEach(item => {
         const currentUsed = used.get(item.vegetableId) || 0;
         used.set(item.vegetableId, currentUsed + item.quantityKg);
       });
     });
-    
+
     return used;
   }, [bills]);
 
@@ -106,7 +106,7 @@ const Inventory: React.FC<InventoryProps> = ({
     if (realTimeStock !== undefined) {
       return realTimeStock;
     }
-    
+
     // Fallback: calculate from bills as before (for backward compatibility)
     const used = usedStock.get(vegetable.id) || 0;
     return Math.max(0, vegetable.totalStockKg - used);
@@ -115,7 +115,7 @@ const Inventory: React.FC<InventoryProps> = ({
   // Calculate selling statistics for each vegetable
   const sellingStats = useMemo(() => {
     const stats = new Map<string, { vegetable: Vegetable; totalSold: number; totalRevenue: number }>();
-    
+
     // Initialize all vegetables with 0 sales
     vegetables.forEach(veg => {
       stats.set(veg.id, {
@@ -124,7 +124,7 @@ const Inventory: React.FC<InventoryProps> = ({
         totalRevenue: 0
       });
     });
-    
+
     // Calculate sales from bills
     bills.forEach(bill => {
       bill.items?.forEach(item => {
@@ -135,14 +135,14 @@ const Inventory: React.FC<InventoryProps> = ({
         }
       });
     });
-    
+
     return Array.from(stats.values());
   }, [vegetables, bills]);
 
   // Get max selling item
   const maxSellingItem = useMemo(() => {
-    return sellingStats.reduce((max, current) => 
-      current.totalSold > max.totalSold ? current : max, 
+    return sellingStats.reduce((max, current) =>
+      current.totalSold > max.totalSold ? current : max,
       sellingStats[0] || { vegetable: null, totalSold: 0, totalRevenue: 0 }
     );
   }, [sellingStats]);
@@ -151,9 +151,9 @@ const Inventory: React.FC<InventoryProps> = ({
   const lowestSellingItem = useMemo(() => {
     const itemsWithSales = sellingStats.filter(item => item.totalSold > 0);
     if (itemsWithSales.length === 0) return { vegetable: null, totalSold: 0, totalRevenue: 0 };
-    
-    return itemsWithSales.reduce((min, current) => 
-      current.totalSold < min.totalSold ? current : min, 
+
+    return itemsWithSales.reduce((min, current) =>
+      current.totalSold < min.totalSold ? current : min,
       itemsWithSales[0]
     );
   }, [sellingStats]);
@@ -163,7 +163,7 @@ const Inventory: React.FC<InventoryProps> = ({
     if (!searchTerm.trim()) {
       return vegetables;
     }
-    return vegetables.filter(veg => 
+    return vegetables.filter(veg =>
       veg.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       veg.category.toLowerCase().includes(searchTerm.toLowerCase())
     );
@@ -249,9 +249,11 @@ const Inventory: React.FC<InventoryProps> = ({
         setPendingRefresh(true);
         try { await onRefresh(); } finally { setPendingRefresh(false); }
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error saving vegetable:', error);
-      showToast('Failed to save vegetable. Please try again.', 'error');
+      // Display specific error message if available (e.g., duplicate vegetable)
+      const errorMessage = error.message || 'Failed to save vegetable. Please try again.';
+      showToast(errorMessage, 'error');
     }
   };
 
@@ -301,7 +303,7 @@ const Inventory: React.FC<InventoryProps> = ({
             />
           </div>
           <div className="flex items-center gap-2">
-            <Button 
+            <Button
               onClick={handleOpenTemplateSelector}
               className="bg-primary-100 hover:bg-primary-200 text-primary-700 border border-primary-300"
             >
@@ -393,47 +395,46 @@ const Inventory: React.FC<InventoryProps> = ({
                 filteredVegetables.map((veg, index) => {
                   const availableStock = getAvailableStock(veg);
                   const isLowStock = availableStock <= (veg.totalStockKg * 0.2); // Low stock warning at 20%
-                  
+
                   return (
-                  <tr key={veg.id} className="bg-white border-b hover:bg-slate-50">
-                  <td className="px-6 py-4 font-medium text-slate-900">
-                    {index + 1}
-                  </td>
-                  <th scope="row" className="px-6 py-4 font-medium text-slate-900 whitespace-nowrap">
-                    <div className="flex items-center">
-                        {veg.name}
-                    </div>
-                  </th>
-                  <td className="px-6 py-4">
-                    <span className={`px-2 py-1 text-xs font-semibold rounded-full ${
-                      veg.unitType === 'KG' ? 'bg-blue-100 text-blue-800' : 'bg-green-100 text-green-800'
-                    }`}>
-                      {veg.unitType}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4">{veg.category}</td>
-                  <td className="px-6 py-4 text-right">
-                    ₹{formatNumber(veg.pricePerKg, true)}/{veg.unitType === 'KG' ? 'kg' : 'piece'}
-                  </td>
-                  <td className="px-6 py-4 text-right font-semibold">
-                    {formatNumber(veg.totalStockKg, veg.unitType === 'KG')} {veg.unitType === 'KG' ? 'kg' : 'pieces'}
-                  </td>
-                  <td className={`px-6 py-4 text-right font-semibold ${isLowStock ? 'text-red-600' : 'text-green-600'}`}>
-                    {formatNumber(availableStock, veg.unitType === 'KG')} {veg.unitType === 'KG' ? 'kg' : 'pieces'}
-                    {isLowStock && availableStock > 0 && <span className="ml-1 text-xs text-red-600">(Low)</span>}
-                    {availableStock === 0 && <span className="ml-1 text-xs text-red-600">(Out)</span>}
-                  </td>
-                  <td className="px-6 py-4 text-center">
-                    <div className="flex justify-center space-x-2">
-                      <button onClick={() => handleOpenModal(veg)} className="p-2 text-slate-500 hover:text-primary-600 rounded-full hover:bg-slate-100">
-                        <PencilSquareIcon className="h-5 w-5" />
-                      </button>
-                      <button onClick={() => handleDelete(veg)} className="p-2 text-slate-500 hover:text-red-600 rounded-full hover:bg-slate-100">
-                        <TrashIcon className="h-5 w-5" />
-                      </button>
-                    </div>
-                  </td>
-                  </tr>
+                    <tr key={veg.id} className="bg-white border-b hover:bg-slate-50">
+                      <td className="px-6 py-4 font-medium text-slate-900">
+                        {index + 1}
+                      </td>
+                      <th scope="row" className="px-6 py-4 font-medium text-slate-900 whitespace-nowrap">
+                        <div className="flex items-center">
+                          {veg.name}
+                        </div>
+                      </th>
+                      <td className="px-6 py-4">
+                        <span className={`px-2 py-1 text-xs font-semibold rounded-full ${veg.unitType === 'KG' ? 'bg-blue-100 text-blue-800' : 'bg-green-100 text-green-800'
+                          }`}>
+                          {veg.unitType}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4">{veg.category}</td>
+                      <td className="px-6 py-4 text-right">
+                        ₹{formatNumber(veg.pricePerKg, true)}/{veg.unitType === 'KG' ? 'kg' : 'piece'}
+                      </td>
+                      <td className="px-6 py-4 text-right font-semibold">
+                        {formatNumber(veg.totalStockKg, veg.unitType === 'KG')} {veg.unitType === 'KG' ? 'kg' : 'pieces'}
+                      </td>
+                      <td className={`px-6 py-4 text-right font-semibold ${isLowStock ? 'text-red-600' : 'text-green-600'}`}>
+                        {formatNumber(availableStock, veg.unitType === 'KG')} {veg.unitType === 'KG' ? 'kg' : 'pieces'}
+                        {isLowStock && availableStock > 0 && <span className="ml-1 text-xs text-red-600">(Low)</span>}
+                        {availableStock === 0 && <span className="ml-1 text-xs text-red-600">(Out)</span>}
+                      </td>
+                      <td className="px-6 py-4 text-center">
+                        <div className="flex justify-center space-x-2">
+                          <button onClick={() => handleOpenModal(veg)} className="p-2 text-slate-500 hover:text-primary-600 rounded-full hover:bg-slate-100">
+                            <PencilSquareIcon className="h-5 w-5" />
+                          </button>
+                          <button onClick={() => handleDelete(veg)} className="p-2 text-slate-500 hover:text-red-600 rounded-full hover:bg-slate-100">
+                            <TrashIcon className="h-5 w-5" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
                   );
                 })
               )}
