@@ -16,7 +16,7 @@ import { getStorage, ref, uploadBytes, getDownloadURL } from "firebase/storage";
 
 // Firestore imports
 import { doc, getDoc, writeBatch, serverTimestamp, collection, query, where, getDocs } from 'firebase/firestore';
-import { db } from '../firebase';
+import { db } from '../firebase.ts';
 
 // New import: html2canvas for emoji fallback raster rendering
 import html2canvas from 'html2canvas';

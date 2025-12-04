@@ -19,7 +19,7 @@ import { useBillingData } from './hooks/useBillingData';
 import type { User } from './types/types';
 import { loginWithEmployeeID, auth, observeUser } from './src/services/authService';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
-import { db } from './src/firebase';
+import { db } from './src/firebase.ts';
 import { updateUserNameInDb, updateOrderStatus } from './src/services/dbService';
 
 // Map Firebase/Auth errors to user-friendly messages
