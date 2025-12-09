@@ -205,12 +205,47 @@ const BillDetailModal: React.FC<BillDetailModalProps> = ({
     setCalculatedTotal(itemsTotal);
 
     if (bill) {
+      // Check for changes by comparing items by vegetableId, not by index
       const originalItemsTotal = bill.items.reduce((s, it) => s + (it.subtotal || 0), 0);
-      const hasChanges = itemsTotal !== originalItemsTotal ||
-        editedItems.some((item, idx) =>
-          item.quantityKg !== bill.items[idx]?.quantityKg || item.subtotal !== bill.items[idx]?.subtotal
-        );
-      setHasUnsavedChanges(hasChanges);
+      
+      // Check if total changed
+      if (itemsTotal !== originalItemsTotal) {
+        setHasUnsavedChanges(true);
+        return;
+      }
+      
+      // Check if number of items changed
+      if (editedItems.length !== bill.items.length) {
+        setHasUnsavedChanges(true);
+        return;
+      }
+      
+      // Create maps for comparison by vegetableId
+      const originalMap = new Map(bill.items.map(item => [item.vegetableId, item]));
+      const editedMap = new Map(editedItems.map(item => [item.vegetableId, item]));
+      
+      // Check if any items were added or removed
+      const originalIds = new Set(bill.items.map(it => it.vegetableId));
+      const editedIds = new Set(editedItems.map(it => it.vegetableId));
+      
+      const hasAddedOrRemoved = originalIds.size !== editedIds.size || 
+        [...originalIds].some(id => !editedIds.has(id)) ||
+        [...editedIds].some(id => !originalIds.has(id));
+      
+      if (hasAddedOrRemoved) {
+        setHasUnsavedChanges(true);
+        return;
+      }
+      
+      // Check if any quantities or subtotals changed
+      const hasQuantityOrPriceChanges = editedItems.some(item => {
+        const original = originalMap.get(item.vegetableId);
+        return !original || 
+          item.quantityKg !== original.quantityKg || 
+          item.subtotal !== original.subtotal;
+      });
+      
+      setHasUnsavedChanges(hasQuantityOrPriceChanges);
     }
   }, [editedItems, bill]);
 
@@ -314,12 +349,19 @@ const BillDetailModal: React.FC<BillDetailModalProps> = ({
       clamped = Math.max(0, Math.round(newQuantity * 100) / 100); // Decimal for kg
     }
     
-    // Check available stock - get current item quantity to calculate what's being added
+    // Check available stock - strict validation against current DB stock
     const availableStock = availableStockMap.get(current.vegetableId) || 0;
+    
+    // Get what this specific item currently has in the edited bill
     const currentItemQty = current.quantityKg;
+    
+    // Calculate quantity used by other items in the edited bill (excluding current item)
     const otherItemsQty = editedItems
       .filter((_, idx) => idx !== index && _.vegetableId === current.vegetableId)
       .reduce((sum, item) => sum + item.quantityKg, 0);
+    
+    // Max allowed = available in DB + current item's quantity - what other items are using
+    // This ensures we never exceed actual DB stock
     const maxAllowed = availableStock + currentItemQty - otherItemsQty;
     
     if (clamped > maxAllowed) {
@@ -350,11 +392,16 @@ const BillDetailModal: React.FC<BillDetailModalProps> = ({
       adjustedQty = Math.floor(quantity); // Integer only for count
     }
     
-    // Check available stock
+    // Check available stock - strict validation against current DB stock
     const availableStock = availableStockMap.get(vegetableId) || 0;
+    
+    // Calculate quantity currently in edited items
     const currentItemQty = editedItems
       .filter(it => it.vegetableId === vegetableId)
       .reduce((sum, item) => sum + item.quantityKg, 0);
+    
+    // Max allowed = available in DB - what's currently in edited items
+    // This ensures we never exceed actual DB stock
     const maxAllowed = availableStock - currentItemQty;
     
     if (adjustedQty > maxAllowed) {

@@ -233,12 +233,13 @@ const Inventory: React.FC<InventoryProps> = ({
     }
   };
 
-  const handleSubmit = async (data: Omit<Vegetable, 'id'> | Vegetable) => {
+  const handleSubmit = async (data: Omit<Vegetable, 'id'> | Vegetable, isAddMode?: boolean) => {
     try {
       if ('id' in data) {
         // Update existing vegetable
-        await updateVegetable(data, currentDate); // Pass the selected date
-        showToast(`${data.name} updated for ${formatDateForDisplay(currentDate)}!`);
+        await updateVegetable(data, currentDate, isAddMode); // Pass the selected date and mode
+        const mode = isAddMode ? 'ADD' : 'SET';
+        showToast(`${data.name} updated for ${formatDateForDisplay(currentDate)} (${mode} mode)!`);
       } else {
         // Add new vegetable
         await addVegetable(data, currentDate); // Pass the selected date

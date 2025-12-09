@@ -21,3 +21,31 @@ export const USERS_DATA: User[] = [
 ];
 
 export const BILLS_DATA: Bill[] = []; // Start with no bills
+
+// Stock management constants
+export const ORDERABLE_STOCK_PERCENTAGE = 0.85; // 85% of stock is orderable to prevent overselling
+export const RESERVED_STOCK_PERCENTAGE = 0.15; // 15% reserved buffer
+
+/**
+ * Calculate orderable stock for users
+ * KG items: 85% of TOTAL stock (not current available) - orders consumed
+ * COUNT items: 100% of available stock
+ * 
+ * For KG items, we calculate based on original total stock to maintain the 15% reserve:
+ * - If total was 10kg, orderable is always max 8.5kg
+ * - Even if 5kg sold, orderable is min(8.5 - 5 = 3.5kg, available 5kg)
+ * - When 8.5kg sold, orderable becomes 0, leaving 1.5kg reserved
+ */
+export const getOrderableStock = (availableStock: number, totalStock: number, unitType: 'KG' | 'COUNT'): number => {
+  if (unitType === 'KG') {
+    // Calculate max orderable from original total (85%)
+    const maxOrderable = totalStock * ORDERABLE_STOCK_PERCENTAGE;
+    // Calculate how much has been sold
+    const soldAmount = totalStock - availableStock;
+    // Remaining orderable = max orderable - already sold
+    const remainingOrderable = Math.max(0, maxOrderable - soldAmount);
+    // Return the minimum of remaining orderable and available stock
+    return Math.min(remainingOrderable, availableStock);
+  }
+  return availableStock;
+};

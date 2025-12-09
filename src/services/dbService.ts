@@ -127,7 +127,7 @@ export const addVegetableToDb = async (
   return docRef.id;
 };
 
-export const updateVegetableInDb = async (vegetable: Vegetable, date?: Date): Promise<void> => {
+export const updateVegetableInDb = async (vegetable: Vegetable, date?: Date, isAddMode?: boolean): Promise<void> => {
   const dateKey = getDateKey(date);
   const isDateBased = date !== undefined;
 
@@ -159,8 +159,15 @@ export const updateVegetableInDb = async (vegetable: Vegetable, date?: Date): Pr
 
       if (stockDoc.exists()) {
         const currentData = stockDoc.data();
-        const diff = vegetable.totalStockKg - (currentData.totalStockKg || 0);
-        newAvailable = Math.max(0, (currentData.availableStockKg || 0) + diff);
+        
+        if (isAddMode) {
+          // ADD mode: Calculate the difference and add to available stock
+          const diff = vegetable.totalStockKg - (currentData.totalStockKg || 0);
+          newAvailable = Math.max(0, (currentData.availableStockKg || 0) + diff);
+        } else {
+          // SET mode: Set both totalStock and availableStock to the new value
+          newAvailable = vegetable.totalStockKg;
+        }
       }
 
       transaction.set(availableStockRef, {
@@ -176,7 +183,8 @@ export const updateVegetableInDb = async (vegetable: Vegetable, date?: Date): Pr
       }, { merge: true });
     });
     const target = isDateBased ? `${vegetable.name} on ${dateKey}` : vegetable.name;
-    console.log('✅ Available stock updated for:', target);
+    const mode = isAddMode ? 'ADD' : 'SET';
+    console.log(`✅ Available stock updated for: ${target} (Mode: ${mode})`);
   } catch (error) {
     console.error('❌ Failed to update available stock:', error);
   }

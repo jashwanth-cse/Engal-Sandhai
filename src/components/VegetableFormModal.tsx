@@ -6,7 +6,7 @@ import { XMarkIcon, PlusIcon, CheckCircleIcon } from './ui/Icon.tsx';
 interface VegetableFormModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSubmit: (vegetable: Omit<Vegetable, 'id'> | Vegetable) => void;
+  onSubmit: (vegetable: Omit<Vegetable, 'id'> | Vegetable, isAddMode?: boolean) => void;
   vegetableToEdit?: Vegetable | null;
   templateData?: Vegetable | null;
 }
@@ -19,6 +19,7 @@ const VegetableFormModal: React.FC<VegetableFormModalProps> = ({
   templateData,
 }) => {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [stockUpdateMode, setStockUpdateMode] = useState<'SET' | 'ADD'>('SET');
   const [formData, setFormData] = useState({
     name: '',
     unitType: 'KG' as 'KG' | 'COUNT',
@@ -38,6 +39,7 @@ const VegetableFormModal: React.FC<VegetableFormModalProps> = ({
         stockKg: String(vegetableToEdit.stockKg),
         category: vegetableToEdit.category,
       });
+      setStockUpdateMode('SET'); // Reset to SET when editing
     } else if (templateData) {
       // Pre-fill with template data
       setFormData({
@@ -48,8 +50,10 @@ const VegetableFormModal: React.FC<VegetableFormModalProps> = ({
         stockKg: String(templateData.stockKg),
         category: templateData.category,
       });
+      setStockUpdateMode('SET');
     } else {
       setFormData({ name: '', unitType: 'KG', pricePerKg: '', totalStockKg: '', stockKg: '', category: '' });
+      setStockUpdateMode('SET');
     }
   }, [vegetableToEdit, templateData, isOpen]);
 
@@ -111,19 +115,31 @@ const VegetableFormModal: React.FC<VegetableFormModalProps> = ({
       }
     }
 
+    let totalStockValue = formData.unitType === 'COUNT' ? parseInt(formData.totalStockKg || '0', 10) : parseFloat(formData.totalStockKg || '0');
+    let stockKgValue = totalStockValue;
+
+    // If editing and ADD mode is selected, add to existing stock
+    if (vegetableToEdit && stockUpdateMode === 'ADD') {
+      const addAmount = totalStockValue;
+      totalStockValue = vegetableToEdit.totalStockKg + addAmount;
+      // For availableStockKg calculation: add the full amount (no 85% restriction on ADD)
+      // The available stock in DB is current available, we add the full amount to it
+      stockKgValue = totalStockValue; // This will be used to calculate diff in dbService
+    }
+
     const processedData = {
       name: formData.name,
       unitType: formData.unitType as 'KG' | 'COUNT',
       pricePerKg: parseFloat(formData.pricePerKg),
-      totalStockKg: formData.unitType === 'COUNT' ? parseInt(formData.totalStockKg || '0', 10) : parseFloat(formData.totalStockKg || '0'),
-      stockKg: formData.unitType === 'COUNT' ? parseInt(formData.totalStockKg || '0', 10) : parseFloat(formData.totalStockKg || '0'), // Set stockKg to totalStockKg initially
+      totalStockKg: totalStockValue,
+      stockKg: stockKgValue,
       category: formData.category,
     };
 
     if (vegetableToEdit) {
-      onSubmit({ ...processedData, id: vegetableToEdit.id });
+      onSubmit({ ...processedData, id: vegetableToEdit.id }, stockUpdateMode === 'ADD');
     } else {
-      onSubmit(processedData);
+      onSubmit(processedData, false);
     }
     onClose();
   };
@@ -134,9 +150,9 @@ const VegetableFormModal: React.FC<VegetableFormModalProps> = ({
     <div
       role="dialog"
       aria-modal="true"
-      className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
+      className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 overflow-y-auto"
     >
-      <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-lg mx-auto overflow-hidden animate-fade-in-down" onClick={(e) => e.stopPropagation()}>
+      <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-lg mx-auto my-8 overflow-hidden animate-fade-in-down" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between p-5 bg-gradient-to-r from-primary-600 to-primary-500 text-white">
             <div className="flex items-center gap-3">
               <div className="rounded-lg bg-white/10 p-2">
@@ -151,7 +167,7 @@ const VegetableFormModal: React.FC<VegetableFormModalProps> = ({
                 <XMarkIcon className="h-5 w-5 text-white" />
             </button>
         </div>
-        <form onSubmit={handleSubmit} className="p-6 sm:p-8 space-y-6 bg-white">
+        <form onSubmit={handleSubmit} className="p-4 sm:p-6 space-y-4 bg-white max-h-[calc(100vh-200px)] overflow-y-auto">
           <div>
             <label htmlFor="name" className="block text-sm font-medium text-slate-700 mb-1">Name</label>
             <input type="text" name="name" id="name" value={formData.name} onChange={handleChange} required className="block w-full rounded-lg border border-slate-200 shadow-sm focus:border-primary-500 focus:ring-primary-200 bg-white text-slate-900 placeholder-slate-400 px-4 py-3" placeholder="e.g., Cherry Tomato" />
@@ -166,6 +182,41 @@ const VegetableFormModal: React.FC<VegetableFormModalProps> = ({
             </select>
             <p className="text-xs text-slate-500 mt-1">KG for weights, COUNT for pieces</p>
           </div>
+
+          {vegetableToEdit && (
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-2">Stock Update Mode</label>
+              <div className="flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => setStockUpdateMode('SET')}
+                  className={`flex-1 px-4 py-2.5 rounded-lg font-medium transition-all ${
+                    stockUpdateMode === 'SET'
+                      ? 'bg-primary-600 text-white shadow-md'
+                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                  }`}
+                >
+                  SET
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setStockUpdateMode('ADD')}
+                  className={`flex-1 px-4 py-2.5 rounded-lg font-medium transition-all ${
+                    stockUpdateMode === 'ADD'
+                      ? 'bg-primary-600 text-white shadow-md'
+                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                  }`}
+                >
+                  ADD
+                </button>
+              </div>
+              <p className="text-xs text-slate-500 mt-2">
+                {stockUpdateMode === 'SET' 
+                  ? 'SET: Replace current stock with new value' 
+                  : 'ADD: Add to existing stock (Total: ' + (vegetableToEdit.totalStockKg || 0) + ' ' + (vegetableToEdit.unitType === 'KG' ? 'kg' : 'pcs') + ')'}
+              </p>
+            </div>
+          )}
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
@@ -182,10 +233,14 @@ const VegetableFormModal: React.FC<VegetableFormModalProps> = ({
             <div>
 
               <label htmlFor="totalStockKg" className="block text-sm font-medium text-slate-700">
-                Total Stock ({formData.unitType === 'KG' ? 'kg' : 'pieces'})
+                {vegetableToEdit && stockUpdateMode === 'ADD' ? `Add Stock (${formData.unitType === 'KG' ? 'kg' : 'pieces'})` : `Total Stock (${formData.unitType === 'KG' ? 'kg' : 'pieces'})`}
               </label>
               <input type="number" name="totalStockKg" id="totalStockKg" value={formData.totalStockKg} onChange={handleChange} required min="0" step={formData.unitType === 'KG' ? '0.1' : '1'} className="mt-1 block w-full rounded-lg border border-slate-200 shadow-sm focus:border-primary-500 focus:ring-primary-200 bg-white text-slate-900 placeholder-slate-400 px-4 py-3" placeholder={formData.unitType === 'KG' ? 'e.g., 25.5' : 'e.g., 100'} />
-              <p className="text-xs text-slate-500 mt-1">Enter total stock available for this item</p>
+              <p className="text-xs text-slate-500 mt-1">
+                {vegetableToEdit && stockUpdateMode === 'ADD' 
+                  ? 'Amount to add to current stock' 
+                  : 'Enter total stock available for this item'}
+              </p>
             </div>
           </div>
           
@@ -210,7 +265,7 @@ const VegetableFormModal: React.FC<VegetableFormModalProps> = ({
             </div>
           )}
           
-          <div className="flex justify-end pt-4 space-x-3 border-t mt-6">
+          <div className="flex justify-end pt-3 space-x-3 border-t mt-4 sticky bottom-0 bg-white">
             <button
               type="button"
               onClick={onClose}

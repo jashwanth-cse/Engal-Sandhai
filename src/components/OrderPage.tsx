@@ -12,6 +12,7 @@ import BillPreviewPage from './BillPreviewPage.tsx';
 import UserSettings from './UserSettings.tsx';
 import { updateUserNameInDb } from '../services/dbService';
 import { roundTotal, formatRoundedTotal } from '../utils/roundUtils';
+import { getOrderableStock } from '../../constants';
 
 interface OrderPageProps {
   user: User;
@@ -75,9 +76,10 @@ const OrderPage: React.FC<OrderPageProps> = ({ user, vegetables, availableStock,
     return vegetables.filter(v => {
       const matchesCategory = category === 'All' || v.category === category;
       const matchesSearch = v.name.toLowerCase().includes(searchTerm.toLowerCase());
-      // Filter out vegetables with 0 stock
+      // Filter out vegetables with 0 orderable stock (maintains 15% reserve for KG items)
       const availableStockAmount = availableStock.get(v.id) || 0;
-      const hasStock = availableStockAmount > 0;
+      const orderableStock = getOrderableStock(availableStockAmount, v.totalStockKg, v.unitType);
+      const hasStock = orderableStock > 0;
       return matchesCategory && matchesSearch && hasStock;
     }).sort((a, b) => a.name.localeCompare(b.name));
   }, [vegetables, searchTerm, category, availableStock]);
@@ -92,11 +94,12 @@ const OrderPage: React.FC<OrderPageProps> = ({ user, vegetables, availableStock,
         return prev;
       }
 
-      // Use available stock instead of stockKg
-      const maxStock = availableStock.get(vegId) || 0;
-      // Clamp quantity between 0 and available stock
+      // Use orderable stock for users (85% for KG items with 15% reserve, 100% for COUNT items)
+      const availableStockAmount = availableStock.get(vegId) || 0;
+      const maxStock = getOrderableStock(availableStockAmount, vegetable.totalStockKg, vegetable.unitType);
+      // Clamp quantity between 0 and orderable stock
       const clampedQuantity = Math.max(0, Math.min(quantity, maxStock));
-      console.log(`Clamped quantity: ${clampedQuantity} (original: ${quantity}, max: ${maxStock})`);
+      console.log(`Clamped quantity: ${clampedQuantity} (original: ${quantity}, max: ${maxStock}, available: ${availableStockAmount}, total: ${vegetable.totalStockKg})`);
 
       if (clampedQuantity > 0) {
         newCart.set(vegId, parseFloat(clampedQuantity.toFixed(2)));
@@ -192,13 +195,15 @@ const OrderPage: React.FC<OrderPageProps> = ({ user, vegetables, availableStock,
 
       for (const item of cartItems) {
         const currentStock = availableStock.get(item.vegetableId) || 0;
-        if (currentStock < item.quantityKg) {
+        const veg = vegetableMap.get(item.vegetableId);
+        const orderableStock = veg ? getOrderableStock(currentStock, veg.totalStockKg, veg.unitType) : currentStock;
+        if (orderableStock < item.quantityKg) {
           errors.set(item.vegetableId, {
             requested: item.quantityKg,
-            available: currentStock
+            available: orderableStock
           });
           hasStockIssues = true;
-          console.warn(`❌ Insufficient stock for ${item.name}: requested ${item.quantityKg}kg, available ${currentStock}kg`);
+          console.warn(`❌ Insufficient stock for ${item.name}: requested ${item.quantityKg}kg, available ${orderableStock}kg (orderable)`);
         }
       }
 
@@ -207,15 +212,15 @@ const OrderPage: React.FC<OrderPageProps> = ({ user, vegetables, availableStock,
         setShowStockAlert(true);
         setIsPlacingOrder(false);
         
-        // Auto-adjust cart to available stock
+        // Auto-adjust cart to orderable stock
         const adjustedCart = new Map(cart);
         errors.forEach((error, vegId) => {
           if (error.available > 0) {
             adjustedCart.set(vegId, error.available);
-            console.log(`📉 Auto-adjusted ${vegId} from ${error.requested}kg to ${error.available}kg`);
+            console.log(`📉 Auto-adjusted ${vegId} from ${error.requested}kg to ${error.available}kg (orderable)`);
           } else {
             adjustedCart.delete(vegId);
-            console.log(`🚫 Removed ${vegId} from cart (out of stock)`);
+            console.log(`🚫 Removed ${vegId} from cart (out of orderable stock)`);
           }
         });
         setCart(adjustedCart);
@@ -446,6 +451,7 @@ const OrderPage: React.FC<OrderPageProps> = ({ user, vegetables, availableStock,
             {filteredVegetables.length > 0 ? filteredVegetables.map((veg, index) => {
               const quantity = cart.get(veg.id) || 0;
               const availableStockAmount = availableStock.get(veg.id) || 0;
+              const orderableStock = getOrderableStock(availableStockAmount, veg.totalStockKg, veg.unitType);
               return (
                 <div key={veg.id} className="flex items-center justify-between p-3 bg-white rounded-lg shadow-sm">
                   <div className="flex items-center">
@@ -473,7 +479,7 @@ const OrderPage: React.FC<OrderPageProps> = ({ user, vegetables, availableStock,
                         onChange={(e) => updateCart(veg.id, parseFloat(e.target.value) || 0)}
                         className="w-16 text-center font-bold text-primary-700 border-b-2 border-slate-300 focus:outline-none focus:border-primary-500 transition bg-transparent"
                         min="0"
-                        max={availableStockAmount}
+                        max={orderableStock}
                         step={veg.unitType === 'COUNT' ? "1" : "0.25"}
                         aria-label={`${veg.name} quantity in ${veg.unitType === 'KG' ? 'kg' : 'pieces'}`}
                       />
@@ -483,7 +489,7 @@ const OrderPage: React.FC<OrderPageProps> = ({ user, vegetables, availableStock,
                           updateCart(veg.id, quantity + increment);
                         }}
                         className="p-2 rounded-full bg-slate-200 text-slate-700 hover:bg-slate-300 disabled:opacity-50"
-                        disabled={quantity >= availableStockAmount}
+                        disabled={quantity >= orderableStock}
                       >
                         <PlusIcon className="h-4 w-4" />
                       </button>

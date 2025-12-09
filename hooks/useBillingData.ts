@@ -140,10 +140,10 @@ export const useBillingData = (props: UseBillingDataProps = {}) => {
     await addVegetableToDb(newVegetable, targetDate);
   }, [selectedDate]);
 
-  const updateVegetable = useCallback(async (updatedVegetable: Vegetable, date?: Date) => {
+  const updateVegetable = useCallback(async (updatedVegetable: Vegetable, date?: Date, isAddMode?: boolean) => {
     // Use the provided date, or selected date from hook, or current date as fallback
     const targetDate = date || selectedDate || new Date();
-    await updateVegetableInDb(updatedVegetable, targetDate);
+    await updateVegetableInDb(updatedVegetable, targetDate, isAddMode);
   }, [selectedDate]);
 
   const deleteVegetable = useCallback(async (vegId: string, date?: Date) => {
