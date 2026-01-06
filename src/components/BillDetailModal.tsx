@@ -21,6 +21,9 @@ import { db } from '../firebase.ts';
 // New import: html2canvas for emoji fallback raster rendering
 import html2canvas from 'html2canvas';
 
+// Import reservation logic for orderable stock calculation
+import { getOrderableStock, ORDERABLE_STOCK_PERCENTAGE, RESERVED_STOCK_PERCENTAGE } from '../../constants';
+
 // IMPORTANT: External js font file generated via jsPDF fontconverter.
 // Put your generated file at src/fonts/NotoSansTamil-Regular.js
 // That file should call jsPDF.API.events.push([...]) and add the font to VFS
@@ -128,6 +131,20 @@ const BillDetailModal: React.FC<BillDetailModalProps> = ({
   // Stock validation states
   const [availableStockMap, setAvailableStockMap] = useState<Map<string, number>>(new Map());
   const [stockAlert, setStockAlert] = useState<{ show: boolean; itemName: string; requested: number; available: number } | null>(null);
+
+  // Helper function to calculate effective available stock for admin during bill editing
+  // For admin editing: availableStock (from DB) + original bill quantity = total accessible stock
+  // This is because the original order quantity was already deducted from DB stock
+  const getEffectiveAvailableStock = (vegetableId: string): number => {
+    const dbStock = availableStockMap.get(vegetableId) || 0;
+    const originalItem = bill?.items.find(item => item.vegetableId === vegetableId);
+    const originalQty = originalItem?.quantityKg || 0;
+    const effectiveStock = dbStock + originalQty;
+    
+    console.log('[getEffectiveAvailableStock] vegetableId:', vegetableId, 'dbStock:', dbStock, 'originalQty:', originalQty, 'effectiveStock:', effectiveStock);
+    
+    return effectiveStock;
+  };
 
   useEffect(() => {
     if (bill) {
@@ -341,6 +358,10 @@ const BillDetailModal: React.FC<BillDetailModalProps> = ({
     if (!current) return;
     const veg = combinedVegetableMap.get(current.vegetableId);
     
+    console.log('[handleQuantityChange] START - index:', index, 'newQuantity:', newQuantity);
+    console.log('[handleQuantityChange] Current item:', current);
+    console.log('[handleQuantityChange] Vegetable from map:', veg);
+    
     // For COUNT items, ensure integer values; for KG items, allow decimals
     let clamped: number;
     if (veg?.unitType === 'COUNT') {
@@ -349,22 +370,32 @@ const BillDetailModal: React.FC<BillDetailModalProps> = ({
       clamped = Math.max(0, Math.round(newQuantity * 100) / 100); // Decimal for kg
     }
     
+    console.log('[handleQuantityChange] Clamped quantity:', clamped);
+    
     // Check available stock - strict validation against current DB stock
     const availableStock = availableStockMap.get(current.vegetableId) || 0;
+    console.log('[handleQuantityChange] Available stock from DB:', availableStock);
     
-    // Get what this specific item currently has in the edited bill
-    const currentItemQty = current.quantityKg;
+    // Get the ORIGINAL quantity from the bill (not the edited quantity)
+    // This is crucial because the DB stock already has the original order deducted
+    const originalItem = bill?.items.find(item => item.vegetableId === current.vegetableId);
+    const originalQty = originalItem?.quantityKg || 0;
+    console.log('[handleQuantityChange] Original bill item quantity:', originalQty);
     
-    // Calculate quantity used by other items in the edited bill (excluding current item)
+    // Calculate quantity used by OTHER items in the edited bill with the same vegetableId (excluding current item)
     const otherItemsQty = editedItems
       .filter((_, idx) => idx !== index && _.vegetableId === current.vegetableId)
       .reduce((sum, item) => sum + item.quantityKg, 0);
+    console.log('[handleQuantityChange] Other edited items qty (same vegetableId):', otherItemsQty);
     
-    // Max allowed = available in DB + current item's quantity - what other items are using
-    // This ensures we never exceed actual DB stock
-    const maxAllowed = availableStock + currentItemQty - otherItemsQty;
+    // Max allowed = available in DB + original bill quantity - what other edited items are using
+    // The original quantity was already deducted from stock when order was placed,
+    // so we add it back to get the true available amount for this bill
+    const maxAllowed = availableStock + originalQty - otherItemsQty;
+    console.log('[handleQuantityChange] Max allowed calculation:', availableStock, '+', originalQty, '-', otherItemsQty, '=', maxAllowed);
     
     if (clamped > maxAllowed) {
+      console.log('[handleQuantityChange] STOCK EXCEEDED! Requested:', clamped, 'Max allowed:', maxAllowed);
       setStockAlert({
         show: true,
         itemName: veg?.name || `Item ${current.vegetableId}`,
@@ -373,12 +404,14 @@ const BillDetailModal: React.FC<BillDetailModalProps> = ({
       });
       setTimeout(() => setStockAlert(null), 5000);
       clamped = Math.max(0, maxAllowed);
+      console.log('[handleQuantityChange] Adjusted clamped to:', clamped);
     }
     
     const pricePerKg = veg ? veg.pricePerKg : (current.quantityKg ? current.subtotal / current.quantityKg : 0);
     const newSubtotal = Math.round(clamped * pricePerKg * 100) / 100;
     const copy = [...editedItems];
     copy[index] = { ...copy[index], quantityKg: clamped, subtotal: newSubtotal, pricePerKg };
+    console.log('[handleQuantityChange] Final updated item:', copy[index]);
     setEditedItems(copy);
   };
 
@@ -386,25 +419,37 @@ const BillDetailModal: React.FC<BillDetailModalProps> = ({
     const veg = combinedVegetableMap.get(vegetableId);
     if (!veg || quantity <= 0) return;
     
+    console.log('[handleAddVegetable] START - vegetableId:', vegetableId, 'quantity:', quantity);
+    console.log('[handleAddVegetable] Vegetable:', veg);
+    
     // Ensure correct quantity format based on unit type
     let adjustedQty = quantity;
     if (veg.unitType === 'COUNT') {
       adjustedQty = Math.floor(quantity); // Integer only for count
     }
+    console.log('[handleAddVegetable] Adjusted quantity:', adjustedQty);
     
     // Check available stock - strict validation against current DB stock
     const availableStock = availableStockMap.get(vegetableId) || 0;
+    console.log('[handleAddVegetable] Available stock from DB:', availableStock);
     
-    // Calculate quantity currently in edited items
-    const currentItemQty = editedItems
+    // Get the ORIGINAL quantity from the bill for this vegetableId
+    const originalItem = bill?.items.find(item => item.vegetableId === vegetableId);
+    const originalQty = originalItem?.quantityKg || 0;
+    console.log('[handleAddVegetable] Original bill item quantity:', originalQty);
+    
+    // Calculate quantity currently in edited items for this vegetableId
+    const currentEditedQty = editedItems
       .filter(it => it.vegetableId === vegetableId)
       .reduce((sum, item) => sum + item.quantityKg, 0);
+    console.log('[handleAddVegetable] Current edited items qty:', currentEditedQty);
     
-    // Max allowed = available in DB - what's currently in edited items
-    // This ensures we never exceed actual DB stock
-    const maxAllowed = availableStock - currentItemQty;
+    // Max allowed = available in DB + original bill quantity - what's currently in edited items
+    const maxAllowed = availableStock + originalQty - currentEditedQty;
+    console.log('[handleAddVegetable] Max allowed calculation:', availableStock, '+', originalQty, '-', currentEditedQty, '=', maxAllowed);
     
     if (adjustedQty > maxAllowed) {
+      console.log('[handleAddVegetable] STOCK EXCEEDED! Requested:', adjustedQty, 'Max allowed:', maxAllowed);
       setStockAlert({
         show: true,
         itemName: veg.name,
@@ -412,8 +457,12 @@ const BillDetailModal: React.FC<BillDetailModalProps> = ({
         available: Math.max(0, maxAllowed)
       });
       setTimeout(() => setStockAlert(null), 5000);
-      if (maxAllowed <= 0) return; // Don't add if no stock available
+      if (maxAllowed <= 0) {
+        console.log('[handleAddVegetable] No stock available, aborting add');
+        return; // Don't add if no stock available
+      }
       adjustedQty = maxAllowed; // Adjust to max allowed
+      console.log('[handleAddVegetable] Adjusted quantity to max allowed:', adjustedQty);
     }
     
     const idx = editedItems.findIndex(it => it.vegetableId === vegetableId);
@@ -421,9 +470,11 @@ const BillDetailModal: React.FC<BillDetailModalProps> = ({
       const copy = [...editedItems];
       const newQty = copy[idx].quantityKg + adjustedQty;
       copy[idx] = { ...copy[idx], quantityKg: newQty, subtotal: newQty * veg.pricePerKg, pricePerKg: veg.pricePerKg };
+      console.log('[handleAddVegetable] Updated existing item:', copy[idx]);
       setEditedItems(copy);
     } else {
       const ni: BillItem = { vegetableId, quantityKg: adjustedQty, subtotal: adjustedQty * veg.pricePerKg, pricePerKg: veg.pricePerKg };
+      console.log('[handleAddVegetable] Adding new item:', ni);
       setEditedItems(prev => [...prev, ni]);
     }
   };
@@ -1253,7 +1304,7 @@ const BillDetailModal: React.FC<BillDetailModalProps> = ({
                 <div className="bg-slate-50 rounded-lg p-4 space-y-3">
                   {getAvailableVegetables().length > 0 ? (
                     getAvailableVegetables().map(veg => (
-                      <VegetableAddRow key={veg.id} vegetable={veg} availableStock={availableStockMap.get(veg.id) || 0} onAdd={(quantity) => { handleAddVegetable(veg.id, quantity); setShowAddVegetables(false); }} />
+                      <VegetableAddRow key={veg.id} vegetable={veg} availableStock={getEffectiveAvailableStock(veg.id)} onAdd={(quantity) => { handleAddVegetable(veg.id, quantity); setShowAddVegetables(false); }} />
                     ))
                   ) : (
                     <p className="text-slate-500 text-center py-4">All available vegetables are already in this order</p>

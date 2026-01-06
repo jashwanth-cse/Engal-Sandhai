@@ -16,6 +16,7 @@ import Sidebar from './src/components/Sidebar';
 import AdminHeader from './src/components/AdminHeader';
 import UserOrders from './src/components/UserOrders';
 import { useBillingData } from './hooks/useBillingData';
+import { usePageTracking } from './hooks/usePageTracking';
 import type { User } from './types/types';
 import { loginWithEmployeeID, auth, observeUser } from './src/services/authService';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
@@ -52,6 +53,9 @@ function mapAuthErrorToMessage(error: any): string {
 }
 
 const App: React.FC = () => {
+  // Google Analytics page tracking
+  usePageTracking();
+
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [loginError, setLoginError] = useState<string | null>(null);

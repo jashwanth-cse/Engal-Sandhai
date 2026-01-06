@@ -157,28 +157,17 @@ export const updateVegetableInDb = async (vegetable: Vegetable, date?: Date, isA
       const stockDoc = await transaction.get(availableStockRef);
       let newAvailable = vegetable.totalStockKg;
 
-      console.log('[updateVegetableInDb] Transaction for:', vegetable.name, '| totalStockKg:', vegetable.totalStockKg, '| isAddMode:', isAddMode);
-
       if (stockDoc.exists()) {
         const currentData = stockDoc.data();
-        console.log('[updateVegetableInDb] Current DB data - totalStockKg:', currentData.totalStockKg, '| availableStockKg:', currentData.availableStockKg);
         
         if (isAddMode) {
           // ADD mode: Calculate the difference and add to available stock
           const diff = vegetable.totalStockKg - (currentData.totalStockKg || 0);
           newAvailable = Math.max(0, (currentData.availableStockKg || 0) + diff);
-          console.log('[updateVegetableInDb] ADD mode - diff:', diff, '| newAvailable:', newAvailable);
         } else {
           // SET mode: Set both totalStock and availableStock to the new value
           newAvailable = vegetable.totalStockKg;
-          console.log('[updateVegetableInDb] SET mode - newAvailable:', newAvailable);
         }
-      }
-
-      // CRITICAL FIX: Ensure availableStock can NEVER exceed totalStock
-      if (newAvailable > vegetable.totalStockKg) {
-        console.warn('[updateVegetableInDb] CLAMPING availableStock from', newAvailable, 'to', vegetable.totalStockKg);
-        newAvailable = vegetable.totalStockKg;
       }
 
       transaction.set(availableStockRef, {
@@ -1776,3 +1765,7 @@ export const fetchUserOrdersByDate = async (customerId: string, date: Date): Pro
     throw error;
   }
 };
+
+
+
+

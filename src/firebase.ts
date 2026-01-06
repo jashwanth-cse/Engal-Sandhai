@@ -2,6 +2,7 @@
 import { initializeApp } from "firebase/app";
 import { getAuth, setPersistence, browserSessionPersistence } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
+import { getAnalytics } from "firebase/analytics";
 
 const firebaseConfig = {
   apiKey: "__FIREBASE_API_KEY__",
@@ -9,7 +10,8 @@ const firebaseConfig = {
   projectId: "__FIREBASE_PROJECT_ID__",
   storageBucket: "__FIREBASE_STORAGE_BUCKET__",
   messagingSenderId: "__FIREBASE_MESSAGING_SENDER_ID__",
-  appId: "__FIREBASE_APP_ID__"
+  appId: "__FIREBASE_APP_ID__",
+  measurementId: "__FIREBASE_MEASUREMENT_ID__"
 };
 
 const app = initializeApp(firebaseConfig);
@@ -20,4 +22,5 @@ setPersistence(auth, browserSessionPersistence).catch((error) => {
 });
 
 export const db = getFirestore(app);
+export const analytics = getAnalytics(app);
 export default app;

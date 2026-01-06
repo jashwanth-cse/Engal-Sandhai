@@ -104,6 +104,12 @@ const Inventory: React.FC<InventoryProps> = ({
     // Use real-time available stock from database if available
     const realTimeStock = availableStock.get(vegetable.id);
     if (realTimeStock !== undefined) {
+      // CRITICAL FIX: Ensure available stock never exceeds total stock
+      // This can happen due to data inconsistencies in the database
+      if (realTimeStock > vegetable.totalStockKg) {
+        console.warn(`[Inventory] Data inconsistency detected for ${vegetable.name}: availableStock (${realTimeStock}) > totalStock (${vegetable.totalStockKg}). Clamping to totalStock.`);
+        return vegetable.totalStockKg;
+      }
       return realTimeStock;
     }
 
